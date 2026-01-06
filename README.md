@@ -21,6 +21,9 @@ For detailed instructions on setting up and using Claude Desktop with the Author
 
 Watch our demo video to see Claude Desktop integration in action:
 
+https://github.com/user-attachments/assets/2c57459d-00f5-4da6-9aae-ced3e60992ac
+
+
 ## Prerequisites & Installation
 
 - **Python 3.13 or higher** - This MCP server is written in Python and requires Python 3.13 or higher
