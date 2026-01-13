@@ -20,7 +20,7 @@
     1. in Powershell, run the command described in [installing uv](https://docs.astral.sh/uv/getting-started/installation/)
     1. once `uv` is installed, open a new Powershell tab, and run the command below:
         ```powershell
-        uv tool install git+https://github.com/DecisionsDev/ibm-odm-authoring-mcp-server
+        uv tool install git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server
         ```
     1. run the command below in Powershell:
         ```powershell
@@ -29,10 +29,10 @@
         > Note:
         > This command creates a symbolic link named `git` to `git.exe` to prevent the errors below (from happening whenever the GitHub repository was updated and uvx calls git to fetch the changes): 
         > ```
-        > 2025-12-31T10:29:46.477Z [ibm-odm-authoring-mcp-server] [info] Message from client: {"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"claude-ai","version":"0.1.0"}},"jsonrpc":"2.0","id":0} { metadata: undefined }
-        >    Updating https://github.com/DecisionsDev/ibm-odm-authoring-mcp-server (HEAD)
+        > 2025-12-31T10:29:46.477Z [ibm-odm-management-mcp-server] [info] Message from client: {"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"claude-ai","version":"0.1.0"}},"jsonrpc":"2.0","id":0} { metadata: undefined }
+        >    Updating https://github.com/DecisionsDev/ibm-odm-management-mcp-server (HEAD)
         >   × Failed to download and build `decisioncenter-mcp-server @
-        >   │ git+https://github.com/DecisionsDev/ibm-odm-authoring-mcp-server@bbb8a86091410aa1f8a9fa458c43a6fba38596f3`
+        >   │ git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server@bbb8a86091410aa1f8a9fa458c43a6fba38596f3`
         >   ├─▶ Git operation failed
         >   ╰─▶ Git executable not found. Ensure that Git is installed and available.
         > ```
@@ -111,8 +111,8 @@ If you want to use a local ODM instance for development or testing,
 
 - clone this repository,
 ```bash
-  git clone https://github.com/DecisionsDev/ibm-odm-authoring-mcp-server.git
-  cd ibm-odm-authoring-mcp-server
+  git clone https://github.com/DecisionsDev/ibm-odm-management-mcp-server.git
+  cd ibm-odm-management-mcp-server
  ```
 - and run:
 
@@ -154,10 +154,10 @@ This ODM instance will be available for the MCP Server, pre-populated with sampl
    ```json
    {
      "mcpServers": {
-       "ibm-odm-authoring-mcp-server": {
+       "ibm-odm-management-mcp-server": {
          "command": "uvx",
          "args": [
-           "--from", "git+https://github.com/DecisionsDev/ibm-odm-authoring-mcp-server", "ibm-odm-authoring-mcp-server",
+           "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server", "ibm-odm-management-mcp-server",
            "--url",      "http://localhost:9060/decisioncenter-api",
            "--username", "odmAdmin"
          ],
@@ -193,7 +193,7 @@ To see all the tools listed in Claude Desktop, proceed as follows:
 - Click the ➕ icon, then click `Connectors` and finally `Manage connectors`:
 ![Screenshot showing Claude tools](images/claude-mcp-tools.png)
 
-- then click the `Configure` button to the right of `ibm-odm-authoring-mcp-server`, and you should see:
+- then click the `Configure` button to the right of `ibm-odm-management-mcp-server`, and you should see:
 ![Screenshot showing Claude tools](images/claude-mcp-tools-details.png)
 
 > Note: The connector may take some time to get displayed.

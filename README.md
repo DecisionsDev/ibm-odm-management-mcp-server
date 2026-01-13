@@ -1,8 +1,8 @@
-# IBM ODM Authoring MCP Server Documentation (BETA)
+# IBM ODM Management MCP Server Documentation (BETA)
 
 ## Overview
 
-The IBM ODM Authoring MCP Server bridges IBM ODM Decision Center with modern AI assistants and orchestration platforms.
+The IBM ODM Management MCP Server bridges IBM ODM Decision Center with modern AI assistants and orchestration platforms.
 It enables you to:
 - Expose Decision Center REST API endpoints as tools for AI assistants
 - Integrate easily with Watson Orchestrate, Claude Desktop, and Cursor AI
@@ -15,7 +15,7 @@ It enables you to:
 
 ## Quickstart: Claude Desktop Integration
 
-For detailed instructions on setting up and using Claude Desktop with the Authoring MCP Server, see the [Claude Desktop Integration Guide](/docs/Claude-desktop-integration-guide.md).
+For detailed instructions on setting up and using Claude Desktop with the Management MCP Server, see the [Claude Desktop Integration Guide](/docs/Claude-desktop-integration-guide.md).
 
 ### Demo Video
 
@@ -133,9 +133,9 @@ Read more in [Creating and managing service accounts](https://www.ibm.com/docs/e
 
 #### 3.1. Server certificate
 
-To establish a SSL/TLS secure connection to the server, the Authoring MCP server must have access to the certificate used to sign the server certificate.
+To establish a SSL/TLS secure connection to the server, the Management MCP server must have access to the certificate used to sign the server certificate.
 
-If a public CA certificate was used to sign the server certificate, the Authoring MCP server can find it among the system trusted certificates.
+If a public CA certificate was used to sign the server certificate, the Management MCP server can find it among the system trusted certificates.
 
 If this is a self-signed certificate, it can be specified :
   - **CLI:** `--ssl-cert-path <certificate_filename>`
@@ -149,7 +149,7 @@ Alternatively, in dev/test environments, the authenticity of the server can be i
 
 The ODM Decision Center server can be configured to check the authenticity of the clients that try to establish a secure connection.
 
-In that case, the Authoring MCP server (which acts as a client), must be configured with both a private key and its related certificate (and the server must be configured to trust the clients presenting that certificate when establishing a secure connection).
+In that case, the Management MCP server (which acts as a client), must be configured with both a private key and its related certificate (and the server must be configured to trust the clients presenting that certificate when establishing a secure connection).
 
 The parameters below can be specified:
   - **CLI:** `--mtls-key-path <PRIVATE_KEY_PATH> --mtls-cert-path <CERT_PATH>` and optionally `--mtls-key-password <PASSWORD>` if the private key is password-protected.
@@ -188,7 +188,7 @@ The parameters below can be specified:
 > Parameters to start the MCP server in remote mode (allowing connections from remote MCP clients) 
 >| CLI Argument | Environment Variable | Description | Default |
 >|--------------|----------------------|-------------|---------|
->| `--transport`| `TRANSPORT`          | `stdio`, `streamable-http` or `sse` : Means of communication of the Authoring MCP server: local (`stdio`) or remote (`streamable-http` or `sse`)) | `stdio` |
+>| `--transport`| `TRANSPORT`          | `stdio`, `streamable-http` or `sse` : Means of communication of the Management MCP server: local (`stdio`) or remote (`streamable-http` or `sse`)) | `stdio` |
 >| `--host`     | `HOST`               | IP or hostname that the MCP server listens to in remote mode. | `0.0.0.0` |
 >| `--port`     | `PORT`               | Port that the MCP server listens to in remote mode. | `3000` |
 >| `--mount-path`| `MOUNT_PATH`        | Path that the MCP server listens to in remote mode. | `/mcp` |
@@ -207,11 +207,11 @@ The example below shows a typical use-case where the sensitive information (here
 ```json
 {
   "mcpServers": {
-    "ibm-odm-authoring-mcp-server": {
+    "ibm-odm-management-mcp-server": {
       "command": "uvx",
       "args": [
-        "--from", "git+https://github.com/DecisionsDev/ibm-odm-authoring-mcp-server",
-        "ibm-odm-authoring-mcp-server",
+        "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server",
+        "ibm-odm-management-mcp-server",
         "--url", "https://odm-decisioncenter-api-url",
         "--ssl-cert-path", "certificate-file",
         "--username", "username"
@@ -232,8 +232,8 @@ For local development and testing, use the Basic Auth.
 
 ```json
 "args": [
-  "--from", "git+https://github.com/DecisionsDev/ibm-odm-authoring-mcp-server",
-  "ibm-odm-authoring-mcp-server",
+  "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server",
+  "ibm-odm-management-mcp-server",
   "--url", "http://localhost:9060/decisioncenter-api",
   "--username", "odmAdmin"
 ],
@@ -248,8 +248,8 @@ For production deployments on the Cloud Pak, use the Zen API Key.
 
 ```json
 "args": [
-  "--from", "git+https://github.com/DecisionsDev/ibm-odm-authoring-mcp-server",
-  "ibm-odm-authoring-mcp-server",
+  "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server",
+  "ibm-odm-management-mcp-server",
   "--url",           "https://odm-decisioncenter-api-url",
   "--ssl-cert-path", "certificate-file",
   "--username",      "USERNAME"
@@ -263,15 +263,15 @@ For production deployments on the Cloud Pak, use the Zen API Key.
 
 For production deployments on other environments than the Cloud Pak, you may use OpenID Connect if ODM is configured to use it.
 
-The Authoring MCP Server can authenticate to ODM configured with OpenID Connect, using the Client Credentials flow.
+The Management MCP Server can authenticate to ODM configured with OpenID Connect, using the Client Credentials flow.
 
 Two authentication variants are possible:
 
 1) Using a Client Secret
 ```json
 "args": [
-  "--from", "git+https://github.com/DecisionsDev/ibm-odm-authoring-mcp-server",
-  "ibm-odm-authoring-mcp-server",
+  "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server",
+  "ibm-odm-management-mcp-server",
   "--url",           "https://odm-decisioncenter-api-url",
   "--ssl-cert-path", "certificate-file",
   "--token-url",     "https://your-openid-connect_provider-token-endpoint-url",
@@ -286,8 +286,8 @@ Two authentication variants are possible:
 2) Using a Private Key (PKJWT)
 ```json
 "args": [
-  "--from", "git+https://github.com/DecisionsDev/ibm-odm-authoring-mcp-server",
-  "ibm-odm-authoring-mcp-server",
+  "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server",
+  "ibm-odm-management-mcp-server",
   "--url",           "https://odm-decisioncenter-api-url",
   "--ssl-cert-path", "certificate-file",
   "--token-url",     "https://your-openid-connect_provider-token-endpoint-url",
@@ -302,14 +302,14 @@ Two authentication variants are possible:
 
 ### Example 4: mTLS (Mutual TLS) Authentication
 
-The Authoring MCP Server also supports mTLS (mutual TLS) authentication, which secure the SSL connection further.
+The Management MCP Server also supports mTLS (mutual TLS) authentication, which secure the SSL connection further.
 
 mTLS must be complemented with another means of authentication/authorization for authorization purpose (to assess the right to access to the Decision Center), for instance with basic auth in the example below:
 
 ```json
 "args": [
-  "--from", "git+https://github.com/DecisionsDev/ibm-odm-authoring-mcp-server",
-  "ibm-odm-authoring-mcp-server",
+  "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server",
+  "ibm-odm-management-mcp-server",
   "--url",           "https://odm-decisioncenter-api-url",
   "--ssl-cert-path", "certificate-file",
   "--username",      "USERNAME_OR_SERVICE_ACCOUNT"

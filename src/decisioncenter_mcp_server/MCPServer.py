@@ -110,7 +110,7 @@ class MCPServer:
         raise ValueError(f"resource not found")
 
     def start(self):
-        self.server = FastMCP(name="ibm-odm-authoring-mcp-server",
+        self.server = FastMCP(name="ibm-odm-management-mcp-server",
                               instructions=INSTRUCTIONS,
                               host=self.host,
                               port=self.port,

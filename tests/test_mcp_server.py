@@ -517,7 +517,7 @@ def test_server_start_with_streamable_http_transport():
         
         # Verify FastMCP was initialized with correct parameters
         mock_fastmcp_class.assert_called_once_with(
-            name="ibm-odm-authoring-mcp-server",
+            name="ibm-odm-management-mcp-server",
             instructions=INSTRUCTIONS,
             host="127.0.0.1",
             port=3001,
@@ -587,7 +587,7 @@ def test_server_start_with_sse_transport():
         
         # Verify FastMCP was initialized with correct parameters
         mock_fastmcp_class.assert_called_once_with(
-            name="ibm-odm-authoring-mcp-server",
+            name="ibm-odm-management-mcp-server",
             instructions=INSTRUCTIONS,
             host="127.0.0.1",
             port=3001,
