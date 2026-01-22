@@ -55,7 +55,8 @@ class MCPServer:
 
     def update_repository(self):
         endpoints       = self.manager.fetch_endpoints()
-        self.repository = self.manager.generate_tools_format(endpoints, self.tags, self.tools, self.no_tools)
+        self.repository = self.manager.generate_tools_format(endpoints, self.tags, self.tools, self.no_tools, 
+                                                             self.credentials.isAdmin)
 
     async def list_tools(self) -> list[types.Tool]:
         """

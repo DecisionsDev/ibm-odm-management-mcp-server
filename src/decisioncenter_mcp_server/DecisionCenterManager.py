@@ -25,6 +25,27 @@ import tempfile
 
 class DecisionCenterManager:
 
+    # tools that require the admin role when invoking them
+    admin_tools = [
+        # DBAdmin
+        "launchCleanup",
+        'executeSQLScript', 'generateMigrationRole', 'generateMigrationScript', 'generateExtensionModelScript', 'uploadExtensionModelFiles', 'uploadMessagesFile', 'getModelExtensionFiles', 'setPersistenceLocale',
+        'generate', 'results',
+
+        # Admin
+        'ldapSync', 'metrics', 'deleteDecisionService',
+        'exportPermissions', 'importCommandPermissions', 'exportCommandPermissions', 'importTabPermissions', 'exportTabPermissions',
+        'setUsersRolesRegistry', 'getUsersRolesRegistry',
+        'users',   'user', 'addUser',  'deleteUser',  'eraseAllUsers', 
+        'groups', 'group', 'addGroup', 'deleteGroup', 'eraseAllGroups',
+        'branchGroups', 'branchSecurity', 'branch_1', 'branchSecurity_1',
+
+        # Manage
+        'addServer', 'updateServer', 'deleteServer',
+        'discardBuildState',
+        'webhooks', 'registerWebhook', 'registerWebhook_1', 'deleteWebhook',
+    ]
+
     def __init__(self, credentials):
         """
         :no-index:
@@ -42,6 +63,28 @@ class DecisionCenterManager:
 
         # Initialize with provided credentials
         self.credentials = credentials
+
+    def isAdmin(self, uri:str, session):
+        try:
+            response = session.get(uri + '/v1/users/fake-user',
+                                   headers=session.headers, 
+                                   verify=self.credentials.cacert)
+            if response.status_code == 403:
+                self.logger.info("Connected without admin role")
+                return False
+            elif response.status_code in (404, 200):
+                self.logger.info("Connected with admin role")
+                return True
+            else:
+                # bad credentials - no need to report it as it will be reported later on
+                return False
+        except Exception as e:
+            self.logger.warning("Failed to check if the credentials grant admin role: %s", e)
+            self.logger.info("Assuming connected without admin role")
+            return False
+            
+    def checkRole(self, uri:str, session):
+        self.credentials.isAdmin = self.isAdmin(uri, session)
 
     def fix_openapi(self, json):
         def fix_bool_literals(d: dict):
@@ -109,14 +152,19 @@ class DecisionCenterManager:
             dict: A dictionary containing the endpoints, or raise an exception is an error occurred.
         """
         try:
-            self.logger.info("Parsing " + uri)
-            
             if uri.startswith('http') == False:
                 # file
                 endpoints = parse(uri=uri, strict_enum=False)
                 return endpoints
             else:
                 session = self.credentials.get_session()
+
+                # check if the credentials grant special roles (admin, installer)
+                # (useful when filtering out the tools requiring a special role)
+                self.checkRole(uri, session)
+
+                uri += '/v3/api-docs'
+                self.logger.info("Parsing " + uri)
                 response = session.get(uri, 
                                        headers=session.headers, 
                                        verify=self.credentials.cacert,
@@ -162,10 +210,13 @@ class DecisionCenterManager:
             self.logger.error("An error occurred: %s", e)
             raise(e)
 
+    # returns the openapi
+    # and sets self.credentials.isAdmin to True is the credentials grants the admin Role
     def fetch_endpoints(self):
-        return self._fetch_endpoints(uri = self.credentials.odm_url + '/v3/api-docs')
+        return self._fetch_endpoints(uri = self.credentials.odm_url)
 
-    def generate_tools_format(self, endpoints, tags: list[str] = [], tools_to_publish: list[str] = [], tools_to_ignore: list[str] = []) -> dict[str, types.Tool]:
+    def generate_tools_format(self, endpoints, tags: list[str] = [], tools_to_publish: list[str] = [], tools_to_ignore: list[str] = [],
+                              isAdmin: bool = False) -> dict[str, types.Tool]:
         """
         :no-index:
         Convert the endpoints to the tools format
@@ -258,6 +309,10 @@ class DecisionCenterManager:
                     method       = info.method.name
                     operation_id = info.operation_id
                     tool_name    = operation_id
+
+                    # filter out the tools that requires the Admin role if the credentials used do not grant this role
+                    if not isAdmin and tool_name in DecisionCenterManager.admin_tools:
+                        continue
 
                     # optionally ignore tools based on their name
                     if   len(tools_to_publish) > 0 and tool_name.lower() not in tools_to_publish:
