@@ -28,7 +28,7 @@ class DecisionCenterManager:
     # tools that require the admin role when invoking them
     admin_tools = [
         # DBAdmin
-        "launchCleanup",
+        'launchCleanup', 'stopCleanup',
         'executeSQLScript', 'generateMigrationRole', 'generateMigrationScript', 'generateExtensionModelScript', 'uploadExtensionModelFiles', 'uploadMessagesFile', 'getModelExtensionFiles', 'setPersistenceLocale',
         'generate', 'results',
 

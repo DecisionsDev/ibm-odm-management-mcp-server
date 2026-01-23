@@ -435,7 +435,7 @@ Here is the list of the tools with their `operationId` and tag in ODM 9.5.0.1:
   | executeSQLScript | Run SQL script | DBAdmin | admin |
   | generate | Launch DC database diagnostics generation | DBAdmin | admin |
   | generateExtensionModelScript | Generate an SQL script for model extensions | DBAdmin | admin |
-  | stopCleanup | Stop cleanup operation | DBAdmin | |
+  | stopCleanup | Stop cleanup operation | DBAdmin | admin |
   | launchCleanup | Launch cleanup of the repository | DBAdmin | admin |
   | webhooks | Get a list of the webhooks that are bound to this instance of Decision Center | Manage | admin |
   | users | List of the users that are defined in Decision Center | Admin | admin |
