@@ -161,6 +161,7 @@ The parameters below can be specified:
 | CLI Argument      | Environment Variable | Description                                                                                            | Default                                 |
 |-------------------|---------------------|---------------------------------------------------------------------------------------------------------|-----------------------------------------|
 | `--url`           | `ODM_URL`           | URL of the Decision Center REST API                      | `http://localhost:9060/decisioncenter-api`             |
+| `--res-url`       | `ODM_RES_URL`       | URL of the Decision Server Console                       | `http://localhost:9060/res`             |
 | `--username`      | `ODM_USERNAME`      | Username for Basic Auth or Zen authentication                                                           | `odmAdmin`                              |
 | `--password`      | `ODM_PASSWORD`      | Password for Basic Auth                                                                                 | `odmAdmin`                              |
 | `--zenapikey`     | `ZENAPIKEY`         | Zen API Key for authentication with Cloud Pak for Business Automation                                   |                                         |

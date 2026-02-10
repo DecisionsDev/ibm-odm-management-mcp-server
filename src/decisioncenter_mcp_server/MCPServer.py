@@ -50,20 +50,38 @@ class MCPServer:
         self.host      = host
         self.port      = port
         self.path      = path
-        self.repository: dict[str, DecisionCenterEndpoint] = None
+        self.repository: dict[str, DecisionCenterEndpoint] = {}
         self.manager = DecisionCenterManager(credentials=credentials)
 
     def update_repository(self):
-        endpoints       = self.manager.fetch_endpoints()
-        self.repository = self.manager.generate_tools_format(endpoints, self.tags, self.tools, self.no_tools, 
-                                                             self.credentials.isAdmin)
+
+        if os.environ.get('TRACE_FILE'):
+            try: os.remove(os.environ.get('TRACE_FILE'))
+            except FileNotFoundError: pass # ignore
+
+        # generate the MCP tools for Decision Center REST API
+        if self.credentials.odm_url:
+            endpoints       = self.manager.fetch_endpoints()
+            self.repository = self.manager.generate_tools_format(endpoints, self.tags, self.tools, self.no_tools, self.credentials.isAdmin)
+
+        # generate the MCP tools for Decision Server console REST API (aka RES console)
+        if self.credentials.odm_res_url:
+            self.repository = self.manager.generate_res_tools(self.manager.fetch_res_api_endpoints(), self.repository)
+
+        if os.environ.get('TRACE_FILE'):
+            import pprint
+            try:
+                with open(os.environ.get('TRACE_FILE'), 'a') as f:
+                    for endpoint in self.repository.values():
+                        pprint.pp(endpoint.tool, f)
+            except FileNotFoundError: pass # ignore
+
 
     async def list_tools(self) -> list[types.Tool]:
         """
         List available tools.
         Each tool specifies its arguments using JSON Schema validation.
         """
-        self.logger.info(f"Listing ODM Decision Center tools")
         tools = []
         for tool_name, endpoint in self.repository.items():
             tools.append(endpoint.tool)
@@ -77,7 +95,7 @@ class MCPServer:
         """
         self.logger.info("Invoking tool: %s with arguments: %s", name, arguments)
 
-        endpoint : DecisionCenterEndpoint = self.repository.get(name) if self.repository else None
+        endpoint : DecisionCenterEndpoint = self.repository.get(name)
         if endpoint is None:
             raise ValueError(f"Unknown tool: {name}")
 
@@ -141,6 +159,7 @@ def create_credentials(args):
     if args.zenapikey:    # If zenapikey is provided, use it for authentication
         return Credentials(
             odm_url=args.url,
+            odm_res_url=args.res_url,
             username=args.username,
             zenapikey=args.zenapikey,
             mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
@@ -150,6 +169,7 @@ def create_credentials(args):
     elif args.client_secret:  # OpenID Client Secret provided
         return Credentials(
             odm_url=args.url,
+            odm_res_url=args.res_url,
             token_url=args.token_url,
             scope=args.scope,
             client_id=args.client_id,
@@ -161,6 +181,7 @@ def create_credentials(args):
     elif args.pkjwt_key_path:  # OpenID PKJWT
         return Credentials(
             odm_url=args.url,
+            odm_res_url=args.res_url,
             token_url=args.token_url,
             scope=args.scope,
             client_id=args.client_id,
@@ -174,6 +195,7 @@ def create_credentials(args):
             raise ValueError("Username and password must be provided for basic authentication.")
         return Credentials(
             odm_url=args.url,
+            odm_res_url=args.res_url,
             username=args.username,
             password=args.password,
             mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
@@ -196,7 +218,8 @@ def init(args):
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Decision MCP Server")
-    parser.add_argument("--url",               type=str, default=os.getenv("ODM_URL", "http://localhost:9060/decisioncenter-api"), help="ODM Decision Center REST API URL")
+    parser.add_argument("--url",               type=str, default=os.getenv("ODM_URL"), help="ODM Decision Center REST API URL")
+    parser.add_argument("--res-url",           type=str, default=os.getenv("ODM_RES_URL"), help="ODM Decision Server Console URL (aka RES Console)")
     parser.add_argument("--username",          type=str, default=os.getenv("ODM_USERNAME", "odmAdmin"), help="ODM username (optional)")
     parser.add_argument("--password",          type=str, default=os.getenv("ODM_PASSWORD", "odmAdmin"), help="ODM password (optional)")
     parser.add_argument("--zenapikey",         type=str, default=os.getenv("ZENAPIKEY"), help="Zen API Key (optional)")
