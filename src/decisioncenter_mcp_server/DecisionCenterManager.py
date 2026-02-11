@@ -16,6 +16,7 @@ import logging
 import json
 import mcp.types as types
 from .DecisionCenterEndpoint import DecisionCenterEndpoint
+from .ToolTrace import ToolExecutionTrace
 import os.path
 from openapi_parser import parse
 import base64
@@ -24,6 +25,7 @@ from pathlib import Path
 import tempfile
 import re
 import xml.etree.ElementTree
+import copy
 
 # adds a parameter into 'input_shema' (for the MCP server client (the AI agent)) and in 'parameters' (for the MCP server)
 # used to generate the tools for both REST APIs (DC and RES Console)
@@ -75,23 +77,24 @@ class DecisionCenterManager:
         'webhooks', 'registerWebhook', 'registerWebhook_1', 'deleteWebhook',
     ]
 
-    def __init__(self, credentials):
+    def __init__(self, credentials, trace_recorder):
         """
         :no-index:
-        Initializes the DecisionCenterManager with the provided credentials.
+        Initializes the DecisionCenterManager with the provided credentials and object to record traces
 
         Args:
             credentials (object): An object containing authentication details for Decision Center
+            trace_recorder (object): an object allowing to record the tool execution traces
 
         Attributes:
             logger (logging.Logger): Logger instance for logging information.
             credentials (object): The provided Decision Center credentials.
+            trace_recorder (object): an object allowing to record the tool execution traces
         """
         # Get logger for this class
         self.logger = logging.getLogger(__name__)
-
-        # Initialize with provided credentials
         self.credentials = credentials
+        self.trace_recorder = trace_recorder
 
     def isAdmin(self, uri:str, session):
         try:
@@ -437,12 +440,12 @@ class DecisionCenterManager:
                     param_format = None
 
                 # add the parameter in 'parameters'
+                rootLevel = (len(input_schema) == 0)
                 if key is not None and parameters is not None:
                     parameters[key] = {'in':     'body/json'} | \
                                      ({'format': param_format} if param_format is not None else {})
 
                 # add the parameter in 'input_schema'
-                rootLevel = (len(input_schema) == 0)
                 if key is not None:
                     input_schema[key] = {}
                     input_schema = input_schema[key]
@@ -460,7 +463,7 @@ class DecisionCenterManager:
                             input_schema.get('required').append(item_key)
                         build_inputSchema(input_schema['properties'], parameters if rootLevel else None, item_key, item_value)
 
-                if isinstance(value, list):                        
+                if isinstance(value, list):
                     dict_element = value[0]
                     if len(dict_element) == 1:
                         # if the array elements are made of one single field, declare the element in the inputSchema as an object anyway (not a string) even though the payload will contain just a string
@@ -522,8 +525,8 @@ class DecisionCenterManager:
                         raise Exception(f'Invalid JSON found while parsing representation "{id}": "{json_str}"') from e
 
                     # save in cache (to avoid parsing several times the same representation)
-                    dict_representations[id] = {'input_schema': input_schema,
-                                                'parameters':   parameters}
+                    dict_representations[id] = {'input_schema': copy.deepcopy(input_schema),
+                                                'parameters':   copy.deepcopy(parameters)}
                     return
 
                 # not found!
@@ -642,14 +645,6 @@ class DecisionCenterManager:
                         sentences = description.split('. ')
                         summary = sentences[0] if len(sentences)>1 else description
 
-                    if os.environ.get('TRACE_FILE'):
-                        try:
-                            with open(os.environ.get('TRACE_FILE'), 'a') as f:
-                                f.write(f'{tool_name:<37} {http_method:<6}  {path:<100}\n')
-                                f.write(f'{summary}\n')
-                                f.write(f'{description}\n')
-                        except FileNotFoundError: pass # ignore
-
                     input_schema = {} if len(xmlRepresentationSubList) > 0 else {'type': 'object', 'properties': {}, 'required': []}
                     parameters   = {}
 
@@ -701,12 +696,6 @@ class DecisionCenterManager:
                             else:
                                 param_type = 'string'
 
-                            if os.environ.get('TRACE_FILE'):
-                                try:
-                                    with open(os.environ.get('TRACE_FILE'), 'a') as f:
-                                        f.write(f'{param_name:<17} required={param_required:<6} static={static_value}\n')
-                                except FileNotFoundError: pass # ignore
-                                
                             add_param(input_schema, parameters, 
                                       param_in, 
                                       param_name, 
@@ -719,15 +708,6 @@ class DecisionCenterManager:
 
                         except Exception as e:
                             raise Exception(f'Error while parsing Decision Server REST API "{tool_name}": {str(e)}')
-
-                    if os.environ.get('TRACE_FILE'):
-                        import pprint
-                        try:
-                            with open(os.environ.get('TRACE_FILE'), 'a') as f:
-                                pprint.pp(parameters, f)
-                                pprint.pp(input_schema, f)
-                                f.write('----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n')
-                        except FileNotFoundError: pass # ignore
 
                     tools[tool_name] = DecisionCenterEndpoint(tool_name    = tool_name,
                                                               summary      = summary,
@@ -758,8 +738,7 @@ class DecisionCenterManager:
 
         return tools
 
-
-    def _invokeDecisionCenterApi(self, method:str, url:str, params_query:dict = {}, params_body:dict = {}, params_file:dict = {}, raw_data = None, raw_data_type = None, run_locally:bool = True):
+    def _invokeDecisionCenterApi(self, endpoint, arguments:dict, method:str, url:str, params_query:dict = {}, params_body:dict = {}, params_file:dict = {}, raw_data = None, raw_data_type = None, run_locally:bool = True):
         """
         :no-index:
         Invokes a decision center REST API.
@@ -794,6 +773,7 @@ class DecisionCenterManager:
             self.logger.debug(f"Request successful, response content-type={content_type}")
 
             if 'application/json' in content_type:
+                self.trace_recorder.save(ToolExecutionTrace(endpoint, arguments, response.status_code, response.json()))
                 return response.json()
                 
             elif 'application/octet-stream' in content_type:
@@ -809,7 +789,9 @@ class DecisionCenterManager:
                     with tempfile.NamedTemporaryFile(prefix=prefix, suffix=extension, dir=Path.home(), delete=False, delete_on_close=False) as f:
                         f.write(content)
                         f.close()
-                    return {'filename': f.name, 'url': f'file://{f.name}'}
+                    result = {'filename': f.name, 'url': f'file://{f.name}'}
+                    self.trace_recorder.save(ToolExecutionTrace(endpoint, arguments, response.status_code, result))
+                    return result
                 
                 else:
                     if debug := self.logger.isEnabledFor(logging.DEBUG):
@@ -819,14 +801,18 @@ class DecisionCenterManager:
                             self.logger.debug(f"Saved response in file {f.name}")
 
                     base64str=base64.b64encode(content).decode()
-                    return {'mimeType': content_type, 'filename': filename, 'data': base64str}
+                    result = {'mimeType': content_type, 'filename': filename, 'data': base64str}
+                    self.trace_recorder.save(ToolExecutionTrace(endpoint, arguments, response.status_code, result))
+                    return result
 
             else:
+                self.trace_recorder.save(ToolExecutionTrace(endpoint, arguments, response.status_code, response.text))
                 return response.text
         else:
             err = response.content.decode('utf-8')
             if err == '':
                 err = response.reason
+            self.trace_recorder.save(ToolExecutionTrace(endpoint, arguments, response.status_code, err))
             self.logger.error(f"Request error, status: {response.status_code}, error: {err}")
             raise Exception(err)
 
@@ -890,7 +876,8 @@ class DecisionCenterManager:
             logging.debug("params_file=%s",  params_file)
             logging.debug("raw_data=%s",     raw_data)
 
-        return self._invokeDecisionCenterApi(method=endpoint.method, 
+        return self._invokeDecisionCenterApi(endpoint, arguments,
+                                             method=endpoint.method, 
                                              url=url,
                                              params_query= params_query,
                                              params_body = params_body,

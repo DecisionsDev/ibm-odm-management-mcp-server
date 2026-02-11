@@ -160,8 +160,8 @@ The parameters below can be specified:
 
 | CLI Argument      | Environment Variable | Description                                                                                            | Default                                 |
 |-------------------|---------------------|---------------------------------------------------------------------------------------------------------|-----------------------------------------|
-| `--url`           | `ODM_URL`           | URL of the Decision Center REST API                      | `http://localhost:9060/decisioncenter-api`             |
-| `--res-url`       | `ODM_RES_URL`       | URL of the Decision Server Console                       | `http://localhost:9060/res`             |
+| `--url`           | `ODM_URL`           | URL of the Decision Center REST API                      |              |
+| `--res-url`       | `ODM_RES_URL`       | URL of the Decision Server Console (aka RES Console)     |              |
 | `--username`      | `ODM_USERNAME`      | Username for Basic Auth or Zen authentication                                                           | `odmAdmin`                              |
 | `--password`      | `ODM_PASSWORD`      | Password for Basic Auth                                                                                 | `odmAdmin`                              |
 | `--zenapikey`     | `ZENAPIKEY`         | Zen API Key for authentication with Cloud Pak for Business Automation                                   |                                         |
@@ -178,6 +178,9 @@ The parameters below can be specified:
 | `--mtls-key-path` | `MTLS_KEY_PATH`     | Path to the SSL private key file of the client for mutual TLS authentication (mandatory for mTLS)       |                                         |
 | `--mtls-key-password` | `MTLS_KEY_PASSWORD` | Password to decrypt the private key of the client for mutual TLS authentication. Only needed if the key is password-protected. |              |
 | `--log-level`     | `LOG_LEVEL`         | Set the logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`)                                 | `INFO`                                  |
+| `--traces-dir`    | `TRACES_DIR`        | Directory to store execution traces                                                                     | `~/.ibm-odm-management-mcp-server/traces`                  |
+| `--trace`         | `TRACE`           | Specifies what to trace (`EXECUTIONS`, `EXECUTIONS_WITH_CONTENT`, `CONFIGURATION`)                             |
+| `--traces-maxsize` | `TRACES_MAXSIZE`  | Maximum number of traces to store before removing oldest traces                                          | `200`                                    |
 
 > Parameters specific to Decision Center REST API
 >| CLI Argument | Environment Variable | Description | Default |

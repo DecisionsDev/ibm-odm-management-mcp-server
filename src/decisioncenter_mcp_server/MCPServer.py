@@ -27,6 +27,7 @@ import sys
 from .Credentials import Credentials
 from .DecisionCenterManager import DecisionCenterManager
 from .DecisionCenterEndpoint import DecisionCenterEndpoint
+from .ToolTrace import DiskTraceStorage
 
 INSTRUCTIONS = """
 IBM ODM Decision Center MCP server
@@ -39,25 +40,35 @@ class MCPServer:
 
     def __init__(self, credentials: Credentials,
                  tags: list[str] = [], tools: list[str] = [], no_tools: list[str] = [],
-                 transport: Optional[str] = 'stdio', host: Optional[str] = '0.0.0.0', port: Optional[int] = 3000, path: Optional[str] = '/mcp'):
+                 trace: list[str] = [], traces_dir: str = None, traces_maxsize: int = 200,
+                 transport: Optional[str] = 'stdio', host: Optional[str] = '0.0.0.0', port: Optional[int] = 3000, path: Optional[str] = '/mcp',
+                ):
         # Get logger for this class
         self.logger = logging.getLogger(__name__)
         self.credentials = credentials
         self.tags: list[str] = tags
         self.tools: list[str] = tools       # explicit list of tools to publish
         self.no_tools: list[str] = no_tools # explicit list of tools to discard
+        self.trace          = trace
+        self.traces_dir     = traces_dir
+        self.traces_maxsize = traces_maxsize
         self.transport = transport
         self.host      = host
         self.port      = port
         self.path      = path
         self.repository: dict[str, DecisionCenterEndpoint] = {}
-        self.manager = DecisionCenterManager(credentials=credentials)
+
+        # Set up trace storage with configured parameters if tracing is enabled
+        # If traces_dir is None, DiskTraceStorage will use the default path in user's home directory
+        self.trace_recorder = DiskTraceStorage(trace_executions    = "EXECUTIONS_WITH_CONTENT" in self.trace or "EXECUTIONS" in self.trace,
+                                               verbose             = "EXECUTIONS_WITH_CONTENT" in self.trace,
+                                               trace_configuration = "CONFIGURATION"           in self.trace,
+                                               storage_dir = self.traces_dir, 
+                                               max_traces = self.traces_maxsize)
+
+        self.manager = DecisionCenterManager(credentials, self.trace_recorder)
 
     def update_repository(self):
-
-        if os.environ.get('TRACE_FILE'):
-            try: os.remove(os.environ.get('TRACE_FILE'))
-            except FileNotFoundError: pass # ignore
 
         # generate the MCP tools for Decision Center REST API
         if self.credentials.odm_url:
@@ -68,14 +79,7 @@ class MCPServer:
         if self.credentials.odm_res_url:
             self.repository = self.manager.generate_res_tools(self.manager.fetch_res_api_endpoints(), self.repository)
 
-        if os.environ.get('TRACE_FILE'):
-            import pprint
-            try:
-                with open(os.environ.get('TRACE_FILE'), 'a') as f:
-                    for endpoint in self.repository.values():
-                        pprint.pp(endpoint.tool, f)
-            except FileNotFoundError: pass # ignore
-
+        self.trace_recorder.save(self.repository)
 
     async def list_tools(self) -> list[types.Tool]:
         """
@@ -207,11 +211,17 @@ def init(args):
     init_logging(args.log_level)
     credentials = create_credentials(args)
     server = MCPServer(
-        credentials=credentials,
-        tags    =[tag.lower()  for tag  in args.tags]     if args.tags else [],
-        tools   =[tool.lower() for tool in args.tools]    if args.tools else [],
-        no_tools=[tool.lower() for tool in args.no_tools] if args.no_tools else [],
-        transport=args.transport, host=args.host, port=args.port, path=args.mount_path,
+        credentials     = credentials,
+        tags            = [tag.lower()  for tag  in args.tags]     if args.tags else [],
+        tools           = [tool.lower() for tool in args.tools]    if args.tools else [],
+        no_tools        = [tool.lower() for tool in args.no_tools] if args.no_tools else [],
+        trace           = args.trace if args.trace is not None else [],
+        traces_dir      = args.traces_dir, 
+        traces_maxsize  = args.traces_maxsize,
+        transport       = args.transport,
+        host            = args.host,
+        port            = args.port,
+        path            = args.mount_path,
     )
     server.update_repository()
     return server
@@ -251,7 +261,12 @@ def parse_arguments():
     parser.add_argument("--tags",              type=str, default=os.getenv("TAGS"),     nargs='+', help="List of Tags (eg. About Explore Build). Useful to keep only the tools whose tag is in the list. If this option is not specified, all the tools are published by the MCP server.")
     parser.add_argument("--tools",             type=str, default=os.getenv("TOOLS"),    nargs='+', help="Explicit list of tools to publish. All the other tools are filtered out. If this option is not specified, all the tools are published by the MCP server.")
     parser.add_argument("--no-tools",          type=str, default=os.getenv("NO_TOOLS"), nargs='+', help="Explicit list of tools to discard. All the other tools are published. Option ignored if the option --tools is provided. If this option is not specified, all the tools are published by the MCP server.")
-        
+
+    # Trace-related arguments
+    parser.add_argument("--trace",             type=str, default=os.getenv("TRACE"),    nargs='+', choices=["EXECUTIONS", "EXECUTIONS_WITH_CONTENT", "CONFIGURATION"], help="Specifies what to trace.")
+    parser.add_argument("--traces-dir",        type=str, default=os.getenv("TRACES_DIR"), help="Directory to store traces files (optional). If not provided, traces will be stored in the directory '~/.ibm-odm-management-mcp-server/traces'")
+    parser.add_argument("--traces-maxsize",    type=int, default=int(os.getenv("TRACES_MAXSIZE", "200")), help="Maximum number of traces to store (default: 200)")
+
     return parser.parse_args()
 
 def main():

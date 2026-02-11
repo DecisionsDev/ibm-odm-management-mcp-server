@@ -1,0 +1,161 @@
+# Copyright contributors to the IBM ODM MCP Server project
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from typing import Dict, Any, Optional, List
+import json
+import os
+import glob
+import logging
+import time
+import pprint
+from .DecisionCenterEndpoint import DecisionCenterEndpoint
+            
+class ToolExecutionTrace:
+    """
+    Class to store details about a tool execution or configuration
+    Captures all relevant information for tracing and debugging purposes.
+    """
+    
+    def __init__(
+        self, 
+        endpoint: str, 
+        inputs: Dict[str, Any],
+        http_code: str, 
+        results: Any,
+    ):
+        """
+        Initialize a new ToolExecutionTrace.
+        """
+        self.endpoint = endpoint
+        self.http_code = http_code
+        self.inputs = inputs
+        self.results = results
+        self.timestamp = f"{int(time.time()):x}"
+
+class DiskTraceStorage:
+    """
+    A storage mechanism for ToolExecutionTrace objects that saves them to disk.
+    Maintains a limited number of traces by removing the oldest ones when limit is reached.
+    """
+    
+    def __init__(self, trace_executions: bool, verbose: bool, trace_configuration: bool,
+                 storage_dir: Optional[str] = None, max_traces: int = 500):
+        """
+        Initialize the disk-based trace storage.
+        
+        Args:
+            storage_dir: Directory to store traces (defaults to ~/.ibm-odm-management-mcp-server/traces)
+            max_traces: Maximum number of traces to keep (defaults to 500)
+        """
+        if storage_dir is None:
+            home_dir    = os.path.expanduser("~")
+            storage_dir = os.path.join(home_dir, ".ibm-odm-management-mcp-server", "traces")
+        
+        self.storage_dir         = storage_dir
+        self.max_traces          = max_traces
+        self.logger              = logging.getLogger(__name__)
+        self.trace_executions    = trace_executions
+        self.verbose             = verbose
+        self.trace_configuration = trace_configuration
+
+        if trace_executions or trace_configuration:
+            self.logger.info("Tracing is enabled")
+
+        # Create the storage directory if it doesn't exist
+        os.makedirs(self.storage_dir, exist_ok=True)
+        
+        # Initialize index for faster access
+        self._initialize_index()
+    
+    def _initialize_index(self):
+        """Initialize an in-memory index of available traces."""
+        self.trace_files = list(filter(os.path.isfile, glob.glob(os.path.join(self.storage_dir, "*.json"))))
+        self.trace_files.sort(key=lambda x: os.path.getctime(x), reverse=True)   # sort by creation time (from the oldest to the newest)
+
+    def is_trace_configuration_enabled(self) -> bool:
+        return self.trace_configuration
+
+    def is_verbose(self) -> bool:
+        return self.verbose
+
+    def is_trace_executions_enabled(self) -> bool:
+        return self.trace_executions
+
+    def save(self, arg):
+        if isinstance(arg, ToolExecutionTrace): self.saveExecution(arg)
+        else:                                   self.saveConfiguration(arg)
+
+    def saveConfiguration(self, repository: dict[str, DecisionCenterEndpoint]):
+        """
+        save the tools configuration to storage.
+        """
+        if not self.is_trace_configuration_enabled():
+            return
+        # Save the traces to disk
+        file_path = os.path.join(self.storage_dir, "parsing.traces")
+        with open(file_path, 'w') as f:
+            for endpoint in repository.values():
+                tool = endpoint.tool
+                f.write(f'{tool.name:<37} {endpoint.method:<6} {endpoint.url}\n')
+                f.write(f'{tool.title}\n')
+                f.write(f'{tool.description}\n')
+                pprint.pp(endpoint.parameters, f)
+                pprint.pp(tool.inputSchema, f)
+                f.write('----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n')
+
+
+    def saveExecution(self, trace: ToolExecutionTrace):
+        """
+        save a trace to storage.
+        If the number of traces exceeds max_traces, the oldest traces will be removed.
+        
+        Args:
+            trace: The ToolExecutionTrace to save
+            
+        Returns:
+            str: The ID of the saved trace
+        """
+
+        def write(f, data):
+            if data is not None:
+                if isinstance(data, bytes):
+                    f.write(bytes(data, 'utf-8'))
+                elif isinstance(data, str):
+                    f.write(data)
+                else:
+                    f.write(json.dumps(data, indent=2))
+        
+        # Save the trace to disk
+        file_path = os.path.join(self.storage_dir, f"{trace.endpoint.tool.name}-{trace.http_code}-{trace.timestamp}.json")
+        with open(file_path, 'w') as f:
+            if self.is_verbose():
+                write(f, trace.inputs)
+                write(f, '\n')
+                write(f, trace.results)
+        
+        # Enforce the maximum number of traces
+        self._enforce_max_traces(file_path)
+    
+    def _enforce_max_traces(self, file_path:str = None):
+        """Remove oldest created traces file if the number exceeds max_traces."""
+        if file_path:
+            self.trace_files.append(file_path)
+
+        while len(self.trace_files) > self.max_traces:
+            file2remove_path = self.trace_files.pop(0)
+            try:
+                self.logger.debug(f"Removing traces file {file2remove_path}")
+                os.remove(file2remove_path)
+            except Exception as e:
+                self.logger.warning(f"Error removing traces file {file2remove_path}: {e}")
