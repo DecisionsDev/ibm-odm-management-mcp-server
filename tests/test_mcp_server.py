@@ -114,6 +114,7 @@ def test_parse_arguments(args, expected):  # Added 'expected' parameter
 def test_create_credentials_basic_auth():
     args = argparse.Namespace(
         url="http://test:9060/decisioncenter-api",
+        res_url=None,
         username="test_user",
         password="test_pass",
         zenapikey=None,
@@ -131,7 +132,8 @@ def test_create_credentials_basic_auth():
         mtls_key_password=None,
         console_auth_type=None,
         runtime_auth_type=None,
-        log_level="INFO"
+        log_level="INFO",
+        trace = None, traces_dir = None, traces_maxsize = 200,
     )
     credentials = create_credentials(args)
     assert credentials.odm_url == "http://test:9060/decisioncenter-api"
@@ -146,6 +148,7 @@ def test_create_credentials_basic_auth():
 def test_ssl_verification(verify_ssl, expected):
     args = argparse.Namespace(
         url="http://test:9060/decisioncenter-api",
+        res_url=None,
         username="test_user",
         password="test_pass",
         zenapikey=None,
@@ -163,7 +166,8 @@ def test_ssl_verification(verify_ssl, expected):
         mtls_key_password=None,
         console_auth_type=None,
         runtime_auth_type=None,
-        log_level="INFO"
+        log_level="INFO",
+        trace = None, traces_dir = None, traces_maxsize = 200,
     )
     credentials = create_credentials(args)
     assert credentials.verify_ssl == expected
@@ -184,6 +188,7 @@ def test_ssl_verification(verify_ssl, expected):
 def test_tags_verification(tags, expected_tags, tools, expected_tools, notools, expected_notools):
     args = argparse.Namespace(
         url="http://test:9060/decisioncenter-api",
+        res_url=None,
         username="test_user",
         password="test_pass",
         zenapikey=None,
@@ -202,6 +207,7 @@ def test_tags_verification(tags, expected_tags, tools, expected_tools, notools, 
         console_auth_type=None,
         runtime_auth_type=None,
         log_level="INFO",
+        trace = None, traces_dir = None, traces_maxsize = 200,
         tags=tags,
         tools=tools,
         no_tools=notools,

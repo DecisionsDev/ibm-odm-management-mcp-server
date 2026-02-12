@@ -16,7 +16,7 @@ import logging
 import json
 import mcp.types as types
 from .DecisionCenterEndpoint import DecisionCenterEndpoint
-from .ToolTrace import ToolExecutionTrace
+from .ToolTrace import ToolExecutionTrace, DiskTraceStorage
 import os.path
 from openapi_parser import parse
 import base64
@@ -77,7 +77,7 @@ class DecisionCenterManager:
         'webhooks', 'registerWebhook', 'registerWebhook_1', 'deleteWebhook',
     ]
 
-    def __init__(self, credentials, trace_recorder):
+    def __init__(self, credentials, trace_recorder : DiskTraceStorage = None):
         """
         :no-index:
         Initializes the DecisionCenterManager with the provided credentials and object to record traces
@@ -749,6 +749,10 @@ class DecisionCenterManager:
 
         return tools
 
+    def save_execution_trace(self, trace : ToolExecutionTrace):
+        if self.trace_recorder:
+            self.trace_recorder.save(trace)
+
     def _invokeDecisionCenterApi(self, endpoint, arguments:dict, method:str, url:str, params_query:dict = {}, params_body:dict = {}, params_file:dict = {}, raw_data = None, raw_data_type = None, run_locally:bool = True):
         """
         :no-index:
@@ -784,7 +788,7 @@ class DecisionCenterManager:
             self.logger.debug(f"Request successful, response content-type={content_type}")
 
             if 'application/json' in content_type:
-                self.trace_recorder.save(ToolExecutionTrace(endpoint, arguments, response.status_code, response.json()))
+                self.save_execution_trace(ToolExecutionTrace(endpoint, arguments, response.status_code, response.json()))
                 return response.json()
                 
             elif 'application/octet-stream' in content_type:
@@ -801,7 +805,7 @@ class DecisionCenterManager:
                         f.write(content)
                         f.close()
                     result = {'filename': f.name, 'url': f'file://{f.name}'}
-                    self.trace_recorder.save(ToolExecutionTrace(endpoint, arguments, response.status_code, result))
+                    self.save_execution_trace(ToolExecutionTrace(endpoint, arguments, response.status_code, result))
                     return result
                 
                 else:
@@ -813,17 +817,17 @@ class DecisionCenterManager:
 
                     base64str=base64.b64encode(content).decode()
                     result = {'mimeType': content_type, 'filename': filename, 'data': base64str}
-                    self.trace_recorder.save(ToolExecutionTrace(endpoint, arguments, response.status_code, result))
+                    self.save_execution_trace(ToolExecutionTrace(endpoint, arguments, response.status_code, result))
                     return result
 
             else:
-                self.trace_recorder.save(ToolExecutionTrace(endpoint, arguments, response.status_code, response.text))
+                self.save_execution_trace(ToolExecutionTrace(endpoint, arguments, response.status_code, response.text))
                 return response.text
         else:
             err = response.content.decode('utf-8')
             if err == '':
                 err = response.reason
-            self.trace_recorder.save(ToolExecutionTrace(endpoint, arguments, response.status_code, err))
+            self.save_execution_trace(ToolExecutionTrace(endpoint, arguments, response.status_code, err))
             self.logger.error(f"Request error, status: {response.status_code}, error: {err}")
             raise Exception(err)
 
