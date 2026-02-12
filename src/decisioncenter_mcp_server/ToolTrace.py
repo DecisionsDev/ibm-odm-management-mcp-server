@@ -18,7 +18,6 @@ import os
 import glob
 import logging
 import time
-import pprint
 from .DecisionCenterEndpoint import DecisionCenterEndpoint
             
 class ToolExecutionTrace:
@@ -50,13 +49,13 @@ class DiskTraceStorage:
     """
     
     def __init__(self, trace_executions: bool, verbose: bool, trace_configuration: bool,
-                 storage_dir: Optional[str] = None, max_traces: int = 500):
+                 storage_dir: Optional[str] = None, max_traces: int = 200):
         """
         Initialize the disk-based trace storage.
         
         Args:
             storage_dir: Directory to store traces (defaults to ~/.ibm-odm-management-mcp-server/traces)
-            max_traces: Maximum number of traces to keep (defaults to 500)
+            max_traces: Maximum number of traces to keep (defaults to 200)
         """
         if storage_dir is None:
             home_dir    = os.path.expanduser("~")
@@ -81,16 +80,9 @@ class DiskTraceStorage:
     def _initialize_index(self):
         """Initialize an in-memory index of available traces."""
         self.trace_files = list(filter(os.path.isfile, glob.glob(os.path.join(self.storage_dir, "*.json"))))
+        if 'parsing.json' in self.trace_files:
+            self.trace_files.remove('parsing.json')
         self.trace_files.sort(key=lambda x: os.path.getctime(x), reverse=True)   # sort by creation time (from the oldest to the newest)
-
-    def is_trace_configuration_enabled(self) -> bool:
-        return self.trace_configuration
-
-    def is_verbose(self) -> bool:
-        return self.verbose
-
-    def is_trace_executions_enabled(self) -> bool:
-        return self.trace_executions
 
     def save(self, arg):
         if isinstance(arg, ToolExecutionTrace): self.saveExecution(arg)
@@ -100,20 +92,18 @@ class DiskTraceStorage:
         """
         save the tools configuration to storage.
         """
-        if not self.is_trace_configuration_enabled():
-            return
-        # Save the traces to disk
-        file_path = os.path.join(self.storage_dir, "parsing.traces")
-        with open(file_path, 'w') as f:
-            for endpoint in repository.values():
-                tool = endpoint.tool
-                f.write(f'{tool.name:<37} {endpoint.method:<6} {endpoint.url}\n')
-                f.write(f'{tool.title}\n')
-                f.write(f'{tool.description}\n')
-                pprint.pp(endpoint.parameters, f)
-                pprint.pp(tool.inputSchema, f)
-                f.write('----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n')
+        def to_dict(obj):
+            if hasattr(obj, "__dict__"):
+                return to_dict(vars(obj))
+            if isinstance(obj, dict):
+                return dict([(k, to_dict(v)) for k, v in obj.items()])
+            if isinstance(obj, list):
+                return [to_dict(el) for el in obj]
+            return obj  # Default for primitive types
 
+        if self.trace_configuration:
+            with open(os.path.join(self.storage_dir, "parsing.json"), 'w') as f:
+                f.write(json.dumps(to_dict(repository), indent=2))
 
     def saveExecution(self, trace: ToolExecutionTrace):
         """
@@ -126,7 +116,6 @@ class DiskTraceStorage:
         Returns:
             str: The ID of the saved trace
         """
-
         def write(f, data):
             if data is not None:
                 if isinstance(data, bytes):
@@ -139,7 +128,7 @@ class DiskTraceStorage:
         # Save the trace to disk
         file_path = os.path.join(self.storage_dir, f"{trace.endpoint.tool.name}-{trace.http_code}-{trace.timestamp}.json")
         with open(file_path, 'w') as f:
-            if self.is_verbose():
+            if self.verbose:
                 write(f, trace.inputs)
                 write(f, '\n')
                 write(f, trace.results)
