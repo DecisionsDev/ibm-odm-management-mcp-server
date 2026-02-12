@@ -13,11 +13,9 @@
 # limitations under the License.
 
 from typing import Optional
-from mcp.server.models import InitializationOptions
 import mcp.types as types
 from mcp.server.fastmcp import FastMCP
 from pydantic import AnyUrl
-import mcp.server.stdio
 import logging
 import json
 import argparse

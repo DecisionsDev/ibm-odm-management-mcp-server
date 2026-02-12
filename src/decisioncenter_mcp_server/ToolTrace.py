@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 import json
 import os
 import glob
