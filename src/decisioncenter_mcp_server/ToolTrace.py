@@ -82,7 +82,7 @@ class DiskTraceStorage:
         self.trace_files = list(filter(os.path.isfile, glob.glob(os.path.join(self.storage_dir, "*.json"))))
         if 'parsing.json' in self.trace_files:
             self.trace_files.remove('parsing.json')
-        self.trace_files.sort(key=lambda x: os.path.getctime(x), reverse=True)   # sort by creation time (from the oldest to the newest)
+        self.trace_files.sort(key=lambda x: os.path.getctime(x))   # sort by creation time (from the oldest to the newest)
 
     def save(self, arg):
         if isinstance(arg, ToolExecutionTrace): self.saveExecution(arg)
@@ -132,6 +132,7 @@ class DiskTraceStorage:
                 write(f, trace.inputs)
                 write(f, '\n')
                 write(f, trace.results)
+            self.logger.debug(f"Saved traces file {file_path}")
         
         # Enforce the maximum number of traces
         self._enforce_max_traces(file_path)
@@ -144,7 +145,7 @@ class DiskTraceStorage:
         while len(self.trace_files) > self.max_traces:
             file2remove_path = self.trace_files.pop(0)
             try:
-                self.logger.debug(f"Removing traces file {file2remove_path}")
                 os.remove(file2remove_path)
+                self.logger.debug(f"Removed traces file {file2remove_path}")
             except Exception as e:
                 self.logger.warning(f"Error removing traces file {file2remove_path}: {e}")

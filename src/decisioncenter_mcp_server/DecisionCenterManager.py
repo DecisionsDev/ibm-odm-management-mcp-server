@@ -429,7 +429,7 @@ class DecisionCenterManager:
 
         def add_body_params(input_schema, parameters, dict_representations, xmlRepresentationGlobalList, xmlRepresentation):
 
-            def build_inputSchema(input_schema, parameters, key, value):
+            def build_inputSchema(input_schema, parameters, key, value, hierarchy : list = []):
                 # special parameters (found in jsonRulesetIn and jsonRuleAppIn)
                 if key == 'archive':
                     if len(value) > 1000:
@@ -440,15 +440,26 @@ class DecisionCenterManager:
                     param_format = None
 
                 # add the parameter in 'parameters'
-                rootLevel = (len(input_schema) == 0)
-                if key is not None and parameters is not None:
-                    parameters[key] = {'in':     'body/json'} | \
-                                     ({'format': param_format} if param_format is not None else {})
+                rootLevel = (len(hierarchy) == 0)
+                if key is not None:
+                    if rootLevel:
+                        parameters[key] = {'in':    'body/json'} | \
+                                         ({'format': param_format} if param_format is not None else {})
+                    elif param_format is not None:
+                        key_hierarchy = hierarchy[1:]
+                        key_hierarchy.append(key)
+                        root_key = hierarchy[0]
+                        parameters[root_key] = {'in':        'body/json',
+                                                'format':    param_format,
+                                                'hierarchy': key_hierarchy}
 
                 # add the parameter in 'input_schema'
                 if key is not None:
                     input_schema[key] = {}
                     input_schema = input_schema[key]
+                    if isinstance(value, dict) or isinstance(value, list):
+                        hierarchy = hierarchy.copy()
+                        hierarchy.append(key)
 
                 if isinstance(value, str):
                     input_schema |= {'type': 'string',
@@ -461,7 +472,7 @@ class DecisionCenterManager:
                     for item_key, item_value in value.items():
                         if item_key not in ['displayName', 'description']:
                             input_schema.get('required').append(item_key)
-                        build_inputSchema(input_schema['properties'], parameters if rootLevel else None, item_key, item_value)
+                        build_inputSchema(input_schema['properties'], parameters, item_key, item_value, hierarchy)
 
                 if isinstance(value, list):
                     dict_element = value[0]
@@ -488,7 +499,7 @@ class DecisionCenterManager:
                         input_schema |= {'type': 'array',
                                          'items': {}}
                         for element in value:
-                            build_inputSchema(input_schema['items'], parameters if rootLevel else None, None, element)
+                            build_inputSchema(input_schema['items'], parameters, None, element, hierarchy)
 
             href = xmlRepresentation.attrib.get('href')
             if href:
@@ -818,6 +829,19 @@ class DecisionCenterManager:
 
     def invokeDecisionCenterApi(self, endpoint:DecisionCenterEndpoint, arguments:dict[str, str], run_locally:bool):
 
+        def replace_filepath_by_content(value, hierarchy):
+            if isinstance(value, list):
+                replace_filepath_by_content(value[0], hierarchy)
+            elif isinstance(value, dict):
+                if len(hierarchy) > 0:
+                    key = hierarchy[0]
+                    if key in value:
+                        value[key] = replace_filepath_by_content(value[key], hierarchy[1:])
+            elif os.path.isfile(value):
+                with open(value, 'rb') as f:
+                    value = base64.b64encode(f.read()).decode()
+            return value
+
         params_query = {}
         params_body  = {}
         params_file  = {}
@@ -846,17 +870,13 @@ class DecisionCenterManager:
                     params_file[param] = open(value,'rb') if os.path.isfile(value) else value
 
                 elif props['in'] == 'body/json' and props.get('format', '') == 'binary':
-                    if os.path.isfile(value):
-                        with open(value, 'rb') as f:
-                            params_body[param] = base64.b64encode(f.read()).decode()
-                    else:
-                        params_body[param] = value
-
-                elif props['in'] == 'body/jsonarray':
-                    params_body = value
+                    params_body[param] = replace_filepath_by_content(value, props.get('hierarchy'))
 
                 elif props['in'] == 'body/json':
                     params_body[param] = value
+
+                elif props['in'] == 'body/jsonarray':
+                    params_body = value
 
                 elif props['in'] == 'body/plain':
                     raw_data_type = 'text/plain'
