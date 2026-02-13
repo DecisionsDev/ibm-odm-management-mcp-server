@@ -77,6 +77,24 @@ class DecisionCenterManager:
         'webhooks', 'registerWebhook', 'registerWebhook_1', 'deleteWebhook',
     ]
 
+    resDeployer_tools = [
+        # ruleapps
+        'addRuleApp', 'addRuleAppProperty', 'deleteRuleApp', 'deleteRuleAppProperty', 'deployRuleAppArchive', 'updateRuleApp', 'updateRuleAppProperty', 
+        'addRuleset', 'addRulesetProperty', 'deleteRuleset', 'deleteRulesetProperty', 'deployRulesetArchive', 'updateRuleset', 'updateRulesetProperty', 'updateRulesetArchive', 
+
+        # decisiontraces
+        'deleteDecisionTrace', 'deleteDecisionTraces', 'deleteDecisionTracesByIds', 
+
+        # libraries
+        'deleteLibrary', 'addLibrary', 'deleteUnusedLibraries', 'updateLibrary', 
+
+        # xoms
+        'deleteResource', 'deleteUnusedXomResources', 'deployResource', 
+
+        # executionunits
+        'resetRulesetStatistics'
+    ]
+
     def __init__(self, credentials, trace_recorder : DiskTraceStorage = None):
         """
         :no-index:
@@ -96,7 +114,7 @@ class DecisionCenterManager:
         self.credentials = credentials
         self.trace_recorder = trace_recorder
 
-    def isAdmin(self, uri:str, session):
+    def isDcAdmin(self, uri:str, session):
         try:
             response = session.get(uri + '/v1/users/fake-user',
                                    headers=session.headers, 
@@ -115,8 +133,43 @@ class DecisionCenterManager:
             self.logger.info("Assuming connected without admin role")
             return False
             
-    def checkRole(self, uri:str, session):
-        self.credentials.isAdmin = self.isAdmin(uri, session)
+    def checkDcRole(self, uri:str, session):
+        self.credentials.isDcAdmin = self.isDcAdmin(uri, session)
+
+    def isResDeployer(self, uri:str, session):
+        try:
+            response = session.delete(uri + '/apiauth/v1/executionunits/statistics/fake-ruleapp/99999.9/fake-ruleset/99999.9',
+                                      headers=session.headers, 
+                                      verify=self.credentials.cacert)
+            if response.status_code == 403:
+                self.logger.info("Connected without the resDeployer role")
+                return False
+            elif response.status_code in [200]:
+                self.logger.info("Connected with the resDeployer role")
+                return True
+            else:
+                # unexpected (bad credentials?)
+                self.logger.warning("Unexpected HTTP response code %s while checking if the credentials grant the resDeployer role: %s", response.status_code, response.text)
+        except Exception as e:
+            self.logger.warning("Failed to check if the credentials grant the resDeployer role: %s", e)
+
+        self.logger.info("Assuming connected without the resDeployer role")
+        return False
+            
+    def checkResRole(self, uri:str, session):
+        self.credentials.isResDeployer = self.isResDeployer(uri, session)
+
+    def publish_tool(self, tool_name, tool_tags : list, tools_to_publish, tools_to_ignore, tags_to_publish):
+        if len(tools_to_publish) > 0 and tool_name.lower() in tools_to_publish:
+            return True # publish as this tool is explicitly specified
+
+        if len(tools_to_ignore) > 0 and tool_name.lower() in tools_to_ignore:
+            return False # do not publish this tool as it is in the list of tools to be discarded/not published
+
+        if len(tags_to_publish) > 0 and len( [tag for tag in tool_tags if tag.lower() in tags_to_publish] ) == 0:
+            return False # do not publish this tool as it does not belong to a category to publish
+
+        return True
 
     def fix_openapi(self, json):
         def fix_bool_literals(d: dict):
@@ -193,7 +246,7 @@ class DecisionCenterManager:
 
                 # check if the credentials grant special roles (admin, installer)
                 # (useful when filtering out the tools requiring a special role)
-                self.checkRole(uri, session)
+                self.checkDcRole(uri, session)
 
                 uri += '/v3/api-docs'
                 self.logger.info("Parsing " + uri)
@@ -233,6 +286,8 @@ class DecisionCenterManager:
 
                         self.logger.info("Decision Center openapi parsing successful")
                         return endpoints
+                elif response.status_code == 401:
+                    self.logger.error("Wrong credentials. Therefore no access to Decision Center tools.")
                 else:
                     self.logger.error("Request failed with status code: %s", response.status_code)
                     self.logger.error("Response: %s", response.text)
@@ -243,13 +298,12 @@ class DecisionCenterManager:
             raise(e)
 
     # returns the openapi
-    # and sets self.credentials.isAdmin to True is the credentials grants the admin Role
+    # and sets self.credentials.isDcAdmin to True if the credentials grant the admin Role
     def fetch_endpoints(self):
         return self._fetch_endpoints(uri = self.credentials.odm_url)
 
 
-    def generate_tools_format(self, endpoints, tags: list[str] = [], tools_to_publish: list[str] = [], tools_to_ignore: list[str] = [],
-                              isAdmin: bool = False) -> dict[str, types.Tool]:
+    def generate_tools_format(self, endpoints, tags_to_publish: list[str] = [], tools_to_publish: list[str] = [], tools_to_ignore: list[str] = [], isDcAdmin: bool = False) -> dict[str, types.Tool]:
         """
         :no-index:
         Convert the endpoints to the tools format
@@ -308,19 +362,13 @@ class DecisionCenterManager:
         tools : dict[str, DecisionCenterEndpoint] = {}
         base_url = self.credentials.odm_url
 
+        if endpoints is None:
+            return tools
+        
         for path in endpoints.paths:
             for info in path.operations:
 
                 try:
-                    # optionally filter out tools based on their tag
-                    if len(tags) > 0:
-                        found = False
-                        for tag in info.tags:
-                            if tag.lower() in tags:
-                                found = True
-                        if not found:
-                            continue    # ignore this tool
-
                     path_url     = path.url
                     summary      = info.summary
                     description  = info.description
@@ -328,15 +376,12 @@ class DecisionCenterManager:
                     operation_id = info.operation_id
                     tool_name    = operation_id
 
-                    # filter out the tools that requires the Admin role if the credentials used do not grant this role
-                    if not isAdmin and tool_name in DecisionCenterManager.admin_tools:
+                    # filter out the tools that require the Admin role if the credentials used do not grant this role
+                    if not isDcAdmin and tool_name in DecisionCenterManager.admin_tools:
                         continue
 
-                    # optionally ignore tools based on their name
-                    if   len(tools_to_publish) > 0 and tool_name.lower() not in tools_to_publish:
-                        continue # ignore this tool as it is not in the list of tools to be published
-                    elif len(tools_to_ignore) > 0  and tool_name.lower()     in tools_to_ignore:
-                        continue # ignore this tool as it is in the list of tools to be discarded/not published
+                    if not self.publish_tool(tool_name, info.tags, tools_to_publish, tools_to_ignore, tags_to_publish):
+                        continue
 
                     input_schema = {'type': 'object', 'properties': {}, 'required': []}
                     parameters   = {}
@@ -378,7 +423,6 @@ class DecisionCenterManager:
         self.logger.info("Successfully generated the MCP tools for the Decision Center REST API")
         return tools
 
-
     def _fetch_res_api_endpoints(self, uri:str):
         """
         :no-index:
@@ -390,31 +434,44 @@ class DecisionCenterManager:
         try:
             session = self.credentials.get_session()
 
-            uri += '/apiauth/v1/DecisionServer.wadl'
-            self.logger.info("Retrieving " + uri)
-            response = session.get(uri, 
+            wadl_uri = uri + '/apiauth/v1/DecisionServer.wadl'
+            self.logger.info("Retrieving " + wadl_uri)
+            response = session.get(wadl_uri, 
                                    headers=session.headers, 
                                    verify=self.credentials.cacert)
-            self.credentials.cleanup()
-
+            
             # Check if the request was successful
             if response.status_code == 200:
                 self.logger.info("successfully retrieved Decision Server REST API WADL")
+
+                # at this point, we know the credentials grant the resMonitor role (giving access to most RES tools)
+                # check if the credentials also grant the resDeployer role (giving access to the restricted RES tools)
+                self.checkResRole(uri, session)
+
                 return response.text
             else:
-                self.logger.error("Request failed with status code: %s", response.status_code)
-                self.logger.error("Response: %s", response.text)
-                raise(Exception(response.text))
+                if response.status_code == 403:
+                    self.logger.error("Connected without the resMonitor role. Therefore no access to the RES tools.")
+                elif response.status_code == 401:
+                    self.logger.error("Wrong credentials. Therefore no access to the RES tools.")
+                else:
+                    self.logger.error("Request failed with status code: %s", response.status_code)
+                    self.logger.error("Response: %s", response.text)
+                    raise(Exception(response.text))
             
         except Exception as e:
             self.logger.error("An error occurred: %s", e)
             raise(e)
 
+        finally:
+            self.credentials.cleanup()
+
     # returns the WADL description of the RES console REST API
+    # and sets self.credentials.isResDeployer to True if the credentials grant the resDeployer Role
     def fetch_res_api_endpoints(self):
         return self._fetch_res_api_endpoints(uri = self.credentials.odm_res_url)
 
-    def generate_res_tools(self, wadl : str, tools : dict[str, DecisionCenterEndpoint]):
+    def generate_res_tools(self, wadl : str, tools : dict[str, DecisionCenterEndpoint], tags_to_publish: list[str] = [], tools_to_publish: list[str] = [], tools_to_ignore: list[str] = [], isResDeployer: bool = False) -> dict[str, types.Tool]:
         """
         :no-index:
             Converts the WADL description into a list of MCP tools
@@ -595,11 +652,11 @@ class DecisionCenterManager:
 
             if id == 'RULESET_PROPERTY_NAME':
                 enum +=      ['agent.enabled',
-                            'agent.name',
-                            'agent.description']
+                              'agent.name',
+                              'agent.description']
                 enumNames += ['Controls whether the ruleset is exposed as a MCP tool.',
-                            'Customizes the name of the MCP tool as exposed to AI assistants.',
-                            'Overrides the default description of the ruleset when exposed as a MCP tool.']
+                              'Customizes the name of the MCP tool as exposed to AI assistants.',
+                              'Overrides the default description of the ruleset when exposed as a MCP tool.']
 
             return  ({'id':        id}         if id else {}) | \
                     ({'fixed':     fixed}      if fixed else {}) | \
@@ -618,20 +675,24 @@ class DecisionCenterManager:
                 dict_params[param.get('id')] = param
 
         def parse_resources(tools, dict_params, dict_representations, xmlRepresentationGlobalList,
-                            xmlResource, path, base_url):
+                            xmlResource, path, base_url,
+                            tools_to_publish: list[str] = [], tools_to_ignore: list[str] = [], isResDeployer: bool = False):
             path += '/'
             path += xmlResource.attrib.get('path')
+
+            tool_tag = re.search('[^/]+', path).group()
 
             for xmlSubelement in xmlResource.iterfind('./*'):
 
                 if xmlSubelement.tag == '{http://wadl.dev.java.net/2009/02}resource':
                     xmlResource = xmlSubelement
                     parse_resources(tools, dict_params, dict_representations, xmlRepresentationGlobalList,
-                                    xmlResource, path, base_url)
+                                    xmlResource, path, base_url,
+                                    tools_to_publish, tools_to_ignore, isResDeployer)
 
                 elif xmlSubelement.tag == '{http://wadl.dev.java.net/2009/02}method':
                     xmlMethod = xmlSubelement
-                
+
                     http_method              = xmlMethod.attrib.get('name')
                     xmlDoc                   = xmlMethod.find('{http://wadl.dev.java.net/2009/02}doc')
                     xmlRequest               = xmlMethod.find('{http://wadl.dev.java.net/2009/02}request')
@@ -640,7 +701,14 @@ class DecisionCenterManager:
                     xmlParamList             = xmlRequest.findall('{http://wadl.dev.java.net/2009/02}param')
                     xmlRepresentationSubList = xmlRequest.findall('{http://wadl.dev.java.net/2009/02}representation')
 
-                    # ignore this endpoint (not displayed in the UI and identical to /utilities/consoleinfo)
+                    # filter out the tools that require the resDeployer role if the credentials used do not grant this role
+                    if not isResDeployer and tool_name in DecisionCenterManager.resDeployer_tools:
+                        continue
+
+                    if not self.publish_tool(tool_name, [tool_tag], tools_to_publish, tools_to_ignore, tags_to_publish):
+                        continue
+
+                    # always ignore this endpoint (not displayed in the UI and identical to /utilities/consoleinfo)
                     if tool_name == 'registerApplication' and path == '/configuration' and http_method == 'GET':
                         continue
 
@@ -728,6 +796,9 @@ class DecisionCenterManager:
                                                               parameters   = parameters,
                                                               input_schema = input_schema)
 
+        if wadl is None:
+            return tools
+
         xmlRoot      = xml.etree.ElementTree.fromstring(wadl)
         xmlResources = xmlRoot.find('{http://wadl.dev.java.net/2009/02}resources')
         base_url     = xmlResources.attrib.get('base')
@@ -743,7 +814,9 @@ class DecisionCenterManager:
             parse_params(dict_params, xmlParam)
 
         for xmlResource in xmlResourceList:
-            parse_resources(tools, dict_params, dict_representations, xmlRepresentationGlobalList, xmlResource, '', base_url)
+            parse_resources(tools, dict_params, dict_representations, xmlRepresentationGlobalList, 
+                            xmlResource, '', base_url,
+                            tools_to_publish, tools_to_ignore, isResDeployer)
 
         self.logger.info("Successfully generated the MCP tools for the RES Console REST API")
 

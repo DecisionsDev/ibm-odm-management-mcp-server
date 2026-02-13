@@ -69,7 +69,8 @@ class Credentials:
         else:
             self.cacert = None
 
-        self.isAdmin = False
+        self.isDcAdmin = False
+        self.isResDeployer = False
         self.username = username
         self.password = password
         self.token_url = token_url

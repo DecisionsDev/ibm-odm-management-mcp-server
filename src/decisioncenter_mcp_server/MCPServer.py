@@ -70,12 +70,13 @@ class MCPServer:
 
         # generate the MCP tools for Decision Center REST API
         if self.credentials.odm_url:
-            endpoints       = self.manager.fetch_endpoints()
-            self.repository = self.manager.generate_tools_format(endpoints, self.tags, self.tools, self.no_tools, self.credentials.isAdmin)
+            self.repository = self.manager.generate_tools_format(self.manager.fetch_endpoints(), 
+                                                                 self.tags, self.tools, self.no_tools, self.credentials.isDcAdmin)
 
         # generate the MCP tools for Decision Server console REST API (aka RES console)
         if self.credentials.odm_res_url:
-            self.repository = self.manager.generate_res_tools(self.manager.fetch_res_api_endpoints(), self.repository)
+            self.repository = self.manager.generate_res_tools(self.manager.fetch_res_api_endpoints(), self.repository,
+                                                              self.tags, self.tools, self.no_tools, self.credentials.isResDeployer)
 
         self.trace_recorder.save(self.repository)
 
