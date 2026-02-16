@@ -221,6 +221,17 @@ You can configure the MCP server for clients like Claude Desktop or Cursor AI us
 - Use environment variables for secrets.
 - You can mix both methods if needed. CLI arguments override environment variables.
 
+Here are some examples for different use cases and type of deployment (dev/test or production) and environments (CloudPak, ...):
+- [Example 1: Basic Auth](#example-1-basic-auth)
+- [Example 2: Basic Auth for ODM for Developers](#example-2-basic-auth-for-odm-for-developers)
+- [Example 3: For Cloud Pak (Zen API Key)](#example-3-for-cloud-pak-zen-api-key)
+- [Example 4: OpenID Connect](#example-4-openid-connect)
+- [Example 5: mTLS (Mutual TLS) Authentication](#example-5-mtls-mutual-tls-authentication)
+- [Example 6: Tool filtering](#example-6-tool-filtering)
+- [Example 7: Role-based tool filtering](#example-7-role-based-tool-filtering)
+
+### Example 1: Basic Auth
+
 The example below shows a typical use-case where the sensitive information (here the password) is passed as an environment variable (so that it does not show in the arguments of the process), and the other parameters are passed as CLI arguments:
 
 ```json
@@ -244,9 +255,7 @@ The example below shows a typical use-case where the sensitive information (here
 }
 ```
 
-The examples below demonstrate various use cases depending on the type of deployment (dev/test or production), and environments (CloudPak, ...).
-
-### Example 1: Basic Auth for Local Development
+### Example 2: Basic Auth for ODM for Developers
 
 For local development and testing, use the Basic Auth.
 
@@ -263,7 +272,7 @@ For local development and testing, use the Basic Auth.
 }
 ```
 
-### Example 2: For Cloud Pak (Zen API Key)
+### Example 3: For Cloud Pak (Zen API Key)
 
 For production deployments on the Cloud Pak, use the Zen API Key.
 
@@ -281,7 +290,7 @@ For production deployments on the Cloud Pak, use the Zen API Key.
 }
 ```
 
-### Example 3: OpenID Connect
+### Example 4: OpenID Connect
 
 For production deployments on other environments than the Cloud Pak, you may use OpenID Connect if ODM is configured to use it.
 
@@ -324,7 +333,7 @@ Two authentication variants are possible:
 }
 ```
 
-### Example 4: mTLS (Mutual TLS) Authentication
+### Example 5: mTLS (Mutual TLS) Authentication
 
 The Management MCP Server also supports mTLS (mutual TLS) authentication, which secure the SSL connection further.
 
@@ -346,7 +355,7 @@ mTLS must be complemented with another means of authentication/authorization for
 }
 ```
 
-### Example 5: Tool filtering
+### Example 6: Tool filtering
 
 You may want to have only a subset of tools published.
 The three options below enable to achieve this.
@@ -609,7 +618,7 @@ Here is the list of the tools with their `operationId` and tag in ODM 9.5.0.1:
     | getDiagnosticById                    | Returns the diagnostics for a specified element ID.                                  | utilities      | resMonitor  |
     | getVersion                           | Returns the Rule Execution Server version information.                               | utilities      | resMonitor  |
 
-### Example 6: Role-based tool filtering
+### Example 7: Role-based tool filtering
 
 Some tools are restricted to users with specific roles. Those tools are automatically filtered out when the management MCP server uses credentials that do not grant the required role(s).
 Please refer to the 'role' column in the table above to see the role required by each tool.
