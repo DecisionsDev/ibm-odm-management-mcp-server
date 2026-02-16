@@ -71,14 +71,18 @@ class DiskTraceStorage:
         if trace_executions or trace_configuration:
             self.logger.info("Tracing is enabled")
 
-        # Create the storage directory if it doesn't exist
-        os.makedirs(self.storage_dir, exist_ok=True)
-        
-        # Initialize index for faster access
-        self._initialize_index()
+        if self._exists_storage_dir():
+            self._init_trace_files()
     
-    def _initialize_index(self):
-        """Initialize an in-memory index of available traces."""
+    def _exists_storage_dir(self):
+        if not os.path.isdir(self.storage_dir):
+            os.makedirs(self.storage_dir, exist_ok=True)
+            self.trace_files = []
+            return False
+        return True
+        
+    def _init_trace_files(self):
+        # Initialize an in-memory index of available traces
         self.trace_files = list(filter(os.path.isfile, glob.glob(os.path.join(self.storage_dir, "*.json"))))
         if 'parsing.json' in self.trace_files:
             self.trace_files.remove('parsing.json')
@@ -100,6 +104,9 @@ class DiskTraceStorage:
             if isinstance(obj, list):
                 return [to_dict(el) for el in obj]
             return obj  # Default for primitive types
+
+        # Make sure the storage directory still exists
+        self._exists_storage_dir()
 
         if self.trace_configuration:
             with open(os.path.join(self.storage_dir, "parsing.json"), 'w') as f:
@@ -125,6 +132,9 @@ class DiskTraceStorage:
                 else:
                     f.write(json.dumps(data, indent=2))
         
+        # Make sure the storage directory still exists
+        self._exists_storage_dir()
+
         # Save the trace to disk
         file_path = os.path.join(self.storage_dir, f"{trace.endpoint.tool.name}-{trace.http_code}-{trace.timestamp}.json")
         with open(file_path, 'w') as f:
