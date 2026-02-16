@@ -57,7 +57,7 @@ def add_param(input_schema, parameters,
 class DecisionCenterManager:
 
     # tools that require the admin role when invoking them
-    admin_tools = [
+    rtsAdministrator_tools = [
         # DBAdmin
         'launchCleanup', 'stopCleanup',
         'executeSQLScript', 'generateMigrationRole', 'generateMigrationScript', 'generateExtensionModelScript', 'uploadExtensionModelFiles', 'uploadMessagesFile', 'getModelExtensionFiles', 'setPersistenceLocale',
@@ -377,7 +377,7 @@ class DecisionCenterManager:
                     tool_name    = operation_id
 
                     # filter out the tools that require the Admin role if the credentials used do not grant this role
-                    if not isDcAdmin and tool_name in DecisionCenterManager.admin_tools:
+                    if not isDcAdmin and tool_name in DecisionCenterManager.rtsAdministrator_tools:
                         continue
 
                     if not self.publish_tool(tool_name, info.tags, tools_to_publish, tools_to_ignore, tags_to_publish):
@@ -674,6 +674,18 @@ class DecisionCenterManager:
             if param is not None:
                 dict_params[param.get('id')] = param
 
+        def Accept_header(xmlResponseRepresentationList):
+            for xmlRepresentation in xmlResponseRepresentationList:
+                href = xmlRepresentation.attrib.get('href')
+                if href:
+                    if href[0:5] == '#json':
+                        return [{'Accept': 'application/json'}]
+                else:
+                    mediaType = xmlRepresentation.attrib.get('mediaType')
+                    if mediaType == 'application/json':
+                        return [{'Accept': 'application/json'}]
+            return []
+
         def parse_resources(tools, dict_params, dict_representations, xmlRepresentationGlobalList,
                             xmlResource, path, base_url,
                             tools_to_publish: list[str] = [], tools_to_ignore: list[str] = [], isResDeployer: bool = False):
@@ -696,10 +708,12 @@ class DecisionCenterManager:
                     http_method              = xmlMethod.attrib.get('name')
                     xmlDoc                   = xmlMethod.find('{http://wadl.dev.java.net/2009/02}doc')
                     xmlRequest               = xmlMethod.find('{http://wadl.dev.java.net/2009/02}request')
+                    xmlResponse              = xmlMethod.find('{http://wadl.dev.java.net/2009/02}response')
                     tool_name                = xmlDoc.attrib.get('title')
                     description              = xmlDoc.text
                     xmlParamList             = xmlRequest.findall('{http://wadl.dev.java.net/2009/02}param')
-                    xmlRepresentationSubList = xmlRequest.findall('{http://wadl.dev.java.net/2009/02}representation')
+                    xmlRequestRepresentationList  = xmlRequest.findall('{http://wadl.dev.java.net/2009/02}representation')
+                    xmlResponseRepresentationList = xmlResponse.findall('{http://wadl.dev.java.net/2009/02}representation')
 
                     # filter out the tools that require the resDeployer role if the credentials used do not grant this role
                     if not isResDeployer and tool_name in DecisionCenterManager.resDeployer_tools:
@@ -724,11 +738,11 @@ class DecisionCenterManager:
                         sentences = description.split('. ')
                         summary = sentences[0] if len(sentences)>1 else description
 
-                    input_schema = {} if len(xmlRepresentationSubList) > 0 else {'type': 'object', 'properties': {}, 'required': []}
+                    input_schema = {} if len(xmlRequestRepresentationList) > 0 else {'type': 'object', 'properties': {}, 'required': []}
                     parameters   = {}
 
                     # body parameter(s)
-                    for xmlRepresentation in xmlRepresentationSubList:
+                    for xmlRepresentation in xmlRequestRepresentationList:
                         add_body_params(input_schema, parameters, dict_representations, xmlRepresentationGlobalList, xmlRepresentation)
 
                     # other parameters (path, query)
@@ -802,7 +816,8 @@ class DecisionCenterManager:
                                                               method       = http_method,
                                                               url          = base_url + path,
                                                               parameters   = parameters,
-                                                              input_schema = input_schema)
+                                                              input_schema = input_schema,
+                                                              headers      = Accept_header(xmlResponseRepresentationList))
 
         if wadl is None:
             return tools
@@ -852,7 +867,8 @@ class DecisionCenterManager:
         session = self.credentials.get_session()
         if raw_data_type:
             session.headers.update({'Content-Type': raw_data_type})
-        session.headers.update({'Accept': 'application/json'})
+        for header in endpoint.headers:
+            session.headers.update(header)
 
         response = session.request(method=method, 
                                    url=url, 
@@ -864,7 +880,7 @@ class DecisionCenterManager:
         self.credentials.cleanup()
 
         # check response
-        if response.status_code in [200, 201]:
+        if response.status_code in [200, 201, 204]:
             content_type = response.headers.get('Content-Type', '')
             self.logger.debug(f"Request successful, response content-type={content_type}")
 
