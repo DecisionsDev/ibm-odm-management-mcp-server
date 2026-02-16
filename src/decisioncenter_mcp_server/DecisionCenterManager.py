@@ -788,6 +788,14 @@ class DecisionCenterManager:
                         except Exception as e:
                             raise Exception(f'Error while parsing Decision Server REST API "{tool_name}": {str(e)}')
 
+                    if tool_name in tools:
+                        if tool_name == 'getResources' and tool_tag == 'configuration':
+                            continue # ignore this tool to avoid overwriting a legit one and because it is best replaced by 'getConsoleInfo'
+                        elif tool_name == 'getRulesetWithHighestNumberArchive':
+                            tool_name =   'getRulesetWithHighestNumberArchive2' # minor flaw (the 2 tools should have different ids)
+                        else:
+                            self.logger.warning("Found tools with the same id: %s", tool_name)
+
                     tools[tool_name] = DecisionCenterEndpoint(tool_name    = tool_name,
                                                               summary      = summary,
                                                               description  = description,

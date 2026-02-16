@@ -528,7 +528,8 @@ Here is the list of the tools with their `operationId` and tag in ODM 9.5.0.1:
     | getRulesetsByName                    | Returns all the rulesets with that name contained in a RuleApp                       | ruleapps       | resMonitor  |
     | getCountOfRulesetsByName             | Get count of rulesets by name                                                        | ruleapps       | resMonitor  |
     | getRulesetWithHighestNumber          | Returns the highest version of the ruleset, identified by its name, contained in a RuleApp identified by its name and version number | ruleapps       | resMonitor  |
-    | getRulesetWithHighestNumberArchive   | Returns the archive of the highest version of a ruleset identified by its name and by the name and version number of its RuleApp | ruleapps       | resMonitor  |
+    | getRulesetWithHighestNumberArchive   | Returns the archive of the highest version of a ruleset identified by its name and by the name and the highest version of its RuleApp | ruleapps       | resMonitor  |
+    | getRulesetWithHighestNumberArchive2  | Returns the archive of the highest version of a ruleset identified by its name and by the name and version number of its RuleApp | ruleapps       | resMonitor  |
     | getRuleset                           | Returns the ruleset, identified by its name and version number, contained in a RuleApp | ruleapps       | resMonitor  |
     | getRulesetXOMs                       | Returns the XOMs referenced by a ruleset contained in a RuleApp                      | ruleapps       | resMonitor  |
     | getRulesetSignature                  | Returns the signature of a ruleset, identified by its name and version number and by the name and version number of its RuleApp | ruleapps       | resMonitor  |
