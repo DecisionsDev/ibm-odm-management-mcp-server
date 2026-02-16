@@ -93,14 +93,17 @@ Depending on your IBM ODM deployment, use the appropriate authentication/authori
 
 If ODM is deployed in IBM Cloud Pak for Business Automation, the user/service account used must have a role assigned that grants one of the Zen permissions below:
 
-  | Zen permissions |
-  |-----------------|
-  | ODM - Administer Decision Center |
-  | ODM - Administer database for Decision Center |
-  | ODM - Manage decision services and deployment in Decision Center |
-  | ODM - Manage decision services in Decision Center |
+  | Zen permissions | Equivalent ODM Liberty roles | Description |
+  |-----------------|------------------------------|-------------|
+  | ODM - Administer Decision Center                                 | rtsAdministrator | Gives access to all the Decision Center tools |
+  | ODM - Administer database for Decision Center                    | rtsInstaller     | Gives access to all the Decision Center tools |
+  | ODM - Manage decision services and deployment in Decision Center | rtsConfigManager | Gives access to only some Decision Center tools |
+  | ODM - Manage decision services in Decision Center                | rtsUser          | Gives access to only some Decision Center tools |
 
-> Note: The `ODM - Administer Decision Center` role is required for some tools.
+  | Zen permissions | Equivalent ODM Liberty roles | Description |
+  |-----------------|------------------------------|-------------|
+  | ODM - Monitor and deploy decision services in Decision Server	   | resDeployer      | Gives access to all the Decision server console tools |
+  | ODM - Monitor decision services in Decision Server               | resMonitor       | Gives access to only some Decision server console tools |
 
 Read more in [Managing user permissions](https://www.ibm.com/docs/en/cloud-paks/cp-biz-automation/25.0.0?topic=access-managing-user-permissions).
 
@@ -108,24 +111,32 @@ Read more in [Managing user permissions](https://www.ibm.com/docs/en/cloud-paks/
 
 If ODM is deployed on Kubernetes, the user/service account used must have at least one of the roles below:
 
-  | ODM roles           |
-  |---------------------|
-  | rtsAdministrators   |
-  | rtsUsers            |
+  | ODM roles           | Description |
+  |---------------------|-------------|
+  | rtsAdministrator    | Gives access to all the Decision Center tools |
+  | rtsAdministrator    | Gives access to all the Decision Center tools |
+  | rtsConfigManager    | Gives access to only some Decision Center tools |
+  | rtsUser             | Gives access to only some Decision Center tools |
 
-> Note: The `Administator` role is required for some tools.
+  | ODM roles      | Description |
+  |----------------|-------------|
+  | resDeployer    | Gives access to all the Decision Server console tools |
+  | resMonitor     | Gives access to only some Decision Server console tools |
 
 #### 2.3. ODM on Cloud
 
 If ODM is deployed in the managed offering ODM on Cloud, the user/service account used must have at least one of the roles below assigned (for the suitable environment (Development / Test / Production)):
 
-  | Decision Center Role |
-  |----------------------|
-  | Administrator        |
-  | Configuration Manager|
-  | User                 |
+  | Decision Center Role | Description |
+  |----------------------|-------------|
+  | Administrator        | Gives access to all the Decision Center tools |
+  | Configuration Manager| Gives access to all the Decision Center tools |
+  | User                 | Gives access to only some Decision Center tools |
 
-> Note: The `Administator` role is required for some tools.
+  | Decision Server Role | Description |
+  |----------------------|-------------|
+  | Deployer             | Gives access to all the Decision Server console tools |
+  | Monitor              | Gives access to only some Decision Server console tools |
 
 Read more in [Creating and managing service accounts](https://www.ibm.com/docs/en/dbaoc?topic=access-creating-managing-service-accounts).
 
@@ -147,7 +158,7 @@ Alternatively, in dev/test environments, the authenticity of the server can be i
 
 #### 3.2. mTLS (mutual TLS)
 
-The ODM Decision Center server can be configured to check the authenticity of the clients that try to establish a secure connection.
+ODM can be configured to check the authenticity of the clients that try to establish a secure connection.
 
 In that case, the Management MCP server (which acts as a client), must be configured with both a private key and its related certificate (and the server must be configured to trust the clients presenting that certificate when establishing a secure connection).
 
@@ -177,17 +188,21 @@ The parameters below can be specified:
 | `--mtls-cert-path`| `MTLS_CERT_PATH`    | Path to the SSL certificate file of the client for mutual TLS authentication (mandatory for mTLS)       |                                         |
 | `--mtls-key-path` | `MTLS_KEY_PATH`     | Path to the SSL private key file of the client for mutual TLS authentication (mandatory for mTLS)       |                                         |
 | `--mtls-key-password` | `MTLS_KEY_PASSWORD` | Password to decrypt the private key of the client for mutual TLS authentication. Only needed if the key is password-protected. |              |
-| `--log-level`     | `LOG_LEVEL`         | Set the logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`)                                 | `INFO`                                  |
-| `--traces-dir`    | `TRACES_DIR`        | Directory to store execution traces                                                                     | `~/.ibm-odm-management-mcp-server/traces`                  |
-| `--trace`         | `TRACE`           | Specifies what to trace (`EXECUTIONS`, `EXECUTIONS_WITH_CONTENT`, `CONFIGURATION`)                             |
-| `--traces-maxsize` | `TRACES_MAXSIZE`  | Maximum number of traces to store before removing oldest traces                                          | `200`                                    |
 
-> Parameters specific to Decision Center REST API
+> Parameters to monitor the MCP server
 >| CLI Argument | Environment Variable | Description | Default |
 >|--------------|----------------------|-------------|---------|
->| `--tags`     | `TAGS`               | List of tags (eg. About Explore Build). Useful to keep only the tools whose tag is in the list. If this option is not specified, all the tools are published by the MCP server. | |
->| `--tools`    | `TOOLS`              | List of tools to publish (eg. decisionServices releases createRelease). This option can be used along with --tags but it takes precedence over the option --no-tools | |
->| `--no-tools` | `NO_TOOLS`           | List of tools to ignore  (eg. launchCleanup wipe executeSqlScript). This option can be used along with --tags but is ignored if the option --tools is specified. | |
+>| `--log-level`      | `LOG_LEVEL`      | Set the logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) | `INFO` |
+>| `--traces-dir`     | `TRACES_DIR`     | Directory to store tools execution traces | `~/.ibm-odm-management-mcp-server/traces` |
+>| `--trace`          | `TRACE`          | Specifies what to trace (`EXECUTIONS`, `EXECUTIONS_WITH_CONTENT`, `CONFIGURATION`) |
+>| `--traces-maxsize` | `TRACES_MAXSIZE` | Maximum number of traces to store before removing oldest traces | `200` |
+
+> Parameters to filter out the tools published
+>| CLI Argument | Environment Variable | Description | Default |
+>|--------------|----------------------|-------------|---------|
+>| `--tools`    | `TOOLS`              | List of tools to publish (eg. decisionServices releases createRelease). This option takes precedence over the options --no-tools and --tags | |
+>| `--no-tools` | `NO_TOOLS`           | List of tools to ignore  (eg. launchCleanup wipe executeSqlScript). This option takes precedence over the option --tags | |
+>| `--tags`     | `TAGS`               | List of tags (eg. About Explore Build). Publish only the tools that belong to the tags listed. | |
 
 > Parameters to start the MCP server in remote mode (allowing connections from remote MCP clients) 
 >| CLI Argument | Environment Variable | Description | Default |
@@ -216,7 +231,8 @@ The example below shows a typical use-case where the sensitive information (here
       "args": [
         "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server",
         "ibm-odm-management-mcp-server",
-        "--url", "https://odm-decisioncenter-api-url",
+        "--url",     "https://decisioncenter-api-url",
+        "--res-url", "https://res-console-url",
         "--ssl-cert-path", "certificate-file",
         "--username", "username"
       ],
@@ -238,7 +254,8 @@ For local development and testing, use the Basic Auth.
 "args": [
   "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server",
   "ibm-odm-management-mcp-server",
-  "--url", "http://localhost:9060/decisioncenter-api",
+  "--url",      "http://localhost:9060/decisioncenter-api",
+  "--res-url",  "http://localhost:9060/res",
   "--username", "odmAdmin"
 ],
 "env": {
@@ -254,7 +271,8 @@ For production deployments on the Cloud Pak, use the Zen API Key.
 "args": [
   "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server",
   "ibm-odm-management-mcp-server",
-  "--url",           "https://odm-decisioncenter-api-url",
+  "--url",           "https://decisioncenter-api-url",
+  "--res-url",       "https://res-console-url",
   "--ssl-cert-path", "certificate-file",
   "--username",      "USERNAME"
 ],
@@ -276,7 +294,8 @@ Two authentication variants are possible:
 "args": [
   "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server",
   "ibm-odm-management-mcp-server",
-  "--url",           "https://odm-decisioncenter-api-url",
+  "--url",           "https://decisioncenter-api-url",
+  "--res-url",       "https://res-console-url",
   "--ssl-cert-path", "certificate-file",
   "--token-url",     "https://your-openid-connect_provider-token-endpoint-url",
   "--scope",         "the_scope_to_be_used_for_client_credentials"
@@ -292,7 +311,8 @@ Two authentication variants are possible:
 "args": [
   "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server",
   "ibm-odm-management-mcp-server",
-  "--url",           "https://odm-decisioncenter-api-url",
+  "--url",           "https://decisioncenter-api-url",
+  "--res-url",       "https://res-console-url",
   "--ssl-cert-path", "certificate-file",
   "--token-url",     "https://your-openid-connect_provider-token-endpoint-url",
   "--scope",         "the_scope_to_be_used_for_client_credentials"
@@ -314,7 +334,8 @@ mTLS must be complemented with another means of authentication/authorization for
 "args": [
   "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server",
   "ibm-odm-management-mcp-server",
-  "--url",           "https://odm-decisioncenter-api-url",
+  "--url",           "https://decisioncenter-api-url",
+  "--res-url",       "https://res-console-url",
   "--ssl-cert-path", "certificate-file",
   "--username",      "USERNAME_OR_SERVICE_ACCOUNT"
 ],
@@ -353,9 +374,9 @@ They can be used separately or together and in the latter case, are processed in
 
 1. Last, you can specify the tag(s) of the tools that should be published
 
-    When using the `--tags` option, the tools that do not belong to one of the tag/category listed using this option are not published.
+    When using the `--tags` option, the tools that do not belong to tags/categories listed are not published.
 
-    With the example below, for instance the Decision Center tools of the tag/category `Admin` or `DBAdmin` will not be published (as those two tags/categories are not listed in the `--tags` option) : 
+    For instance with the configuration below, the Decision Center tools that belong to the tag/category `Admin` or `DBAdmin` will not be published: 
     ```json
     "args": [
       "--tags", "About", "Explore", "Manage", "Govern", "Build", "Interchange"
@@ -365,13 +386,14 @@ They can be used separately or together and in the latter case, are processed in
 In the `--tools` and `--no-tools` options, tools are identified by their `operationId`.
 
 Here is the list of the tools with their `operationId` and tag in ODM 9.5.0.1:
+
 1. Decision Center tools:
 
     | `operationId` | tool      | tag     | role    |
     |---------------|-----------|---------|---------|
-    | registerWebhook | Register a webhook to notify other applications of events that are coming from Decision Center | Manage | admin |
+    | registerWebhook | Register a webhook to notify other applications of events that are coming from Decision Center | Manage | rtsAdministrator |
     | renameSnapshot | Rename a snapshot from a decision service | Manage | |
-    | addServer | Add a target server to use for deployments, simulations, and tests | Manage | admin |
+    | addServer | Add a target server to use for deployments, simulations, and tests | Manage | rtsAdministrator |
     | createValidationActivity | Create a validation activity in an open release | Govern | |
     | createChangeActivity | Create a change activity in an open release | Govern | |
     | snapshots | List of the snapshots that are associated with the decision service | Explore | |
@@ -382,17 +404,17 @@ Here is the list of the tools with their `operationId` and tag in ODM 9.5.0.1:
     | createDSBranch | Create a new branch in a decision service | Manage | |
     | renameBranch | Rename a branch from a decision service | Manage | |
     | copyBranch | Create a new branch from an existing one, and set its parent to the main branch, or the initial release in the case of releases | Manage | |
-    | setPersistenceLocale | Set persistence locale | DBAdmin | admin |
-    | registerWebhook_1 | Update a webhook to notify other applications of events that are coming from Decision Center | Manage | admin |
-    | deleteWebhook | Unregister a webhook | Manage | admin |
-    | addUser | Add or update a user | Admin | admin |
+    | setPersistenceLocale | Set persistence locale | DBAdmin | rtsAdministrator |
+    | registerWebhook_1 | Update a webhook to notify other applications of events that are coming from Decision Center | Manage | rtsAdministrator |
+    | deleteWebhook | Unregister a webhook | Manage | rtsAdministrator |
+    | addUser | Add or update a user | Admin | rtsAdministrator |
     | run | Run a test suite | Build | |
     | server | Details of the server | Explore | |
-    | updateServer | Update a target server to use for deployments, simulations, and tests | Manage | admin |
-    | deleteServer | Remove a target server to use for deployments, simulations, and tests | Manage | admin |
-    | getUsersRolesRegistry | Retrieve the last configuration file that was uploaded | Admin | admin |
-    | setUsersRolesRegistry | Set the configuration for users, groups and roles | Admin | admin |
-    | ldapSync | Synchronize the repository with any associated LDAP server | Admin | admin |
+    | updateServer | Update a target server to use for deployments, simulations, and tests | Manage | rtsAdministrator |
+    | deleteServer | Remove a target server to use for deployments, simulations, and tests | Manage | rtsAdministrator |
+    | getUsersRolesRegistry | Retrieve the last configuration file that was uploaded | Admin | rtsAdministrator |
+    | setUsersRolesRegistry | Set the configuration for users, groups and roles | Admin | rtsAdministrator |
+    | ldapSync | Synchronize the repository with any associated LDAP server | Admin | rtsAdministrator |
     | release | Details of the release | Explore | |
     | updateRelease | Update an open release of a decision service | Govern | |
     | deleteRelease | Delete an open release in a decision service | Govern | |
@@ -404,10 +426,10 @@ Here is the list of the tools with their `operationId` and tag in ODM 9.5.0.1:
     | approveRelease | Approve an open release of a decision service | Govern | |
     | allowReleaseApproval | Allow the approval of an open release of a decision service | Govern | |
     | addReleaseApprover | Add an approver to an open release of a decision service | Govern | |
-    | importTabPermissions | Import tab permissions | Admin | admin |
+    | importTabPermissions | Import tab permissions | Admin | rtsAdministrator |
     | importPermissions | Import permissions | Admin | |
-    | importCommandPermissions | Import command permissions | Admin | admin |
-    | addGroup | Add or update a group | Admin | admin |
+    | importCommandPermissions | Import command permissions | Admin | rtsAdministrator |
+    | addGroup | Add or update a group | Admin | rtsAdministrator |
     | updateDynamicDomains | Update dynamic domains | Admin | |
     | deploy | Deploy a RuleApp to an execution server (Rule Execution Server) | Build | |
     | build | Build a RuleApp for the deployment configuration | Build | |
@@ -415,8 +437,8 @@ Here is the list of the tools with their `operationId` and tag in ODM 9.5.0.1:
     | branchImport | Import a decision service on top of an existing branch | Admin | |
     | importDT | Import an Excel file into an existing decision table | Manage | |
     | decisionServicesImport | Import a decision service into the repository | Admin | |
-    | branchSecurity | Security configuration of a branch | Admin | admin |
-    | branchSecurity_1 | Enforce the security on a branch | Admin | admin |
+    | branchSecurity | Security configuration of a branch | Admin | rtsAdministrator |
+    | branchSecurity_1 | Enforce the security on a branch | Admin | rtsAdministrator |
     | applyAsset | None | Interchange | |
     | activity | Details of the activity | Explore | |
     | updateActivity | Update an activity in an open release | Govern | |
@@ -434,25 +456,25 @@ Here is the list of the tools with their `operationId` and tag in ODM 9.5.0.1:
     | addActivityAuthor | Add an author to an activity in an open release | Govern | |
     | addActivityApprover | Add an approver to an activity in an open release | Govern | |
     | wipe | Wipe element version content | DBAdmin | |
-    | uploadMessagesFile | Persist localized messages file | DBAdmin | admin |
-    | uploadExtensionModelFiles | Persist model extension files .brmx and .brdx | DBAdmin | admin |
-    | executeSQLScript | Run SQL script | DBAdmin | admin |
-    | generate | Launch DC database diagnostics generation | DBAdmin | admin |
-    | generateExtensionModelScript | Generate an SQL script for model extensions | DBAdmin | admin |
-    | stopCleanup | Stop cleanup operation | DBAdmin | admin |
-    | launchCleanup | Launch cleanup of the repository | DBAdmin | admin |
-    | webhooks | Get a list of the webhooks that are bound to this instance of Decision Center | Manage | admin |
-    | users | List of the users that are defined in Decision Center | Admin | admin |
-    | eraseAllUsers | Remove all users | Admin | admin |
-    | user | Details of the user | Admin | admin |
-    | deleteUser | Remove a user | Admin | admin |
+    | uploadMessagesFile | Persist localized messages file | DBAdmin | rtsAdministrator |
+    | uploadExtensionModelFiles | Persist model extension files .brmx and .brdx | DBAdmin | rtsAdministrator |
+    | executeSQLScript | Run SQL script | DBAdmin | rtsAdministrator |
+    | generate | Launch DC database diagnostics generation | DBAdmin | rtsAdministrator |
+    | generateExtensionModelScript | Generate an SQL script for model extensions | DBAdmin | rtsAdministrator |
+    | stopCleanup | Stop cleanup operation | DBAdmin | rtsAdministrator |
+    | launchCleanup | Launch cleanup of the repository | DBAdmin | rtsAdministrator |
+    | webhooks | Get a list of the webhooks that are bound to this instance of Decision Center | Manage | rtsAdministrator |
+    | users | List of the users that are defined in Decision Center | Admin | rtsAdministrator |
+    | eraseAllUsers | Remove all users | Admin | rtsAdministrator |
+    | user | Details of the user | Admin | rtsAdministrator |
+    | deleteUser | Remove a user | Admin | rtsAdministrator |
     | testSuite | Details of the test suite | Explore | |
     | testReport | Details of the test report | Explore | |
     | deleteTestReport | Delete a test report | Build | |
     | snapshot_2 | Details of the snapshot | Explore | |
     | deleteSnapshot | Delete a snapshot from a decision service | Manage | |
     | servers | List of the servers that are defined in Decision Center | Explore | |
-    | metrics | Get repository metrics | Admin | admin |
+    | metrics | Get repository metrics | Admin | rtsAdministrator |
     | project | Get the project with the ID | Explore | |
     | variablesets | List of variableSet in a project | Explore | |
     | technicalrules | List of technical rules in a project | Explore | |
@@ -465,21 +487,21 @@ Here is the list of the tools with their `operationId` and tag in ODM 9.5.0.1:
     | operations | List of operations in a project | Explore | |
     | functions | List of functions in a project | Explore | |
     | folders | List of folders of a project | Explore | |
-    | exportTabPermissions | Export the tab permissions to JSON | Admin | admin |
-    | exportPermissions | Export the permissions that are defined for a group to JSON | Admin | admin |
+    | exportTabPermissions | Export the tab permissions to JSON | Admin | rtsAdministrator |
+    | exportPermissions | Export the permissions that are defined for a group to JSON | Admin | rtsAdministrator |
     | effectivePermissions | Retrieve the effective permissions for one or more groups to JSON | Admin | |
-    | exportCommandPermissions | Export the command permissions to JSON | Admin | admin |
-    | groups | List of the groups that are defined in Decision Center | Admin | admin |
-    | eraseAllGroups | Remove all groups | Admin | admin |
-    | group | Details of the group | Admin | admin |
-    | deleteGroup | Remove a group | Admin | admin |
+    | exportCommandPermissions | Export the command permissions to JSON | Admin | rtsAdministrator |
+    | groups | List of the groups that are defined in Decision Center | Admin | rtsAdministrator |
+    | eraseAllGroups | Remove all groups | Admin | rtsAdministrator |
+    | group | Details of the group | Admin | rtsAdministrator |
+    | deleteGroup | Remove a group | Admin | rtsAdministrator |
     | listDynamicDomains | Get the list of dynamic domains | Admin | |
     | deploymentConfiguration | Details of the deployment configuration | Explore | |
     | download | Download the RuleApp archive for the deployment configuration | Build | |
     | DeploymentReport | Details of the deployment report | Explore | |
     | decisionServices | Get the list of decision services | Explore | |
     | decisionService | Get a decision service by its ID | Explore | |
-    | deleteDecisionService | Delete a decision service | Admin | admin |
+    | deleteDecisionService | Delete a decision service | Admin | rtsAdministrator |
     | testSuites | List of the test suites for the decision service | Explore | |
     | testReports | List of the test reports for the decision service | Explore | |
     | projects | List of the projects that form the decision service, and the decision service itself | Explore | |
@@ -490,18 +512,18 @@ Here is the list of the tools with their `operationId` and tag in ODM 9.5.0.1:
     | activities | List of the activities in the decision service | Explore | |
     | branch | Details of the branch | Explore | |
     | deleteBranch | Delete a branch from a decision service | Manage | |
-    | branch_1 | Details of the branch from which the security configuration is inherited from | Admin | admin |
-    | branchGroups | Comma-separated list of the groups that are set on a branch | Admin | admin |
+    | branch_1 | Details of the branch from which the security configuration is inherited from | Admin | rtsAdministrator |
+    | branchGroups | Comma-separated list of the groups that are set on a branch | Admin | rtsAdministrator |
     | about | Get system, product, and database information | About | |
     | getExecutionStatus | Get the run status of the SQL script | DBAdmin | |
-    | getModelExtensionFiles | Retrieve model extension files as file archive | DBAdmin | admin |
-    | generateMigrationRole | Generate a migration role | DBAdmin | admin |
-    | generateMigrationScript | Generate migration script | DBAdmin | admin |
-    | results | Get DC database diagnostics results | DBAdmin | admin |
+    | getModelExtensionFiles | Retrieve model extension files as file archive | DBAdmin | rtsAdministrator |
+    | generateMigrationRole | Generate a migration role | DBAdmin | rtsAdministrator |
+    | generateMigrationScript | Generate migration script | DBAdmin | rtsAdministrator |
+    | results | Get DC database diagnostics results | DBAdmin | rtsAdministrator |
     | isCleanupRunning | Check cleanup execution | DBAdmin | |
     | cleanupReport | Export report for last cleanup operation to JSON | DBAdmin | |
     | cleanupOldReports | Export old cleanup reports to JSON | DBAdmin | |
-    | discardBuildState | Discard all the built states of branches, releases, activities, and snapshots | Manage | admin |
+    | discardBuildState | Discard all the built states of branches, releases, activities, and snapshots | Manage | rtsAdministrator |
 
 
 1. Decision Server / RES console tools:
@@ -589,8 +611,43 @@ Here is the list of the tools with their `operationId` and tag in ODM 9.5.0.1:
 
 ### Example 6: Role-based tool filtering
 
-The tools restricted to users with the 'admin' role are implicitly filtered out when the credentials used to configure the management MCP server do not grant this role.
-Please refer to the 'role' column in the table above to see which tools require the 'admin' role.
+Some tools are restricted to users with specific roles. Those tools are automatically filtered out when the management MCP server uses credentials that do not grant the required role(s).
+Please refer to the 'role' column in the table above to see the role required by each tool.
+
+In the example below (suitable for ODM for Developer), two MCP servers are defined, each using different credentials.
+- the first MCP server publishes the subset of Decision Center tools accessible to users with the `rtsUser` role
+- the second MCP server publishes the subset of Decision Server console tools accessible to users with the `rtsMonitor` role
+
+```json
+{
+  "mcpServers": {
+    "ibm-odm-dc-management-mcp-server": {
+      "command": "uvx",
+      "args": [
+        "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server",
+        "ibm-odm-management-mcp-server",
+        "--url",     "http://localhost:9060/decisioncenter-api",
+        "--username", "rtsUser1"
+      ],
+      "env": {
+        "ODM_PASSWORD": "rtsUser1"
+      }
+    },
+    "ibm-odm-res-management-mcp-server": {
+      "command": "uvx",
+      "args": [
+        "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server",
+        "ibm-odm-management-mcp-server",
+        "--res-url",  "http://localhost:9060/res",
+        "--username", "resMonitor"
+      ],
+      "env": {
+        "ODM_PASSWORD": "resMonitor"
+      }
+    }
+  }
+}
+```
 
 ## Additional information
 

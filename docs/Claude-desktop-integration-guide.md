@@ -159,6 +159,7 @@ This ODM instance will be available for the MCP Server, pre-populated with sampl
          "args": [
            "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server", "ibm-odm-management-mcp-server",
            "--url",      "http://localhost:9060/decisioncenter-api",
+           "--res-url",  "http://localhost:9060/res",
            "--username", "odmAdmin"
          ],
          "env": {
