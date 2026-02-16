@@ -2,16 +2,18 @@
 
 ## Overview
 
-The IBM ODM Management MCP Server bridges IBM ODM Decision Center and IBM ODM Decision Server Console (aka RES console) with modern AI assistants and orchestration platforms.
+The IBM ODM Management MCP Server bridges IBM ODM Management REST APIs with modern AI assistants and orchestration platforms.
 It enables you to:
-- Expose Decision Center and Decision Server Console REST API endpoints as tools for AI assistants
-- Integrate easily with Watson Orchestrate, Claude Desktop, and Cursor AI
+- Expose as tools for AI assistants
+  - Decision Center REST API
+  - Decision Server REST API (aka RES console)
+- Integrate easily with Watson Orchestrate, Claude Desktop, ...
 
 ## Features
 
 - **Tool Integration:** Expose ODM Decision Center and Decision Server Console REST API endpoints as tools
 - **Authentication:** Zen API Key, Basic Auth, and OpenID Connect
-- **Multi-Platform:** Works with Watson Orchestrate, Claude Desktop, Cursor AI, ...
+- **Multi-Platform:** Works with Watson Orchestrate, Claude Desktop, ...
 
 ## Quickstart: Claude Desktop Integration
 
@@ -214,7 +216,7 @@ The parameters below can be specified:
 
 ## MCP Server Configuration File          
 
-You can configure the MCP server for clients like Claude Desktop or Cursor AI using a JSON configuration file, which can contain both environment variables and command-line arguments.
+You can configure the MCP server for clients like Claude Desktop using a JSON configuration file, which can contain both environment variables and command-line arguments.
 
 **Tips:**
 - Use CLI arguments for quick overrides or non-sensitive parameters.
@@ -229,6 +231,7 @@ Here are some examples for different use cases and type of deployment (dev/test 
 - [Example 5: mTLS (Mutual TLS) Authentication](#example-5-mtls-mutual-tls-authentication)
 - [Example 6: Tool filtering](#example-6-tool-filtering)
 - [Example 7: Role-based tool filtering](#example-7-role-based-tool-filtering)
+- [Example 8: MCP Server Monitoring](#example-8-mcp-server-monitoring)
 
 ### Example 1: Basic Auth
 
@@ -657,6 +660,27 @@ In the example below (suitable for ODM for Developer), two MCP servers are defin
   }
 }
 ```
+
+### Example 8: MCP Server Monitoring
+
+With the configuration below, the MCP server records in the directory `~/.mcp-server-traces`a file named `<tool_name>-<response-HTTP-code>-<timestamp>.json` each time a tool is ran. This file is empty. Alternatively you can have the input and output recorded by replacing `EXECUTIONS` by `EXECUTIONS_WITH_CONTENT`.
+
+```json
+"args": [
+  "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server",
+  "ibm-odm-management-mcp-server",
+  "--url",      "https://decisioncenter-api-url",
+  "--res-url",  "https://res-console-url",
+  "--username", "odmAdmin",
+  "--trace",    "EXECUTIONS",
+  "--traces-dir", "~/.mcp-server-traces"
+],
+"env": {
+  "ODM_PASSWORD": "odmAdmin"
+}
+```
+
+You can also have the MCP server record a file named `parsing.json` containing the list of tools as returned to the AI agent (for debug) by adding the `CONFIGURATION` argument: `"--trace", "EXECUTIONS", "CONFIGURATION",`.
 
 ## Additional information
 
