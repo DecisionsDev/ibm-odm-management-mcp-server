@@ -660,12 +660,15 @@ class DecisionCenterManager:
                     enumNames += [value_doc]
 
             if id == 'RULESET_PROPERTY_NAME':
-                enum +=      ['agent.enabled',
-                              'agent.name',
-                              'agent.description']
-                enumNames += ['Controls whether the ruleset is exposed as a MCP tool.',
-                              'Customizes the name of the MCP tool as exposed to AI assistants.',
-                              'Overrides the default description of the ruleset when exposed as a MCP tool.']
+                if not 'agent.enabled' in enum:
+                    enum      += ['agent.enabled']
+                    enumNames += ['Controls whether the ruleset is exposed as a MCP tool.']
+                if not 'agent.name' in enum:
+                    enum      += ['agent.name']
+                    enumNames += ['Customizes the name of the MCP tool as exposed to AI assistants.']
+                if not 'agent.description' in enum:
+                    enum      += ['agent.description']
+                    enumNames += ['Overrides the default description of the ruleset when exposed as a MCP tool.']
 
             return  ({'id':        id}         if id else {}) | \
                     ({'fixed':     fixed}      if fixed else {}) | \
