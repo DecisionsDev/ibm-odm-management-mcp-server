@@ -128,7 +128,11 @@ class DiskTraceStorage:
                 if isinstance(data, bytes):
                     f.write(bytes(data, 'utf-8'))
                 elif isinstance(data, str):
-                    f.write(data)
+                    try:
+                        d = json.loads(data)
+                        f.write(json.dumps(d, indent=2))
+                    except json.JSONDecodeError:
+                        f.write(data)
                 else:
                     f.write(json.dumps(data, indent=2))
         
