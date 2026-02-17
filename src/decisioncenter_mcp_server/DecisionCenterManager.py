@@ -56,7 +56,7 @@ def add_param(input_schema, parameters,
 
 class DecisionCenterManager:
 
-    # tools that require the admin role when invoking them
+    # tools that require the rtsAdministrator role when invoking them
     rtsAdministrator_tools = [
         # DBAdmin
         'launchCleanup', 'stopCleanup',
@@ -120,17 +120,17 @@ class DecisionCenterManager:
                                    headers=session.headers, 
                                    verify=self.credentials.cacert)
             if response.status_code == 403:
-                self.logger.info("Connected without admin role")
+                self.logger.info("Connected without rtsAdministrator role")
                 return False
             elif response.status_code in (404, 200):
-                self.logger.info("Connected with admin role")
+                self.logger.info("Connected with rtsAdministrator role")
                 return True
             else:
                 # bad credentials - no need to report it as it will be reported later on
                 return False
         except Exception as e:
-            self.logger.warning("Failed to check if the credentials grant admin role: %s", e)
-            self.logger.info("Assuming connected without admin role")
+            self.logger.warning("Failed to check if the credentials grant rtsAdministrator role: %s", e)
+            self.logger.info("Assuming connected without rtsAdministrator role")
             return False
             
     def checkDcRole(self, uri:str, session):
@@ -248,9 +248,9 @@ class DecisionCenterManager:
                 # (useful when filtering out the tools requiring a special role)
                 self.checkDcRole(uri, session)
 
-                uri += '/v3/api-docs'
-                self.logger.info("Parsing " + uri)
-                response = session.get(uri, 
+                openapi_uri = uri + '/v3/api-docs'
+                self.logger.info("Parsing " + openapi_uri)
+                response = session.get(openapi_uri, 
                                        headers=session.headers, 
                                        verify=self.credentials.cacert,
                                       )
@@ -258,9 +258,9 @@ class DecisionCenterManager:
 
                 # Check if the request was successful
                 if response.status_code == 200:
-                    self.logger.info("successfully retrieved openapi!")
-
-                    openapi_json = self.fix_openapi(response.json())
+                    openapi_json = response.json()
+                    self.logger.info("successfully retrieved Decision Center REST API openapi")
+                    openapi_json = self.fix_openapi(openapi_json)
 
                     debug = self.logger.isEnabledFor(logging.DEBUG)
                     with tempfile.NamedTemporaryFile(delete=not debug, delete_on_close=False) as temp:
@@ -293,12 +293,14 @@ class DecisionCenterManager:
                     self.logger.error("Response: %s", response.text)
                     raise(Exception(response.text))
 
+        except json.JSONDecodeError as e:
+            self.logger.error("Could not retrieve openapi. Please check that the Decision Center API is valid: %s", uri)
         except Exception as e:
             self.logger.error("An error occurred: %s", e)
             raise(e)
 
     # returns the openapi
-    # and sets self.credentials.isDcAdmin to True if the credentials grant the admin Role
+    # and sets self.credentials.isDcAdmin to True if the credentials grant the rtsAdministrator role
     def fetch_endpoints(self):
         return self._fetch_endpoints(uri = self.credentials.odm_url)
 
@@ -376,7 +378,7 @@ class DecisionCenterManager:
                     operation_id = info.operation_id
                     tool_name    = operation_id
 
-                    # filter out the tools that require the Admin role if the credentials used do not grant this role
+                    # filter out the tools that require the rtsAdministrator role if the credentials used do not grant this role
                     if not isDcAdmin and tool_name in DecisionCenterManager.rtsAdministrator_tools:
                         continue
 
@@ -459,7 +461,9 @@ class DecisionCenterManager:
                     self.logger.error("Connected without the resMonitor role. Therefore no access to the RES tools.")
                 elif response.status_code == 401:
                     self.logger.error("Wrong credentials. Therefore no access to the RES tools.")
-                else:
+                elif response.status_code == 500 and "NoResourceFoundException" in response.text:
+                    self.logger.error("Could not retrieve RES API WADL. Please check that the RES Console URL is valid: %s", uri)
+                else: 
                     self.logger.error("Request failed with status code: %s", response.status_code)
                     self.logger.error("Response: %s", response.text)
                     raise(Exception(response.text))
