@@ -284,7 +284,7 @@ class DecisionCenterManager:
 
                         logging.getLogger().setLevel(previous_level) # restore the previous level
 
-                        self.logger.info("Decision Center openapi parsing successful")
+                        self.logger.info("Decision Center REST API openapi parsing successful")
                         return endpoints
                 elif response.status_code == 401:
                     self.logger.error("Wrong credentials. Therefore no access to Decision Center tools.")
@@ -294,7 +294,7 @@ class DecisionCenterManager:
                     raise(Exception(response.text))
 
         except json.JSONDecodeError as e:
-            self.logger.error("Could not retrieve openapi. Please check that the Decision Center API is valid: %s", uri)
+            self.logger.error("Could not retrieve the Decision Center REST API openapi. Please check that the Decision Center API URL is valid: %s", uri)
         except Exception as e:
             self.logger.error("An error occurred: %s", e)
             raise(e)
@@ -449,20 +449,20 @@ class DecisionCenterManager:
             
             # Check if the request was successful
             if response.status_code == 200:
-                self.logger.info("successfully retrieved Decision Server REST API WADL")
+                self.logger.info("successfully retrieved the RES console REST API WADL")
 
-                # at this point, we know the credentials grant the resMonitor role (giving access to most RES tools)
-                # check if the credentials also grant the resDeployer role (giving access to the restricted RES tools)
+                # at this point, we know the credentials grant the resMonitor role (giving access to most RES console tools)
+                # check if the credentials also grant the resDeployer role (giving access to the restricted RES console tools)
                 self.checkResRole(uri, session)
 
                 return response.text
             else:
                 if response.status_code == 403:
-                    self.logger.error("Connected without the resMonitor role. Therefore no access to the RES tools.")
+                    self.logger.error("Connected without the resMonitor role. Therefore no access to the RES console tools.")
                 elif response.status_code == 401:
-                    self.logger.error("Wrong credentials. Therefore no access to the RES tools.")
+                    self.logger.error("Wrong credentials. Therefore no access to the RES console tools.")
                 elif response.status_code == 500 and "NoResourceFoundException" in response.text:
-                    self.logger.error("Could not retrieve RES API WADL. Please check that the RES Console URL is valid: %s", uri)
+                    self.logger.error("Could not retrieve the RES console REST API WADL. Please check that the RES console URL is valid: %s", uri)
                 else: 
                     self.logger.error("Request failed with status code: %s", response.status_code)
                     self.logger.error("Response: %s", response.text)
