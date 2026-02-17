@@ -431,6 +431,11 @@ class DecisionCenterManager:
         Returns:
             str: WADL as a string or raises an exception is an error occurred.
         """
+        if uri.startswith('http') == False:
+            with open(uri, "r") as file: # the uri is actually a file (useful for testing)
+                content = file.read()
+                return content
+
         try:
             session = self.credentials.get_session()
 

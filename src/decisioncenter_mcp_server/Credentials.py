@@ -41,7 +41,7 @@ class CustomHTTPAdapter(HTTPAdapter):
 
 class Credentials:
 
-    def __init__(self, odm_url, odm_res_url=None,
+    def __init__(self, odm_url=None, odm_res_url=None,
                  token_url=None, scope='openid', client_id=None, client_secret=None, 
                  pkjwt_cert_path=None, pkjwt_key_path=None, pkjwt_key_password=None, 
                  username=None, password=None, 

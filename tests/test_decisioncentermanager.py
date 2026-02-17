@@ -71,10 +71,28 @@ def openapi9501_filepath():
     (["admin",  "dbadmin"], 48), # 31 + 17
     (["manage", "build"],   23), # 17 + 6
 ])
-def test_tags_filtering(tags, expected_tools_total, openapi9501_filepath):
+def test_dc_tools_tags_filtering(tags, expected_tools_total, openapi9501_filepath):
     manager = DecisionCenterManager(credentials=Credentials(odm_url='http://localhost:8885/decisioncenter-api', username='mock_user', password='mock_password'))
     endpoints  = manager._fetch_endpoints(openapi9501_filepath)
     repository = manager.generate_tools_format(endpoints, tags, isDcAdmin=True)
+
+    # verify tools were filtered by tags
+    assert len(repository) == expected_tools_total
+
+@pytest.fixture
+def wadl9501_filepath():
+    # Combine folder path with the target file name
+    return os.path.join(base_dir, 'DecisionServer-9501.wadl')
+
+@pytest.mark.parametrize("tags, expected_tools_total", [
+    (["ruleapps","rulesets"], 42), # 40 + 2
+    (["libraries",  "xoms"],  21), # 10 + 11
+    (["decisiontraces", "executionunits", "utilities"], 15), # 6 + 5 + 4
+])
+def test_res_tools_tags_filtering(tags, expected_tools_total, wadl9501_filepath):
+    manager = DecisionCenterManager(credentials=Credentials(odm_res_url='http://localhost:8885/res', username='mock_user', password='mock_password'))
+    wadl  = manager._fetch_res_api_endpoints(wadl9501_filepath)
+    repository = manager.generate_res_tools(wadl, tools={}, tags_to_publish=tags, tools_to_publish=[], tools_to_ignore=[], isResDeployer=True)
 
     # verify tools were filtered by tags
     assert len(repository) == expected_tools_total

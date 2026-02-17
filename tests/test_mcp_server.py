@@ -88,6 +88,10 @@ def test_server_initialization(mcp_server):
           {"log_level": "DEBUG"}  # Test log level argument
     ),
     (
+        ["--trace",  "EXECUTIONS", "CONFIGURATION", "--traces-dir", "/custom/trace/dir", "--traces-maxsize", "10000"],
+          {"trace": ["EXECUTIONS", "CONFIGURATION"],  "traces_dir": "/custom/trace/dir",   "traces_maxsize":  10000}
+    ),
+    (
         ["--transport", "streamable-http", "--host", "127.0.0.1", "--port", "3001", "--mount-path", "/decision-mcp"],
           {"transport": "streamable-http",   "host": "127.0.0.1",   "port":  3001,    "mount_path": "/decision-mcp"}  # Test remote arguments
     ),
