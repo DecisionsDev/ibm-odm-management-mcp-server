@@ -277,7 +277,7 @@ class DecisionCenterManager:
                         # Parse
                         self.logger.debug("parsing")
                         previous_level = self.logger.root.level
-                        logging.getLogger().setLevel(logging.WARNING)   # avoid lots of INFO msg that slows down and can cause a timeout
+                        logging.getLogger().setLevel(logging.ERROR)   # avoid lots of INFO msg that slows down and can cause a timeout
 
                         endpoints = parse(uri=temp.name,
                                           strict_enum=False)
