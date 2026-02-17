@@ -223,7 +223,7 @@ You can configure the MCP server for clients like Claude Desktop using a JSON co
 - Use environment variables for secrets.
 - You can mix both methods if needed. CLI arguments override environment variables.
 
-Here are some examples for different use cases and type of deployment (dev/test or production) and environments (CloudPak, ...):
+Here are some examples for different types of deployment (dev/test or production), environments (CloudPak, ...) and use cases:
 - [Example 1: Basic Auth](#example-1-basic-auth)
 - [Example 2: Basic Auth for ODM for Developers](#example-2-basic-auth-for-odm-for-developers)
 - [Example 3: For Cloud Pak (Zen API Key)](#example-3-for-cloud-pak-zen-api-key)
@@ -663,7 +663,7 @@ In the example below (suitable for ODM for Developer), two MCP servers are defin
 
 ### Example 8: MCP Server Monitoring
 
-With the configuration below, the MCP server records in the directory `~/.mcp-server-traces`a file named `<tool_name>-<response-HTTP-code>-<timestamp>.json` each time a tool is ran. This file is empty. Alternatively you can have the input and output recorded by replacing `EXECUTIONS` by `EXECUTIONS_WITH_CONTENT`.
+With the configuration below, the MCP server records a file named `<tool_name>-<HTTP-response-code>-<timestamp>.json` in the `~/.mcp-server-traces` directory each time a tool is ran. This file is empty. Alternatively it can store the input and output of the tool execution by replacing `EXECUTIONS` with `EXECUTIONS_WITH_CONTENT`.
 
 ```json
 "args": [
