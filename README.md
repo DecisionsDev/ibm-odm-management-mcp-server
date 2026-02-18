@@ -7,7 +7,7 @@ It enables you to:
 - Expose as tools for AI assistants
   - Decision Center REST API
   - Decision Server REST API (aka RES console)
-- Integrate easily with Watson Orchestrate, Claude Desktop, ...
+- Integrate easily with Watson Orchestrate, Claude Desktop, IBM Bob, ...
 
 ## Features
 
@@ -15,9 +15,11 @@ It enables you to:
 - **Authentication:** Zen API Key, Basic Auth, and OpenID Connect
 - **Multi-Platform:** Works with Watson Orchestrate, Claude Desktop, ...
 
-## Quickstart: Claude Desktop Integration
+## Quickstart
 
-For detailed instructions on setting up and using Claude Desktop with the Management MCP Server, see the [Claude Desktop Integration Guide](/docs/Claude-desktop-integration-guide.md).
+Check the [Claude Desktop Integration Guide](/docs/Claude-desktop-integration-guide.md) for detailed instructions on setting up and using the Management MCP Server in **Claude Desktop**.
+
+Or check the [IBM Bob Integration Guide](/docs/IBM-Bob-integration-guide.md) for detailed instructions on setting up and using the Management MCP Server in **IBM Bob**.
 
 ### Demo Video
 

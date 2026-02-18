@@ -179,7 +179,7 @@ Refer to the [Configuration Parameters Table](../README.md#configuration-paramet
 
 ## Part 2: Demo Walkthrough
 
-This walkthrough demonstrates how Claude Desktop can interact with IBM ODM Developer Edition through the Authoring MCP Server. The sample database contains two decision services:
+This walkthrough demonstrates how Claude Desktop can interact with IBM ODM Developer Edition through the Management MCP Server. The sample database contains two decision services:
 
 1. **Loan Validation Service** – Assess loan requests.
 2. **Miniloan Service** – Assess loan requests (simplified version).
