@@ -16,12 +16,12 @@
         brew install uv
         ```
     - on Windows: 
-        1. in Powershell, run the command described in [installing uv](https://docs.astral.sh/uv/getting-started/installation/)
-        1. once `uv` is installed, open a new Powershell tab, and run the command below:
+        1. in PowerShell, run the command described in [installing uv](https://docs.astral.sh/uv/getting-started/installation/)
+        1. once `uv` is installed, open a new PowerShell tab, and run the command below:
             ```powershell
             uv tool install git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server
             ```
-        1. run the command below in Powershell:
+        1. run the command below in PowerShell:
             ```powershell
             New-Item -ItemType SymbolicLink -Path "$(Split-Path (Get-Command git).Source -Parent)\git" -Target (Get-Command git).Source
             ```
@@ -38,7 +38,7 @@
 
 1. Verify your Python and `uv` installation:
 
-    Run the command below (in a terminal or Powershell):
+    Run the command below (in a terminal or PowerShell):
     ```
     uv python list
     ```
@@ -70,10 +70,6 @@ Here are the steps to install Rancher Desktop if you chose this application to r
             wsl --install
             ```
         - Restart your computer when prompted
-        - Open PowerShell as Administrator and run:
-            ```powershell
-            wsl --install
-            ```
         - After restart, a Linux distribution (usually Ubuntu) will be installed automatically
         - Set up your Linux username and password when prompted (ex: admin/admin)
     1. Download the installer from [Rancher Desktop website](https://rancherdesktop.io/)
@@ -85,7 +81,7 @@ Here are the steps to install Rancher Desktop if you chose this application to r
         - Select "dockerd" as the container runtime (not "containerd")
         - After installation, Rancher Desktop will start automatically
     1. Verify the installation:
-        - Open a Powershell window
+        - Open a PowerShell window
         - Run the following commands:
             ```bash
             docker --version
