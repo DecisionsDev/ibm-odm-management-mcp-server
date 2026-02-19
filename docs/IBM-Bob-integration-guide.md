@@ -296,7 +296,7 @@ With the configuration above, the Management MCP Server
     >- This rule checks if the loan amount exceeds $1,000,000 and automatically rejects the loan with the message "The loan cannot exceed 1,000,000" if it does.
     >
     >Permalink to rule in Decision Center:
-    >https://localhost:9453/decisioncenter/t/library/editor?datasource=jdbc%2FilogDataSource&id=brm.ActionRule:23:23&baselineId=brm.Branch:31:31
+    >http://localhost:9060/decisioncenter/t/library/editor?datasource=jdbc%2FilogDataSource&id=brm.ActionRule:23:23&baselineId=brm.Branch:31:31
     >
 - Enter the following text:
     ```
