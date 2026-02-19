@@ -206,10 +206,8 @@ With the configuration above, the Management MCP Server
     >
     >**Available RuleApps**
     >
-    >The system has 5 RuleApps deployed:
+    >The system has 3 RuleApps deployed:
     >
-    >1. hr_decision_service (1.0) - 1 ruleset
-    >1. marketing (1.0) - 1 ruleset
     >1. mydeployment (1.0) - 7 ruleset versions
     >1. production_deployment (1.0) - 1 ruleset
     >1. test_deployment (1.0) - 2 rulesets
@@ -219,7 +217,7 @@ With the configuration above, the Management MCP Server
     Enable monitoring on all the rulesets
     ```
 
-- **Bob** runs the `addRulesetProperty` to set the property `monitoring.enabled` to `true` on all the rulesets:
+- **Bob** runs the `addRulesetProperty` to set the property `monitoring.enabled` to `true` on all the rulesets to enable recording the statistics of execution of those rulesets.
 
 ### Example 3: combining the Decision MCP server and Management MCP server
 
