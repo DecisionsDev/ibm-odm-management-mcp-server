@@ -303,28 +303,28 @@ With the configuration above, the Management MCP Server :
 
 - **Bob** runs `decisionServiceExport` which returns an archive and then unzips it:
     >```
-    >cd /Users/fred && unzip -q Miniloan-Service_main_bg6qld2l.zip -d agent-miniloan-temp && find agent-miniloan-temp -name "maximum amount.brl"
+    >cd /Users/fred && unzip -q Miniloan-Service_main_bg6qld2l.zip -d miniloan-temp && find miniloan-temp -name "maximum amount.brl"
     >```
     ```
     Archive:  Miniloan-Service_main_bg6qld2l.zip
-      inflating: agent-miniloan-temp/Miniloan Service/resources/xom-libraries/miniloan-xom.zip  
-      creating: agent-miniloan-temp/Miniloan Service/.validation
-      inflating: agent-miniloan-temp/Miniloan Service/.ruleproject  
-      creating: agent-miniloan-temp/Miniloan Service/templates
-      inflating: agent-miniloan-temp/Miniloan Service/bom/miniloan.bom  
-      inflating: agent-miniloan-temp/Miniloan Service/bom/miniloan_en.voc  
-      inflating: agent-miniloan-temp/Miniloan Service/.project  
-      inflating: agent-miniloan-temp/Miniloan Service/deployment/Miniloan.dep  
-      inflating: agent-miniloan-temp/Miniloan Service/deployment/Miniloan ServiceOperation.dop  
-      creating: agent-miniloan-temp/Miniloan Service/queries
-      inflating: agent-miniloan-temp/Miniloan Service/rules/validation/.rulepackage  
-      inflating: agent-miniloan-temp/Miniloan Service/rules/validation/maximum amount.brl  
-      inflating: agent-miniloan-temp/Miniloan Service/rules/eligibility/.rulepackage  
-      inflating: agent-miniloan-temp/Miniloan Service/rules/eligibility/repayment and score.dta  
-      inflating: agent-miniloan-temp/Miniloan Service/rules/eligibility/minimum income.brl  
-      inflating: agent-miniloan-temp/Miniloan Service/rules/eligibility/minimum credit score.brl  
-      inflating: agent-miniloan-temp/Miniloan Service/rules/Miniloan ServiceParameters.var  
-      inflating: agent-miniloan-temp/Miniloan Service/rules/miniloan.rfl  
+      inflating: miniloan-temp/Miniloan Service/resources/xom-libraries/miniloan-xom.zip  
+      creating: miniloan-temp/Miniloan Service/.validation
+      inflating: miniloan-temp/Miniloan Service/.ruleproject  
+      creating: miniloan-temp/Miniloan Service/templates
+      inflating: miniloan-temp/Miniloan Service/bom/miniloan.bom  
+      inflating: miniloan-temp/Miniloan Service/bom/miniloan_en.voc  
+      inflating: miniloan-temp/Miniloan Service/.project  
+      inflating: miniloan-temp/Miniloan Service/deployment/Miniloan.dep  
+      inflating: miniloan-temp/Miniloan Service/deployment/Miniloan ServiceOperation.dop  
+      creating: miniloan-temp/Miniloan Service/queries
+      inflating: miniloan-temp/Miniloan Service/rules/validation/.rulepackage  
+      inflating: miniloan-temp/Miniloan Service/rules/validation/maximum amount.brl  
+      inflating: miniloan-temp/Miniloan Service/rules/eligibility/.rulepackage  
+      inflating: miniloan-temp/Miniloan Service/rules/eligibility/repayment and score.dta  
+      inflating: miniloan-temp/Miniloan Service/rules/eligibility/minimum income.brl  
+      inflating: miniloan-temp/Miniloan Service/rules/eligibility/minimum credit score.brl  
+      inflating: miniloan-temp/Miniloan Service/rules/Miniloan ServiceParameters.var  
+      inflating: miniloan-temp/Miniloan Service/rules/miniloan.rfl  
     ```
 
 - **Bob** reads the file, edits it and asks to confirm the modification:
@@ -343,7 +343,7 @@ With the configuration above, the Management MCP Server :
     ```
 - **Bob** zips the files:
     > ```
-    > cd /Users/fred/agent-miniloan-temp && zip -r ../Miniloan-Service-modified.zip "Miniloan Service"
+    > cd /Users/fred/miniloan-temp && zip -r ../Miniloan-Service-modified.zip "Miniloan Service"
     > ```
     ```
         adding: Miniloan Service/ (stored 0%)
