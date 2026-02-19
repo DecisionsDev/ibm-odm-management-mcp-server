@@ -231,18 +231,18 @@ With the configuration above, the Management MCP Server :
                     "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server", "ibm-odm-management-mcp-server",
                     "--url",      "http://localhost:9060/decisioncenter-api",
                     "--res-url",  "http://localhost:9060/res",
-                    "--username", "odmAdmin",
+                    "--username", "odmAdmin"
                 ],
                 "env": {
                     "PASSWORD": "odmAdmin"
                 }
-            }
+            },
             "ibm-odm-decision-mcp-server": {
                 "command": "uvx",
                 "args": [
                     "--from", "git+https://github.com/DecisionsDev/ibm-odm-decision-mcp-server", "ibm-odm-decision-mcp-server",
                     "--url", "http://localhost:9060/res",
-                    "--username", "odmAdmin",
+                    "--username", "odmAdmin"
                 ],
                 "env": {
                     "PASSWORD": "odmAdmin"
