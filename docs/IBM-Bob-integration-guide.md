@@ -327,7 +327,7 @@ With the configuration above, the Management MCP Server :
       inflating: agent-miniloan-temp/Miniloan Service/rules/miniloan.rfl  
     ```
 
-- **Bob** reads the file, edits it and ask to confirm the modification:
+- **Bob** reads the file, edits it and asks to confirm the modification:
     ```xml
     <?xml version="1.0" encoding="UTF-8"?>
     <ilog.rules.studio.model.brl:ActionRule xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:ilog.rules.studio.model.brl="http://ilog.rules.studio/model/brl.ecore">
