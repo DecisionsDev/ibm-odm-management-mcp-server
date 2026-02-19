@@ -155,11 +155,11 @@ This step is optional and only needed if you choose to run ODM as a container on
 
 ## Demo walkthrough
 
-With the configuration above, the Management MCP Server 
-- connects to the IBM ODM Developer Edition container which embeds a sample database containing two decision services:
-    1. **Loan Validation Service**
-    2. **Miniloan Service**
-- exposes the Decision Center REST API endpoints and the RES console REST API endpoints as tools.
+With the configuration above, the Management MCP Server :
+1. connects to the IBM ODM Developer Edition container which embeds a sample database containing two decision services:
+    - **Loan Validation Service**
+    - **Miniloan Service**
+1. and exposes the Decision Center REST API endpoints and the RES console REST API endpoints as tools.
 
 ### Example 1: Decision Center REST API
 
