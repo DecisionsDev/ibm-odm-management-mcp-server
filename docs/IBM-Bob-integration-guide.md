@@ -186,9 +186,11 @@ With the configuration above, the Management MCP Server :
     Get the execution statistics
     ```
 
-- **Bob** lists the execution units, the ruleapps and rulesets, and their statistics of executions, and generates a report:
+- **Bob** finds the execution units (`getExecutionUnits` tool), the ruleapps and rulesets (`getRuleApps` tool), and the statistics of execution of each ruleset (`getRulesetStatistics` tool), and generates a report:
 
     >🎉 **Task Completed**
+    >
+    >I've retrieved the execution statistics from the IBM ODM Rule Execution Server. Here's what I found:
     >
     >**Execution Unit Information**
     >- Server Name: localhost
@@ -196,32 +198,33 @@ With the configuration above, the Management MCP Server :
     >- Product Version: 9.5.0.1.1
     >- Status: 46 warnings, 0 errors
     >
-    >Execution statistics query completed for the available rulesets. The queries returned no response, which indicates that no execution statistics have been recorded yet for the rulesets in the repository.
+    >**Deployed RuleApps**
     >
-    >This typically means:
+    >Found 3 RuleApps with 4 total rulesets deployed:
     >
-    >- The rulesets have not been executed yet, or
-    >- Execution statistics collection is not enabled, or
-    >- The statistics have been reset
+    >1. mydeployment (1.0) - Miniloan_ServiceRuleset
+    >1. production_deployment (1.0)- loan_validation_production
+    >1. test_deployment (1.0) - loan_validation_with_score_and_grade & loan_validation_production
     >
-    >**Available RuleApps**
+    >**Ruleset Execution Statistics**
     >
-    >The system has 3 RuleApps deployed:
+    >mydeployment/1.0/Miniloan_ServiceRuleset/1.0
     >
-    >1. mydeployment (1.0) - 7 ruleset versions
-    >1. production_deployment (1.0) - 1 ruleset
-    >1. test_deployment (1.0) - 2 rulesets
-
-- Enter the following text:
-    ```
-    Enable monitoring on all the rulesets
-    ```
-
-- **Bob** runs the `addRulesetProperty` to set the property `monitoring.enabled` to `true` on all the rulesets to enable recording the statistics of execution of those rulesets.
+    >- Status: Not activated
+    >- Execution Count: 1
+    >- Error Count: 0
+    >- Total Execution Time: 6ms
+    >- Average Execution Time: 6.0ms
+    >- Min/Max Execution Time: 6ms / 6ms
+    >- Last Execution Time: 6ms
+    >- First Execution: 2026-02-20 at 16:18:45 UTC
+    >- Last Execution: 2026-02-20 at 16:18:45 UTC
+    >
+    >Other Rulesets: The other three rulesets (production_deployment and test_deployment rulesets) returned no statistics, indicating they have not been executed yet or have no recorded execution data.
 
 ### Example 3: combining the Decision MCP server and Management MCP server
 
-- To enable both MCP servers, edit the configuration file as follows:
+1. To enable both MCP servers, edit the configuration file as follows:
    ```json
    {
         "mcpServers": {
@@ -251,163 +254,191 @@ With the configuration above, the Management MCP Server :
         }
     }
     ```
-- Enter the following text (and press ENTER):
+1. Enter the following text (and press ENTER):
+    ```
+    Please make sure that the miniloan ruleset is exposed as a MCP tool
+    ```
+
+    - **Bob**: gets the list of all the ruleapps and rulesets (by running the `getRuleApps` tool) and check the property of the latest miniloan ruleset (`getRulesetProperties` tool)
+    
+    - **Bob**: runs the `addRulesetProperty` to set the property `agent.enabled` to `true` on this ruleset
+
+1. In the MCP settings, click the 'Refresh all servers' icon so that the new tool gets published in the `ibm-odm-decision-mcp-server` MCP server. 
+
+    ![IBM Bob Screenshot](images/bob-demo-refresh.png)
+
+1. Click `ibm-odm-decision-mcp-server` to check the `miniloan_serviceoperation` tool is published:
+
+    ![IBM Bob Screenshot](images/bob-demo-tools.png)
+
+1. Enter the following text:
     ```
     I would like to borrow $2,000,000
     ```
-- **Bob** runs the `miniloan_serviceoperation` tool and reports:
+    - **Bob** runs the `miniloan_serviceoperation` tool and reports:
 
-    >Your loan request for $2,000,000 has been denied.
-    >
-    >Reason for denial:
-    >The loan amount exceeds the maximum allowed limit of $1,000,000.
+        >🎉 **Task Completed**
+        >
+        >I've processed your loan request for $2,000,000 through the miniloan decision service.
+        >
+        >**Loan Decision Result:**
+        >
+        >- Status: ❌ REJECTED
+        >- Reason: "The loan cannot exceed 1,000,000"
+        >Reason for denial:
+        >The loan amount exceeds the maximum allowed limit of $1,000,000.
 
-- Enter the following text:
+1. Enter the following text:
     ```
     find which rule enforces this maximum
     ```
-- **Bob** runs `decisionServices` first to list the Decision Services and then `rules` to :
+    - **Bob** first lists the Decision Services (`decisionServices` tool), then download the rules of 'Miniloan Service' (`rules` tool) and finally reports:
 
-    >I found the rule that enforces the maximum loan amount!
-    >
-    >**Rule Name**: `maximum amount`
-    >
-    >**Rule Location**:
-    >- Decision Service: Miniloan Service
-    >- Folder: validation
-    >
-    >**Rule Definition:**
-    >```
-    >if 
-    >   the amount of 'the loan' is more than 1,000,000 
-    >then
-    >   add "The loan cannot exceed 1,000,000" to the messages of 'the loan';
-    >   reject 'the loan' ;
-    >```
-    >
-    >**Rule Details:**
-    >
-    >- Created by: odmAdmin
-    >- Created on: March 15, 2024 at 10:22:36 CET
-    >- Status: Active
-    >- Type: Action Rule (brm.ActionRule)
-    >- This rule checks if the loan amount exceeds $1,000,000 and automatically rejects the loan with the message "The loan cannot exceed 1,000,000" if it does.
-    >
-    >Permalink to rule in Decision Center:
-    >http://localhost:9060/decisioncenter/t/library/editor?datasource=jdbc%2FilogDataSource&id=brm.ActionRule:23:23&baselineId=brm.Branch:31:31
-    >
-- Enter the following text:
+        >🎉 **Task Completed**
+        >
+        >I found the rule that enforces the maximum loan amount!
+        >
+        >**Rule Name**: `maximum amount`
+        >
+        >**Rule Location**:
+        >- Decision Service: Miniloan Service
+        >- Folder: validation
+        >
+        >**Rule Definition:**
+        >```
+        >if 
+        >   the amount of 'the loan' is more than 1,000,000 
+        >then
+        >   add "The loan cannot exceed 1,000,000" to the messages of 'the loan';
+        >   reject 'the loan' ;
+        >```
+        >
+        >**Rule Details:**
+        >
+        >- Created by: odmAdmin
+        >- Created on: March 15, 2024 at 10:22:36 CET
+        >- Status: Active
+        >- Type: Action Rule (brm.ActionRule)
+        >- This rule checks if the loan amount exceeds $1,000,000 and automatically rejects the loan with the message "The loan cannot exceed 1,000,000" if it does.
+        >
+        >Permalink to rule in Decision Center:
+        >http://localhost:9060/decisioncenter/t/library/editor?datasource=jdbc%2FilogDataSource&id=brm.ActionRule:23:23&baselineId=brm.Branch:31:31
+
+1. Enter the following text:
     ```
     download the decision service and change this maximum to 2,000,000
     ```
 
-- **Bob** runs `decisionServiceExport` which returns an archive and then unzips it:
-    >```
-    >cd /Users/fred && unzip -q Miniloan-Service_main_bg6qld2l.zip -d miniloan-temp && find miniloan-temp -name "maximum amount.brl"
-    >```
+    - **Bob** runs `decisionServiceExport` which returns an archive and then unzips it:
+        >```
+        >cd /Users/fred && unzip -q Miniloan-Service_main_bg6qld2l.zip -d miniloan-temp && find miniloan-temp -name "maximum amount.brl"
+        >```
+
+    - **Bob** reads the file, edits it and asks to confirm the modification:
+        ```xml
+        <?xml version="1.0" encoding="UTF-8"?>
+        <ilog.rules.studio.model.brl:ActionRule xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:ilog.rules.studio.model.brl="http://ilog.rules.studio/model/brl.ecore">
+        <name>maximum amount</name>
+        <uuid>45d4e486-039b-41a9-833c-b69990fe53df</uuid>
+        <locale>en_US</locale>
+        <definition><![CDATA[if
+        the amount of 'the loan' is more than 2,000,000
+        then
+        add "The loan cannot exceed 2,000,000" to the messages of 'the loan' ;
+        reject 'the loan' ;]]></definition>
+        </ilog.rules.studio.model.brl:ActionRule>
+        ```
+
+    - **Bob** zips the files:
+        > ```
+        > cd /Users/fred/miniloan-temp && zip -r ../Miniloan-Service-modified.zip "Miniloan Service"
+        > ```
+        ```
+            adding: Miniloan Service/ (stored 0%)
+            adding: Miniloan Service/.validation/ (stored 0%)
+            adding: Miniloan Service/bom/ (stored 0%)
+            adding: Miniloan Service/bom/miniloan_en.voc (deflated 71%)
+            adding: Miniloan Service/bom/miniloan.bom (deflated 56%)
+            adding: Miniloan Service/resources/ (stored 0%)
+            adding: Miniloan Service/resources/xom-libraries/ (stored 0%)
+            adding: Miniloan Service/resources/xom-libraries/miniloan-xom.zip (stored 0%)
+            adding: Miniloan Service/.ruleproject (deflated 72%)
+            adding: Miniloan Service/queries/ (stored 0%)
+            adding: Miniloan Service/deployment/ (stored 0%)
+            adding: Miniloan Service/deployment/Miniloan.dep (deflated 63%)
+            adding: Miniloan Service/deployment/Miniloan ServiceOperation.dop (deflated 57%)
+            adding: Miniloan Service/.project (deflated 56%)
+            adding: Miniloan Service/rules/ (stored 0%)
+            adding: Miniloan Service/rules/miniloan.rfl (deflated 69%)
+            adding: Miniloan Service/rules/eligibility/ (stored 0%)
+            adding: Miniloan Service/rules/eligibility/minimum income.brl (deflated 41%)
+            adding: Miniloan Service/rules/eligibility/.rulepackage (deflated 39%)
+            adding: Miniloan Service/rules/eligibility/repayment and score.dta (deflated 91%)
+            adding: Miniloan Service/rules/eligibility/minimum credit score.brl (deflated 42%)
+            adding: Miniloan Service/rules/Miniloan ServiceParameters.var (deflated 48%)
+            adding: Miniloan Service/rules/validation/ (stored 0%)
+            adding: Miniloan Service/rules/validation/.rulepackage (deflated 39%)
+            adding: Miniloan Service/rules/validation/maximum amount.brl (deflated 42%)
+            adding: Miniloan Service/templates/ (stored 0%)
+        ```
+    - **Bob** updates the Decision Service by running `branchImport`
+    - **Bob** finds the deployment configuration by running `deploymentConfigurations`
+    - **Bob** deploys a new version of the ruleset by running `deploy`
+    - **Bob** reports:
+        >Excellent! Now let me test your $2,000,000 loan request again with the updated ruleset. Note: The ibm-odm-decision-mcp-server may need to be refreshed to pick up the new version.
+
+    - **Bob** runs `miniloan_serviceoperation` (the loan request is rejected again), and reports:
+
+        >🎉 **Task Completed**
+        >
+        >I've successfully modified the maximum loan amount from 1,000,000 to 2,000,000 and deployed the updated decision service. Here's the complete summary:
+        >
+        >✅ Completed Actions:
+        >1. Downloaded the Miniloan Service decision service from Decision Center
+        >1. Modified the "maximum amount" rule:
+        >    - Changed: 1,000,000 → 2,000,000
+        >    - Updated error message accordingly
+        >1. Imported the modified decision service back into Decision Center (15 elements published)
+        >1. Deployed the updated ruleset as version 1.1 to Rule Execution Server
+        >1. Enabled the new ruleset version 1.1 as an MCP tool (agent.enabled=true)
+        >1. Notified the Rule Execution Server to reload the ruleset
+        >
+        >📋 Current Status:
+        > - New Ruleset: mydeployment/1.0/Miniloan_ServiceRuleset/1.1
+        > - Deployment: ✅ Successfully deployed
+        > - Maximum Loan: Now **2,000,000**
+        > - MCP Tool Status: Enabled and ready
+        >
+        >🔄 Next Step - Refresh Bob IDE:
+        >To use the updated ruleset with the new $2,000,000 limit, you need to refresh the MCP servers in Bob IDE:
+        >
+        >1. Click the MCP Servers icon in Bob IDE's left sidebar
+        >1. Click the Refresh button (circular arrow icon)
+        >1. Wait for the servers to reload
+        >
+        >After refreshing, the miniloan_serviceoperation tool will automatically use version 1.1 with the new $2,000,000 maximum limit, and your loan request will be approved (assuming other criteria are met).
+
+1. In the MCP settings, click the 'Refresh all servers' 
+
+1. Enter the following text:
     ```
-    Archive:  Miniloan-Service_main_bg6qld2l.zip
-      inflating: miniloan-temp/Miniloan Service/resources/xom-libraries/miniloan-xom.zip  
-      creating: miniloan-temp/Miniloan Service/.validation
-      inflating: miniloan-temp/Miniloan Service/.ruleproject  
-      creating: miniloan-temp/Miniloan Service/templates
-      inflating: miniloan-temp/Miniloan Service/bom/miniloan.bom  
-      inflating: miniloan-temp/Miniloan Service/bom/miniloan_en.voc  
-      inflating: miniloan-temp/Miniloan Service/.project  
-      inflating: miniloan-temp/Miniloan Service/deployment/Miniloan.dep  
-      inflating: miniloan-temp/Miniloan Service/deployment/Miniloan ServiceOperation.dop  
-      creating: miniloan-temp/Miniloan Service/queries
-      inflating: miniloan-temp/Miniloan Service/rules/validation/.rulepackage  
-      inflating: miniloan-temp/Miniloan Service/rules/validation/maximum amount.brl  
-      inflating: miniloan-temp/Miniloan Service/rules/eligibility/.rulepackage  
-      inflating: miniloan-temp/Miniloan Service/rules/eligibility/repayment and score.dta  
-      inflating: miniloan-temp/Miniloan Service/rules/eligibility/minimum income.brl  
-      inflating: miniloan-temp/Miniloan Service/rules/eligibility/minimum credit score.brl  
-      inflating: miniloan-temp/Miniloan Service/rules/Miniloan ServiceParameters.var  
-      inflating: miniloan-temp/Miniloan Service/rules/miniloan.rfl  
+    Reapply my loan request
     ```
 
-- **Bob** reads the file, edits it and asks to confirm the modification:
-    ```xml
-    <?xml version="1.0" encoding="UTF-8"?>
-    <ilog.rules.studio.model.brl:ActionRule xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:ilog.rules.studio.model.brl="http://ilog.rules.studio/model/brl.ecore">
-    <name>maximum amount</name>
-    <uuid>45d4e486-039b-41a9-833c-b69990fe53df</uuid>
-    <locale>en_US</locale>
-    <definition><![CDATA[if
-    the amount of 'the loan' is more than 2,000,000
-    then
-    add "The loan cannot exceed 2,000,000" to the messages of 'the loan' ;
-    reject 'the loan' ;]]></definition>
-    </ilog.rules.studio.model.brl:ActionRule>
-    ```
-- **Bob** zips the files:
-    > ```
-    > cd /Users/fred/miniloan-temp && zip -r ../Miniloan-Service-modified.zip "Miniloan Service"
-    > ```
-    ```
-        adding: Miniloan Service/ (stored 0%)
-        adding: Miniloan Service/.validation/ (stored 0%)
-        adding: Miniloan Service/bom/ (stored 0%)
-        adding: Miniloan Service/bom/miniloan_en.voc (deflated 71%)
-        adding: Miniloan Service/bom/miniloan.bom (deflated 56%)
-        adding: Miniloan Service/resources/ (stored 0%)
-        adding: Miniloan Service/resources/xom-libraries/ (stored 0%)
-        adding: Miniloan Service/resources/xom-libraries/miniloan-xom.zip (stored 0%)
-        adding: Miniloan Service/.ruleproject (deflated 72%)
-        adding: Miniloan Service/queries/ (stored 0%)
-        adding: Miniloan Service/deployment/ (stored 0%)
-        adding: Miniloan Service/deployment/Miniloan.dep (deflated 63%)
-        adding: Miniloan Service/deployment/Miniloan ServiceOperation.dop (deflated 57%)
-        adding: Miniloan Service/.project (deflated 56%)
-        adding: Miniloan Service/rules/ (stored 0%)
-        adding: Miniloan Service/rules/miniloan.rfl (deflated 69%)
-        adding: Miniloan Service/rules/eligibility/ (stored 0%)
-        adding: Miniloan Service/rules/eligibility/minimum income.brl (deflated 41%)
-        adding: Miniloan Service/rules/eligibility/.rulepackage (deflated 39%)
-        adding: Miniloan Service/rules/eligibility/repayment and score.dta (deflated 91%)
-        adding: Miniloan Service/rules/eligibility/minimum credit score.brl (deflated 42%)
-        adding: Miniloan Service/rules/Miniloan ServiceParameters.var (deflated 48%)
-        adding: Miniloan Service/rules/validation/ (stored 0%)
-        adding: Miniloan Service/rules/validation/.rulepackage (deflated 39%)
-        adding: Miniloan Service/rules/validation/maximum amount.brl (deflated 42%)
-        adding: Miniloan Service/templates/ (stored 0%)
-    ```
-- **Bob** updates the Decision Service by running `branchImport`
-- **Bob** finds the deployment configuration by running `deploymentConfigurations`
-- **Bob** deploys a new version of the ruleset by running `deploy`
-- **Bob** tries to run `miniloan_serviceoperation` again to check that it is now possible to borrow a higher amount 
-    > The MCP decision server appears to be using version 1.1 still. Let me check which version it's actually calling and update the agent.enabled property to point to the correct version. Let me check the decision service resource directly:
+    - **Bob** runs `miniloan_serviceoperation` and reports:
 
-- **Bob** finds out that the new ruleset is not published as a tool
-    > I see the issue! The MCP decision server is still pointing to version 1.1 (/mydeployment/1.0/Miniloan_ServiceRuleset/1.1). I need to update the ruleset property to disable agent.enabled on version 1.1 and enable it on version 1.2. Let me do that:
+        >🎉 **Task Completed**
+        >
+        >🎉 Congratulations! Your $2,000,000 loan has been APPROVED! 🎉
+        >
+        >✅ Approved Loan Details:
+        >- Loan Amount: $2,000,000
+        >- Duration: 360 months (30 years)
+        >- Interest Rate: 5% per year
+        >- Yearly Repayment: $128,837
+        >- Status: ✅ APPROVED
+        >- Messages: None (no issues!)
 
-- **Bob** fixes that by running `updateRulesetProperty` (with the property `agent.enabled` set to `true`)
-
-- **Bob** runs `miniloan_serviceoperation` again and reports: 
-    >🎉 **Task Completed**
-    >
-    >I've successfully modified the maximum loan amount rule from 1,000,000 to 2,000,000 in both the "Miniloan Service" decision service.
-    >
-    >**What was done:**
-    >
-    >- Downloaded the Miniloan Service decision service from Decision Center
-    >- Modified the "maximum amount" rule in the validation folder:
-    >- Changed the condition from is more than 1,000,000 to is more than 2,000,000
-    >- Updated the error message from "The loan cannot exceed 1,000,000" to "The loan cannot exceed 2,000,000"
-    >- Imported the modified decision service back to Decision Center
-    >- Deployed the Miniloan Service (version 1.2) to the execution server
-    >- Updated the agent.enabled property to switch from version 1.1 to version 1.2
-    >
-    >**Current Status:**
-    >The decision service has been updated with the new $2,000,000 maximum
-    >Version 1.2 of the Miniloan_ServiceRuleset is deployed and active
-    >The agent.enabled property has been set to use version 1.2
-    >Note: The MCP decision server may need to be restarted to pick up the new ruleset version. The property changes have been made (agent.enabled=false on v1.1, agent.enabled=true on v1.2), but the server might be caching the old version. You may need to restart the IBM Bob application or the MCP server to see the updated $2,000,000 limit take effect.
-    >
-    >**File modified:**
-    >
-    >- `/Users/fred/miniloan-temp/Miniloan Service/rules/validation/maximum amount.brl`
 
 ## Additional information
 
