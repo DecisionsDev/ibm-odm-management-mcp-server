@@ -418,7 +418,7 @@ With the configuration above, the Management MCP Server :
         >
         >After refreshing, the miniloan_serviceoperation tool will automatically use version 1.1 with the new $2,000,000 maximum limit, and your loan request will be approved (assuming other criteria are met).
 
-1. In the MCP settings, click the 'Refresh all servers' 
+1. In the MCP settings, click the 'Refresh all servers' icon again
 
 1. Enter the following text:
     ```
