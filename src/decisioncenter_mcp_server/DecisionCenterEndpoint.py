@@ -31,12 +31,13 @@ class DecisionCenterEndpoint:
         parameters (dict): list of the parameters expected with their location in the request (path, query or body)
         input_schema (dict): The schema describing the expected input for the tool.
     """
-    def __init__(self, tool_name:str, summary:str, description:str, method:str, url:str, parameters:dict, input_schema:dict[str,str]):
+    def __init__(self, tool_name:str, summary:str, description:str, method:str, url:str, parameters:dict, input_schema:dict[str,str], headers:list=[]):
         if description is None:
             description=summary
         self.method = method
         self.url    = url
         self.parameters = parameters
+        self.headers = headers
         self.tool   = types.Tool(
             name=tool_name,
             title=summary,

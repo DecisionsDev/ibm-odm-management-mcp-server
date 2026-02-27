@@ -41,7 +41,7 @@ class CustomHTTPAdapter(HTTPAdapter):
 
 class Credentials:
 
-    def __init__(self, odm_url, 
+    def __init__(self, odm_url=None, odm_res_url=None,
                  token_url=None, scope='openid', client_id=None, client_secret=None, 
                  pkjwt_cert_path=None, pkjwt_key_path=None, pkjwt_key_password=None, 
                  username=None, password=None, 
@@ -51,9 +51,17 @@ class Credentials:
 
         # Get logger for this class with explicit name to ensure consistency
         self.logger = logging.getLogger("decisioncenter_mcp_server.Credentials")
-        self.odm_url=odm_url.rstrip('/')
-        if not checkers.is_url(self.odm_url):
-            raise ValueError("'"+self.odm_url+"' is not a valid URL")
+
+        # remove the ending / and check the URL of DC REST API and the RES console
+        self.odm_url     = None
+        self.odm_res_url = None
+        if odm_url:
+            self.odm_url     = odm_url.rstrip('/')
+            if not checkers.is_url(self.odm_url):     raise ValueError("'"+self.odm_url+"' is not a valid URL")
+        if odm_res_url:
+            self.odm_res_url = odm_res_url.rstrip('/')
+            if not checkers.is_url(self.odm_res_url): raise ValueError("'"+self.odm_res_url+"' is not a valid URL")
+        if odm_url is None and odm_res_url is None:   raise ValueError("Please set the URL of at least the Decision Center REST API or the RES Console")
 
         if verify_ssl:
             import certifi
@@ -61,7 +69,8 @@ class Credentials:
         else:
             self.cacert = None
 
-        self.isAdmin = False
+        self.isDcAdmin = False
+        self.isResDeployer = False
         self.username = username
         self.password = password
         self.token_url = token_url
@@ -233,7 +242,10 @@ class Credentials:
         """ 
         session = requests.Session()
 
-        if self.odm_url.startswith('https') and self.verify_ssl:
+        use_https = self.odm_url     is not None and self.odm_url.startswith('https') \
+                 or self.odm_res_url is not None and self.odm_res_url.startswith('https')
+
+        if use_https and self.verify_ssl:
             session.verify = True
             session.mount('https://', CustomHTTPAdapter(certfile = self.ssl_cert_path))
         else:

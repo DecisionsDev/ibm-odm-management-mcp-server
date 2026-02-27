@@ -13,11 +13,9 @@
 # limitations under the License.
 
 from typing import Optional
-from mcp.server.models import InitializationOptions
 import mcp.types as types
 from mcp.server.fastmcp import FastMCP
 from pydantic import AnyUrl
-import mcp.server.stdio
 import logging
 import json
 import argparse
@@ -27,6 +25,7 @@ import sys
 from .Credentials import Credentials
 from .DecisionCenterManager import DecisionCenterManager
 from .DecisionCenterEndpoint import DecisionCenterEndpoint
+from .ToolTrace import DiskTraceStorage
 
 INSTRUCTIONS = """
 IBM ODM Decision Center MCP server
@@ -39,31 +38,53 @@ class MCPServer:
 
     def __init__(self, credentials: Credentials,
                  tags: list[str] = [], tools: list[str] = [], no_tools: list[str] = [],
-                 transport: Optional[str] = 'stdio', host: Optional[str] = '0.0.0.0', port: Optional[int] = 3000, path: Optional[str] = '/mcp'):
+                 trace: list[str] = [], traces_dir: str = None, traces_maxsize: int = 200,
+                 transport: Optional[str] = 'stdio', host: Optional[str] = '0.0.0.0', port: Optional[int] = 3000, path: Optional[str] = '/mcp',
+                ):
         # Get logger for this class
         self.logger = logging.getLogger(__name__)
         self.credentials = credentials
         self.tags: list[str] = tags
         self.tools: list[str] = tools       # explicit list of tools to publish
         self.no_tools: list[str] = no_tools # explicit list of tools to discard
+        self.trace          = trace
+        self.traces_dir     = traces_dir
+        self.traces_maxsize = traces_maxsize
         self.transport = transport
         self.host      = host
         self.port      = port
         self.path      = path
-        self.repository: dict[str, DecisionCenterEndpoint] = None
-        self.manager = DecisionCenterManager(credentials=credentials)
+        self.repository: dict[str, DecisionCenterEndpoint] = {}
+
+        # Set up trace storage with configured parameters if tracing is enabled
+        # If traces_dir is None, DiskTraceStorage will use the default path in user's home directory
+        self.trace_recorder = DiskTraceStorage(trace_executions    = "EXECUTIONS_WITH_CONTENT" in self.trace or "EXECUTIONS" in self.trace,
+                                               verbose             = "EXECUTIONS_WITH_CONTENT" in self.trace,
+                                               trace_configuration = "CONFIGURATION"           in self.trace,
+                                               storage_dir = self.traces_dir, 
+                                               max_traces = self.traces_maxsize)
+
+        self.manager = DecisionCenterManager(credentials, self.trace_recorder)
 
     def update_repository(self):
-        endpoints       = self.manager.fetch_endpoints()
-        self.repository = self.manager.generate_tools_format(endpoints, self.tags, self.tools, self.no_tools, 
-                                                             self.credentials.isAdmin)
+
+        # generate the MCP tools for Decision Center REST API
+        if self.credentials.odm_url:
+            self.repository = self.manager.generate_tools_format(self.manager.fetch_endpoints(), 
+                                                                 self.tags, self.tools, self.no_tools, self.credentials.isDcAdmin)
+
+        # generate the MCP tools for Decision Server console REST API (aka RES console)
+        if self.credentials.odm_res_url:
+            self.repository = self.manager.generate_res_tools(self.manager.fetch_res_api_endpoints(), self.repository,
+                                                              self.tags, self.tools, self.no_tools, self.credentials.isResDeployer)
+
+        self.trace_recorder.save(self.repository)
 
     async def list_tools(self) -> list[types.Tool]:
         """
         List available tools.
         Each tool specifies its arguments using JSON Schema validation.
         """
-        self.logger.info(f"Listing ODM Decision Center tools")
         tools = []
         for tool_name, endpoint in self.repository.items():
             tools.append(endpoint.tool)
@@ -77,7 +98,7 @@ class MCPServer:
         """
         self.logger.info("Invoking tool: %s with arguments: %s", name, arguments)
 
-        endpoint : DecisionCenterEndpoint = self.repository.get(name) if self.repository else None
+        endpoint : DecisionCenterEndpoint = self.repository.get(name)
         if endpoint is None:
             raise ValueError(f"Unknown tool: {name}")
 
@@ -141,6 +162,7 @@ def create_credentials(args):
     if args.zenapikey:    # If zenapikey is provided, use it for authentication
         return Credentials(
             odm_url=args.url,
+            odm_res_url=args.res_url,
             username=args.username,
             zenapikey=args.zenapikey,
             mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
@@ -150,6 +172,7 @@ def create_credentials(args):
     elif args.client_secret:  # OpenID Client Secret provided
         return Credentials(
             odm_url=args.url,
+            odm_res_url=args.res_url,
             token_url=args.token_url,
             scope=args.scope,
             client_id=args.client_id,
@@ -161,6 +184,7 @@ def create_credentials(args):
     elif args.pkjwt_key_path:  # OpenID PKJWT
         return Credentials(
             odm_url=args.url,
+            odm_res_url=args.res_url,
             token_url=args.token_url,
             scope=args.scope,
             client_id=args.client_id,
@@ -174,6 +198,7 @@ def create_credentials(args):
             raise ValueError("Username and password must be provided for basic authentication.")
         return Credentials(
             odm_url=args.url,
+            odm_res_url=args.res_url,
             username=args.username,
             password=args.password,
             mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
@@ -185,18 +210,25 @@ def init(args):
     init_logging(args.log_level)
     credentials = create_credentials(args)
     server = MCPServer(
-        credentials=credentials,
-        tags    =[tag.lower()  for tag  in args.tags]     if args.tags else [],
-        tools   =[tool.lower() for tool in args.tools]    if args.tools else [],
-        no_tools=[tool.lower() for tool in args.no_tools] if args.no_tools else [],
-        transport=args.transport, host=args.host, port=args.port, path=args.mount_path,
+        credentials     = credentials,
+        tags            = [tag.lower()  for tag  in args.tags]     if args.tags else [],
+        tools           = [tool.lower() for tool in args.tools]    if args.tools else [],
+        no_tools        = [tool.lower() for tool in args.no_tools] if args.no_tools else [],
+        trace           = args.trace if args.trace is not None else [],
+        traces_dir      = args.traces_dir, 
+        traces_maxsize  = args.traces_maxsize,
+        transport       = args.transport,
+        host            = args.host,
+        port            = args.port,
+        path            = args.mount_path,
     )
     server.update_repository()
     return server
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Decision MCP Server")
-    parser.add_argument("--url",               type=str, default=os.getenv("ODM_URL", "http://localhost:9060/decisioncenter-api"), help="ODM Decision Center REST API URL")
+    parser.add_argument("--url",               type=str, default=os.getenv("ODM_URL"), help="ODM Decision Center REST API URL")
+    parser.add_argument("--res-url",           type=str, default=os.getenv("ODM_RES_URL"), help="ODM Decision Server Console URL (aka RES Console)")
     parser.add_argument("--username",          type=str, default=os.getenv("ODM_USERNAME", "odmAdmin"), help="ODM username (optional)")
     parser.add_argument("--password",          type=str, default=os.getenv("ODM_PASSWORD", "odmAdmin"), help="ODM password (optional)")
     parser.add_argument("--zenapikey",         type=str, default=os.getenv("ZENAPIKEY"), help="Zen API Key (optional)")
@@ -228,7 +260,12 @@ def parse_arguments():
     parser.add_argument("--tags",              type=str, default=os.getenv("TAGS"),     nargs='+', help="List of Tags (eg. About Explore Build). Useful to keep only the tools whose tag is in the list. If this option is not specified, all the tools are published by the MCP server.")
     parser.add_argument("--tools",             type=str, default=os.getenv("TOOLS"),    nargs='+', help="Explicit list of tools to publish. All the other tools are filtered out. If this option is not specified, all the tools are published by the MCP server.")
     parser.add_argument("--no-tools",          type=str, default=os.getenv("NO_TOOLS"), nargs='+', help="Explicit list of tools to discard. All the other tools are published. Option ignored if the option --tools is provided. If this option is not specified, all the tools are published by the MCP server.")
-        
+
+    # Trace-related arguments
+    parser.add_argument("--trace",             type=str, default=os.getenv("TRACE"),    nargs='+', choices=["EXECUTIONS", "EXECUTIONS_WITH_CONTENT", "CONFIGURATION"], help="Specifies what to trace.")
+    parser.add_argument("--traces-dir",        type=str, default=os.getenv("TRACES_DIR"), help="Directory to store traces files (optional). If not provided, traces will be stored in the directory '~/.ibm-odm-management-mcp-server/traces'")
+    parser.add_argument("--traces-maxsize",    type=int, default=int(os.getenv("TRACES_MAXSIZE", "200")), help="Maximum number of traces to store (default: 200)")
+
     return parser.parse_args()
 
 def main():
