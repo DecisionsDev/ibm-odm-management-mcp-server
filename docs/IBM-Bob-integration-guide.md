@@ -105,6 +105,8 @@ This step is optional and only needed if you choose to run ODM as a container on
     ```    
     If the command is successful, you should see:
     ```
+    upload_materials  | ✅ ODM Ready for MCP Server
+    upload_materials exited with code 0
     [+] Running 1/1
     ✅ Container odm Running
     ```
