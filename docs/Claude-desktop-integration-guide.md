@@ -128,7 +128,9 @@ If you want to use a local ODM instance for development or testing,
     
   If the command is successful, you should see:
     ```
-   [+] Running 1/1
+    upload_materials  | ✅ ODM Ready for MCP Server
+    upload_materials exited with code 0
+    [+] Running 1/1
     ✅ Container odm Running
     ```
 
