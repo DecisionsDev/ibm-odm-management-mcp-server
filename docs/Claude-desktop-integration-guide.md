@@ -130,8 +130,6 @@ If you want to use a local ODM instance for development or testing,
     ```
     upload_materials  | ✅ ODM Ready for MCP Server
     upload_materials exited with code 0
-    [+] Running 1/1
-    ✅ Container odm Running
     ```
 
 - Once the containers are running, the ODM web consoles are available at [http://localhost:9060](http://localhost:9060) using the default credentials:
