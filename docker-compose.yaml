@@ -5,7 +5,6 @@ services:
     container_name: odm
     environment:
       - LICENSE=accept
-      - SAMPLE=true
     healthcheck:
       test: curl -k -f http://localhost:9060/decisioncenter/healthCheck || exit 1
       interval: 5s
