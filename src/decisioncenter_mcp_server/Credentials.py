@@ -17,7 +17,6 @@ from requests.adapters import HTTPAdapter
 import ssl
 import base64
 import logging
-from validator_collection import checkers
 import time
 import uuid
 import hashlib
@@ -57,10 +56,8 @@ class Credentials:
         self.odm_res_url = None
         if odm_url:
             self.odm_url     = odm_url.rstrip('/')
-            if not checkers.is_url(self.odm_url):     raise ValueError("'"+self.odm_url+"' is not a valid URL")
         if odm_res_url:
             self.odm_res_url = odm_res_url.rstrip('/')
-            if not checkers.is_url(self.odm_res_url): raise ValueError("'"+self.odm_res_url+"' is not a valid URL")
         if odm_url is None and odm_res_url is None:   raise ValueError("Please set the URL of at least the Decision Center REST API or the RES Console")
 
         if verify_ssl:
