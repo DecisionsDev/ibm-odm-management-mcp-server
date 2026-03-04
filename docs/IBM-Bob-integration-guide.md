@@ -158,8 +158,8 @@ This step is optional and only needed if you choose to run ODM as a container on
 With the configuration above, the Management MCP Server :
 1. connects to the IBM ODM Developer Edition container which embeds a sample database containing three decision services:
     - **Agent Miniloan Service** – Assess loan requests.
-    - **Beauty Advice** – Provides personalized beauty recommendations.
-    - **Vacation Policy** – Computes vacation days based on company policy.
+    - **Beauty Advice Service** – Provides personalized beauty recommendations.
+    - **Vacation Service** – Computes vacation days based on company policy.
 1. and exposes the Decision Center REST API endpoints and the RES console REST API endpoints as tools.
 
 ### Example 1: Decision Center REST API
