@@ -107,8 +107,6 @@ This step is optional and only needed if you choose to run ODM as a container on
     ```
     upload_materials  | ✅ ODM Ready for MCP Server
     upload_materials exited with code 0
-    [+] Running 1/1
-    ✅ Container odm Running
     ```
 
 - Once the containers are running, the ODM web consoles are available at [http://localhost:9060](http://localhost:9060) using the default credentials:
@@ -158,9 +156,10 @@ This step is optional and only needed if you choose to run ODM as a container on
 ## Demo walkthrough
 
 With the configuration above, the Management MCP Server :
-1. connects to the IBM ODM Developer Edition container which embeds a sample database containing two decision services:
-    - **Loan Validation Service**
-    - **Miniloan Service**
+1. connects to the IBM ODM Developer Edition container which embeds a sample database containing three decision services:
+    - **Agent Miniloan Service** – Assess loan requests.
+    - **Beauty Advice** – Provides personalized beauty recommendations.
+    - **Vacation Policy** – Computes vacation days based on company policy.
 1. and exposes the Decision Center REST API endpoints and the RES console REST API endpoints as tools.
 
 ### Example 1: Decision Center REST API
