@@ -392,6 +392,10 @@ class DecisionCenterManager:
                     if not self.publish_tool(tool_name, info.tags, tools_to_publish, tools_to_ignore, tags_to_publish):
                         continue
 
+                    if tool_name == 'applyAsset' and summary is None and description is None:
+                        summary = "Import a decision service defined from a JSON description"
+                        description = "Import a decision service defined from a JSON description (see https://github.com/DecisionsDev/Decision-Automation-Interchange-Format for the expected JSON format)"
+
                     input_schema = {'type': 'object', 'properties': {}, 'required': []}
                     parameters   = {}
 
