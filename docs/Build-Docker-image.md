@@ -72,7 +72,7 @@ Follow the instructions below to test the Docker image on your laptop:
 
 ## Passing MCP server arguments
 
-In the previous section the `docker run` does not contain any MCP argument because the [Dockerfile](/Dockerfile) defines all the arguments suitable to communicate with the ODM for developer Docker container (and run in remote mode) by default:
+In the previous section the `docker run` does not contain any MCP argument because the [Dockerfile](/Dockerfile#L30) defines all the arguments suitable to communicate with the ODM for developer Docker container (and run in remote mode) by default:
 ```
 CMD ["--transport", "streamable-http", "--url", "http://odm:9060/decisioncenter-api", "--res-url", "http://odm:9060/res"]
 ```
