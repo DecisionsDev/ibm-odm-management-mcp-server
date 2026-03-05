@@ -77,7 +77,7 @@ In the previous section the `docker run` does not contain any MCP argument becau
 CMD ["--transport", "streamable-http", "--url", "http://odm:9060/decisioncenter-api", "--res-url", "http://odm:9060/res"]
 ```
 
-To communicate with a different instance of ODM, add the relevant MCP arguments at the end of the `docker run`:
+To communicate with a different instance of ODM, add the relevant MCP arguments at the end of the `docker run` command:
 
 Here is an example with Basic Authentication:
 ```bash
