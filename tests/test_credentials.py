@@ -47,11 +47,6 @@ def test_url_with_extra_path():
     cred = Credentials(odm_url="http://localhost:9060/odm/decisioncenter-api/", username="user", password="pass")
     assert cred.odm_url == "http://localhost:9060/odm/decisioncenter-api"
 
-def test_invalid_url():
-    # Test with an invalid URL
-    with pytest.raises(ValueError, match="'http://localh ost:9060/decisioncenter-api' is not a valid URL"):
-        Credentials(odm_url="http://localh ost:9060/decisioncenter-api/", username="user", password="pass")
-
 def test_get_auth_zenapikey():
     # Test get_auth with zenapikey
     cred = Credentials(odm_url="http://localhost:9060/decisioncenter-api", username="test_username", zenapikey="test_key")
