@@ -61,8 +61,8 @@ Follow the instructions below to test the Docker image on your laptop:
         {
             "mcpServers": {
                 "ibm-odm-management-mcp-server": {
-                "command": "npx",
-                "args": ["mcp-remote", "http://localhost:3000/mcp", "--allow-http"]
+                    "command": "npx",
+                    "args": ["mcp-remote", "http://localhost:3000/mcp", "--allow-http"]
                 }
             }
         }
@@ -77,7 +77,7 @@ In the previous section the `docker run` does not contain any MCP argument becau
 CMD ["--transport", "streamable-http", "--url", "http://odm:9060/decisioncenter-api", "--res-url", "http://odm:9060/res"]
 ```
 
-To communicate with a different instance of ODM, add the relevant MCP arguments at the end of the `docker run` command:
+To communicate with a different instance of ODM, add the relevant MCP arguments at the end of the `docker run` command.
 
 Here is an example with Basic Authentication:
 ```bash
