@@ -128,8 +128,8 @@ If you want to use a local ODM instance for development or testing,
     
   If the command is successful, you should see:
     ```
-   [+] Running 1/1
-    ✅ Container odm Running
+    upload_materials  | ✅ ODM Ready for MCP Server
+    upload_materials exited with code 0
     ```
 
 - Once the containers are running, the ODM web consoles are available at [http://localhost:9060](http://localhost:9060) using the default credentials:
@@ -179,10 +179,11 @@ Refer to the [Configuration Parameters Table](../README.md#configuration-paramet
 
 ## Part 2: Demo Walkthrough
 
-This walkthrough demonstrates how Claude Desktop can interact with IBM ODM Developer Edition through the Management MCP Server. The sample database contains two decision services:
+This walkthrough demonstrates how Claude Desktop can interact with IBM ODM Developer Edition through the Management MCP Server. The sample database contains three decision services:
 
-1. **Loan Validation Service** – Assess loan requests.
-2. **Miniloan Service** – Assess loan requests (simplified version).
+1. **Agent Miniloan Service** – Assess loan requests.
+2. **Beauty Advice Service** – Provides personalized beauty recommendations.
+3. **Vacation Service** – Computes vacation days based on company policy.
 
 ### Step-by-Step Scenario
 
