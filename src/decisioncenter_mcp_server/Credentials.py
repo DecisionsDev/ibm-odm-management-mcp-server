@@ -54,10 +54,8 @@ class Credentials:
         # remove the ending / and check the URL of DC REST API and the RES console
         self.odm_url     = None
         self.odm_res_url = None
-        if odm_url:
-            self.odm_url     = odm_url.rstrip('/')
-        if odm_res_url:
-            self.odm_res_url = odm_res_url.rstrip('/')
+        if odm_url:      self.odm_url     = odm_url.rstrip('/')
+        if odm_res_url:  self.odm_res_url = odm_res_url.rstrip('/')
         if odm_url is None and odm_res_url is None:   raise ValueError("Please set the URL of at least the Decision Center REST API or the RES Console")
 
         if verify_ssl:
