@@ -15,7 +15,7 @@ The repository features a [Dockerfile](/Dockerfile) so that you can build a Dock
     docker build --no-cache -t management-mcp-server:latest .
     ```
 
-## Test
+## Test with ODM for Developer
 
 Follow the instructions below to test the Docker image on your laptop:
 
@@ -30,7 +30,7 @@ Follow the instructions below to test the Docker image on your laptop:
 
 - Start a Management MCP server container
     ```bash
-    docker run -t --rm --name management-mcp-server -p 3000:3000 --network ibm-odm-management-mcp-server_default management-mcp-server:latest --transport streamable-http --url http://odm:9060/decisioncenter-api --res-url http://odm:9060/res
+    docker run -t --rm --name management-mcp-server -p 3000:3000 --network ibm-odm-management-mcp-server_default management-mcp-server:latest
     ```
 
     You should see:
@@ -69,3 +69,29 @@ Follow the instructions below to test the Docker image on your laptop:
         ```
 
 - Start the AI agent and try a few prompts. See the examples in the guides above.
+
+## Passing MCP server arguments
+
+In the previous section the `docker run` does not contain any MCP argument because the Dockerfile defines all the arguments suitable to communicate with the ODM for developer Docker container (and run in remote mode) by default:
+```
+CMD ["--transport", "streamable-http", "--url", "http://odm:9060/decisioncenter-api", "--res-url", "http://odm:9060/res"]
+```
+
+To communicate with a different instance of ODM, add the relevant MCP arguments at the end of the `docker run`:
+
+Here is an example with Basic Authentication:
+```bash
+docker run \
+    -t --rm -p 3000:3000 \
+    --name management-mcp-server \
+    --volume ./odmserver.pem:/certs/server.pem \
+    management-mcp-server:latest \
+    --transport streamable-http \
+    --ssl-cert-path /certs/server.pem \
+    --url       "https://${DC_HOST}/decisioncenter-api" \
+    --res-url   "https://${RES_CONSOLE_HOST}/res" \
+    --username  <username> \
+    --password  <password>
+```
+
+>Note: the ODM servers certificate file (`odmserver.pem`) is mounted in the container as the file `/certs/server.pem` thanks to the `--volume` docker run option.

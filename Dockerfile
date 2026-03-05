@@ -27,4 +27,4 @@ USER nonroot
 ENV PATH="/app/.venv/bin:$PATH"
 
 ENTRYPOINT ["ibm-odm-management-mcp-server"]
-CMD ["--transport", "streamable-http"]
+CMD ["--transport", "streamable-http", "--url", "http://odm:9060/decisioncenter-api", "--res-url", "http://odm:9060/res"]
