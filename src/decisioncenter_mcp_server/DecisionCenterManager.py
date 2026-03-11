@@ -395,6 +395,7 @@ class DecisionCenterManager:
                     if tool_name == 'applyAsset' and summary is None and description is None:
                         summary = "Import a decision service defined from a JSON description"
                         description = "Import a decision service defined from a JSON description (see https://github.com/DecisionsDev/Decision-Automation-Interchange-Format for the expected JSON format)"
+                        continue
 
                     input_schema = {'type': 'object', 'properties': {}, 'required': []}
                     parameters   = {}
@@ -673,13 +674,13 @@ class DecisionCenterManager:
             if id == 'RULESET_PROPERTY_NAME':
                 if not 'agent.enabled' in enum:
                     enum      += ['agent.enabled']
-                    enumNames += ['Controls whether the ruleset is exposed as a MCP tool.']
+                    enumNames += ['Controls whether the ruleset is exposed as a MCP tool. Changes only take effect after restarting the Decision MCP server, not running the notifyRulesetChanges tool.']
                 if not 'agent.name' in enum:
                     enum      += ['agent.name']
-                    enumNames += ['Customizes the name of the MCP tool as exposed to AI assistants.']
+                    enumNames += ['Customizes the name of the MCP tool as exposed to AI assistants. Changes only take effect after restarting the Decision MCP server, not running the notifyRulesetChanges tool        .']
                 if not 'agent.description' in enum:
                     enum      += ['agent.description']
-                    enumNames += ['Overrides the default description of the ruleset when exposed as a MCP tool.']
+                    enumNames += ['Overrides the default description of the ruleset when exposed as a MCP tool. Changes only take effect after restarting the Decision MCP server, not running the notifyRulesetChanges tool.']
 
             return  ({'id':        id}         if id else {}) | \
                     ({'fixed':     fixed}      if fixed else {}) | \
@@ -760,6 +761,11 @@ class DecisionCenterManager:
                     else:
                         sentences = description.split('. ')
                         summary = sentences[0] if len(sentences)>1 else description
+
+                    if tool_name == 'notifyRulesetChanges':
+                        description += " This tool does not have any effect on the Decision MCP server : only restarting the Decision MCP server will reflect changes to the rulesets."
+                    if tool_name == 'updateRulesetProperty':
+                        description += " The change made to the ruleset requires that the Decision MCP server is restarted to take effect."
 
                     input_schema = {} if len(xmlRequestRepresentationList) > 0 else {'type': 'object', 'properties': {}, 'required': []}
                     parameters   = {}
@@ -921,7 +927,9 @@ class DecisionCenterManager:
                 prefix = filename[:-len(extension)] + '_'
 
                 if run_locally:
-                    with tempfile.NamedTemporaryFile(prefix=prefix, suffix=extension, dir=Path.home(), delete=False, delete_on_close=False) as f:
+                    output_dir = Path.home()
+                    # output_dir = tempfile.gettempdir()
+                    with tempfile.NamedTemporaryFile(prefix=prefix, suffix=extension, dir=output_dir, delete=False, delete_on_close=False) as f:
                         f.write(content)
                         f.close()
                     result = {'filename': f.name, 'url': f'file://{f.name}'}
