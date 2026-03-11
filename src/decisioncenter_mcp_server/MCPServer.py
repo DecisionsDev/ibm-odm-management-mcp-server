@@ -123,21 +123,13 @@ class MCPServer:
         """
         List available resources.
         """
-        resources = [types.Resource(name=os.path.basename(trace_file), uri=f'file://{trace_file}') for trace_file in self.trace_recorder.trace_files]
-        self.logger.info(f"{len(resources)} resources available: {[resource.name for resource in resources]}")
-        return resources
+        return []
 
     async def read_resource(self, uri: AnyUrl) -> str:
         """
         Read a resource by its URI.
         """
-        self.logger.info(f"Reading resource from URI: {uri.encoded_string()}")
-        try:
-            filepathname = uri.encoded_string()[len('file://'):]    # remove the 'file://' prefix to get the local file path
-            with open(filepathname, 'r') as f:
-                return f.read()
-        except FileNotFoundError:
-            raise ValueError(f"resource not found")
+        raise ValueError(f"resource not found")
 
     def start(self):
         self.server = FastMCP(name="ibm-odm-management-mcp-server",
