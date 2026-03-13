@@ -86,6 +86,13 @@ class MCPServer:
         Each tool specifies its arguments using JSON Schema validation.
         """
         tools = []
+        tools.append(types.Tool(
+            name="listToolExecutionTraces",
+            title="List tool execution traces",
+            description="List the tool execution traces.",
+            inputSchema={'type': 'object', 'properties': {}, 'required': []}
+        ))
+
         for tool_name, endpoint in self.repository.items():
             tools.append(endpoint.tool)
         return tools
@@ -96,14 +103,22 @@ class MCPServer:
         """
         Handle tool execution requests.
         """
-        self.logger.info("Invoking tool: %s with arguments: %s", name, arguments)
+        if self.logger.isEnabledFor(logging.DEBUG):
+            self.logger.debug("Invoking tool: %s with arguments: %s", name, arguments)
+        else:
+            self.logger.info("Invoking tool: %s", name)
 
-        endpoint : DecisionCenterEndpoint = self.repository.get(name)
-        if endpoint is None:
-            raise ValueError(f"Unknown tool: {name}")
+        if name == "listToolExecutionTraces":
+            resources = [os.path.basename(trace_file) for trace_file in self.trace_recorder.trace_files]
+            self.logger.debug(f"{len(resources)} resources available: {resources}")
+            result = { "resources": resources }
+        else:
+            endpoint : DecisionCenterEndpoint = self.repository.get(name)
+            if endpoint is None:
+                raise ValueError(f"Unknown tool: {name}")
 
-        # this call may throw an exception, handled by Server.call_tool.handler
-        result = self.manager.invokeDecisionCenterApi(endpoint, arguments, self.transport == 'stdio')
+            # this call may throw an exception, handled by Server.call_tool.handler
+            result = self.manager.invokeDecisionCenterApi(endpoint, arguments, self.transport == 'stdio')
 
         # Handle dictionary response
         if isinstance(result, dict):
@@ -123,13 +138,21 @@ class MCPServer:
         """
         List available resources.
         """
-        return []
+        resources = [types.Resource(name=os.path.basename(trace_file), uri=f'file://{trace_file}') for trace_file in self.trace_recorder.trace_files]
+        self.logger.info(f"{len(resources)} resources available: {[resource.name for resource in resources]}")
+        return resources
 
     async def read_resource(self, uri: AnyUrl) -> str:
         """
         Read a resource by its URI.
         """
-        raise ValueError(f"resource not found")
+        self.logger.info(f"Reading resource from URI: {uri.encoded_string()}")
+        try:
+            filepathname = uri.encoded_string()[len('file://'):]    # remove the 'file://' prefix to get the local file path
+            with open(filepathname, 'r') as f:
+                return f.read()
+        except FileNotFoundError:
+            raise ValueError(f"resource not found")
 
     def start(self):
         self.server = FastMCP(name="ibm-odm-management-mcp-server",
