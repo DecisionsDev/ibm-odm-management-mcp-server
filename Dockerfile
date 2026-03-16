@@ -1,5 +1,6 @@
-FROM ghcr.io/astral-sh/uv:bookworm-slim AS builder
 ARG PYTHON_VERSION=3.14
+
+FROM ghcr.io/astral-sh/uv:bookworm-slim AS builder
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 ENV UV_PYTHON_INSTALL_DIR=/python
@@ -16,15 +17,19 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable
 
 
-FROM gcr.io/distroless/cc
+FROM  python:${PYTHON_VERSION}-slim-bookworm
 
 LABEL name="IBM ODM Management MCP Server"
-LABEL summary="MCP Server exposing the REST APIs of both IBM ODM Decision Center and the RES console"
+LABEL summary="MCP Server exposing the REST APIs of both IBM ODM Decision Center and the Decision Server console (aka RES console)"
 
-COPY --from=builder --chown=nonroot:nonroot /python /python
-COPY --from=builder --chown=nonroot:nonroot /app/.venv /app/.venv
-USER nonroot
+RUN useradd -m worker
+USER worker
+
+WORKDIR /app
+COPY --from=builder --chown=worker:worker /app/ /app/
 ENV PATH="/app/.venv/bin:$PATH"
+RUN rm /app/.venv/bin/python && \
+    ln -s /usr/local/bin/python /app/.venv/bin/python
 
 ENTRYPOINT ["ibm-odm-management-mcp-server"]
 CMD ["--transport", "streamable-http", "--url", "http://odm:9060/decisioncenter-api", "--res-url", "http://odm:9060/res"]
