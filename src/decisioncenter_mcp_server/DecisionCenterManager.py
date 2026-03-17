@@ -42,10 +42,17 @@ def add_param(input_schema, parameters,
     # add in input_schema (for the MCP client) - https://modelcontextprotocol.io/specification/draft/schema#legacytitledenumschema
     if len(input_schema) == 0:
         input_schema |= {'type': 'object', 'properties': {}, 'required': []}
-    input_schema.get('properties')[param_name] = {'type':        param_type}                                  | \
-                                                ({'enum':        param_enum}      if param_enum      else {}) | \
-                                                ({'enumNames':   param_enumNames} if param_enumNames else {}) | \
-                                                ({'description': param_desc}      if param_desc      else {})
+    input_schema.get('properties')[param_name] = {'type':        param_type}                                        | \
+                                                ({'items': {'type': 'string'}}    if param_type == 'array' else {}) | \
+                                                ({'items': {'enum': [
+                                                                'rtsAdministrator',
+                                                                'rtsInstaller', 
+                                                                'rtsConfigManager', 
+                                                                'rtsUser']}}      if param_type == 'array' and 
+                                                                                     param_name == 'roles' else {}) | \
+                                                ({'enum':        param_enum}      if param_enum            else {}) | \
+                                                ({'enumNames':   param_enumNames} if param_enumNames       else {}) | \
+                                                ({'description': param_desc}      if param_desc            else {})
     if param_required == True:
         input_schema.get('required').append(param_name)
 
@@ -384,6 +391,10 @@ class DecisionCenterManager:
 
                     if not self.publish_tool(tool_name, info.tags, tools_to_publish, tools_to_ignore, tags_to_publish):
                         continue
+
+                    if tool_name == 'applyAsset' and summary is None and description is None:
+                        summary = "Import a decision service defined from a JSON description"
+                        description = "Import a decision service defined from a JSON description (see https://github.com/DecisionsDev/Decision-Automation-Interchange-Format for the expected JSON format)"
 
                     input_schema = {'type': 'object', 'properties': {}, 'required': []}
                     parameters   = {}
