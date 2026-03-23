@@ -18,6 +18,7 @@ import os
 import glob
 import logging
 import time
+from datetime import datetime
 from .DecisionCenterEndpoint import DecisionCenterEndpoint
             
 class ToolExecutionTrace:
@@ -123,18 +124,20 @@ class DiskTraceStorage:
         Returns:
             str: The ID of the saved trace
         """
-        def write(f, data):
-            if data is not None:
-                if isinstance(data, bytes):
-                    f.write(bytes(data, 'utf-8'))
-                elif isinstance(data, str):
-                    try:
-                        d = json.loads(data)
-                        f.write(json.dumps(d, indent=2))
-                    except json.JSONDecodeError:
-                        f.write(data)
-                else:
-                    f.write(json.dumps(data, indent=2))
+        def convert(data):
+            if data is None:
+                return ""
+            elif isinstance(data, dict):
+                return data
+            elif isinstance(data, (bytes, bytearray)):
+                return data.decode("utf-8", errors="replace")
+            else:
+                if not isinstance(data, str):
+                    data = str(data)
+                try:
+                    return json.loads(data)
+                except json.JSONDecodeError:
+                    return data
         
         # Make sure the storage directory still exists
         self._exists_storage_dir()
@@ -143,9 +146,11 @@ class DiskTraceStorage:
         file_path = os.path.join(self.storage_dir, f"{trace.endpoint.tool.name}-{trace.http_code}-{trace.timestamp}.json")
         with open(file_path, 'w') as f:
             if self.verbose:
-                write(f, trace.inputs)
-                write(f, '\n')
-                write(f, trace.results)
+                traces = {
+                    "inputs":  convert(trace.inputs),
+                    "results": convert(trace.results)
+                }
+                json.dump(traces, f, indent=2)
             self.logger.debug(f"Saved traces file {file_path}")
         
         # Enforce the maximum number of traces
@@ -163,3 +168,50 @@ class DiskTraceStorage:
                 self.logger.debug(f"Removed traces file {file2remove_path}")
             except Exception as e:
                 self.logger.warning(f"Error removing traces file {file2remove_path}: {e}")
+
+    def get_executions(self, filter: Optional[str] = None, with_content: bool = False) -> list[Dict[str, Any]]:
+        """
+        Get the list of saved tool executions, optionally filtered by tool name.
+        
+        Args:
+            filter: Optional string to filter executions by tool name (matches if tool name contains the filter string)
+            with_content: Whether to include the inputs and results content in the returned executions
+        """
+        def parse_trace_filename(filename: str):
+            # Expected filename format: {tool_name}-{http_code}-{timestamp}.json
+            parts = filename.rsplit('.', 1)[0].split('-')
+            http_code= None
+            timestamp= None
+            if len(parts) >= 2 and parts[1].isdigit():
+                http_code = parts[1]
+            if len(parts) >= 3:
+                try:  # convert hex timestamp
+                    timestamp = str(datetime.fromtimestamp(int(parts[2], 16)))
+                except Exception as e:
+                    self.logger.debug(f"Error converting timestamp {parts[2]}: {e}")
+            return http_code, timestamp
+            return "unknown", "unknown"
+
+        executions = []
+        for trace_file in self.trace_files:
+            filename = os.path.basename(trace_file)
+            if filename == "parsing.json":
+                continue
+            if filter and filter not in filename:
+                continue
+            http_code, timestamp = parse_trace_filename(filename)
+            execution_info = {
+                "trace_file":filename,
+                "http_code": http_code,
+                "timestamp": timestamp
+            }
+            if with_content:
+                try:
+                    with open(trace_file, 'r') as f:
+                        trace_data = json.load(f)
+                    execution_info["inputs"] = trace_data.get("inputs", {})
+                    execution_info["results"] = trace_data.get("results", {})
+                except Exception as e:
+                    self.logger.debug(f"Error reading trace file {trace_file}: {e}")
+            executions.append(execution_info)
+        return executions

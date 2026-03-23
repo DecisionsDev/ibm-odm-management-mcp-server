@@ -36,9 +36,24 @@ For more information, please refer to the documentation.
 
 class MCPServer:
 
+    get_tools_executions_toolname = "getToolExecutions"
+    max_trace_files = 200
+
+    tools_executions_tool = types.Tool(
+            name=get_tools_executions_toolname,
+            title="Get tool executions",
+            description=f"Get the tool executions with or without content. Useful to keep track of the tools that have been executed, their arguments and results. Only the most recent executions are kept. The number of executions that are kept is defined by the MCP server option --traces-maxsize ({max_trace_files} by default).",
+            inputSchema={'type': 'object', 'required': [], 
+                         'properties': {
+                            'filter': {'type': 'string', 'description': 'Filter to apply on the tool executions. Only the executions of tools whose name matches the filter will be included in the result. The filter supports partial match.'},
+                            'with_content': {'type': 'boolean', 'description': 'Whether to include the content of the tool execution (arguments and results) in the trace. If false, only metadata such as timestamps, tool name and execution status will be included.'}
+                            }
+                        }
+            )
+
     def __init__(self, credentials: Credentials,
                  tags: list[str] = [], tools: list[str] = [], no_tools: list[str] = [],
-                 trace: list[str] = [], traces_dir: str = None, traces_maxsize: int = 200,
+                 trace: list[str] = [], traces_dir: str = None, traces_maxsize: int = max_trace_files,
                  transport: Optional[str] = 'stdio', host: Optional[str] = '0.0.0.0', port: Optional[int] = 3000, path: Optional[str] = '/mcp',
                 ):
         # Get logger for this class
@@ -85,25 +100,35 @@ class MCPServer:
         List available tools.
         Each tool specifies its arguments using JSON Schema validation.
         """
-        tools = []
+        tools = [MCPServer.tools_executions_tool] if self.trace_recorder.trace_executions else []
         for tool_name, endpoint in self.repository.items():
             tools.append(endpoint.tool)
         return tools
 
-    async def call_tool(self,
-        name: str, arguments: dict | None
-    ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    async def call_tool(self, name: str, arguments: dict | None) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
         """
         Handle tool execution requests.
         """
-        self.logger.info("Invoking tool: %s with arguments: %s", name, arguments)
+        def get_tools_executions(arguments):
+            filter = arguments.get('filter') if arguments else None
+            with_content = arguments.get('with_content', False) if arguments else False
+            return self.trace_recorder.get_executions(filter=filter, with_content=with_content)
 
-        endpoint : DecisionCenterEndpoint = self.repository.get(name)
-        if endpoint is None:
-            raise ValueError(f"Unknown tool: {name}")
+        if self.logger.isEnabledFor(logging.DEBUG):
+            self.logger.debug("Invoking tool: %s with arguments: %s", name, arguments)
+        else:
+            self.logger.info("Invoking tool: %s", name)
 
-        # this call may throw an exception, handled by Server.call_tool.handler
-        result = self.manager.invokeDecisionCenterApi(endpoint, arguments, self.transport == 'stdio')
+        if name == MCPServer.get_tools_executions_toolname:
+            executions = get_tools_executions(arguments)
+            result = { "executions": executions }
+        else:
+            endpoint : DecisionCenterEndpoint = self.repository.get(name)
+            if endpoint is None:
+                raise ValueError(f"Unknown tool: {name}")
+
+            # this call may throw an exception, handled by Server.call_tool.handler
+            result = self.manager.invokeDecisionCenterApi(endpoint, arguments, self.transport == 'stdio')
 
         # Handle dictionary response
         if isinstance(result, dict):
@@ -123,13 +148,21 @@ class MCPServer:
         """
         List available resources.
         """
-        return []
+        resources = [types.Resource(name=os.path.basename(trace_file), uri=f'file://{trace_file}') for trace_file in self.trace_recorder.trace_files]
+        self.logger.info(f"{len(resources)} resources available: {[resource.name for resource in resources]}")
+        return resources
 
     async def read_resource(self, uri: AnyUrl) -> str:
         """
         Read a resource by its URI.
         """
-        raise ValueError(f"resource not found")
+        self.logger.info(f"Reading resource from URI: {uri.encoded_string()}")
+        try:
+            filepathname = uri.encoded_string()[len('file://'):]    # remove the 'file://' prefix to get the local file path
+            with open(filepathname, 'r') as f:
+                return f.read()
+        except FileNotFoundError:
+            raise ValueError(f"resource not found")
 
     def start(self):
         self.server = FastMCP(name="ibm-odm-management-mcp-server",
@@ -264,7 +297,7 @@ def parse_arguments():
     # Trace-related arguments
     parser.add_argument("--trace",             type=str, default=os.getenv("TRACE"),    nargs='+', choices=["EXECUTIONS", "EXECUTIONS_WITH_CONTENT", "CONFIGURATION"], help="Specifies what to trace.")
     parser.add_argument("--traces-dir",        type=str, default=os.getenv("TRACES_DIR"), help="Directory to store traces files (optional). If not provided, traces will be stored in the directory '~/.ibm-odm-management-mcp-server/traces'")
-    parser.add_argument("--traces-maxsize",    type=int, default=int(os.getenv("TRACES_MAXSIZE", "200")), help="Maximum number of traces to store (default: 200)")
+    parser.add_argument("--traces-maxsize",    type=int, default=int(os.getenv("TRACES_MAXSIZE", f"{MCPServer.max_trace_files}")), help=f"Maximum number of traces to store (default: {MCPServer.max_trace_files}). When the limit is reached, the oldest trace file will be deleted when a new trace is saved.  ")
 
     return parser.parse_args()
 
