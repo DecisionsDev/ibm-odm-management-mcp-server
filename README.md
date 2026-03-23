@@ -701,6 +701,12 @@ You can ask the AI agent questions such as:
 
 > Note: You can also have the MCP server record a file named `parsing.json` containing the list of tools as returned to the AI agent (for debug) by adding the `CONFIGURATION` argument: `"--trace", "EXECUTIONS", "CONFIGURATION",`.
 
+## Docker image
+
+The repository features a [Dockerfile](/Dockerfile) so that you can build a Docker image running the IBM ODM Management MCP server, which can be useful to run the MCP server remotely.
+
+You can find instructions in the [Build-Docker-image](/docs/Build-Docker-image.md) readme.
+
 ## Additional information
 
 - For IBM Operational Decision Manager (ODM), see [IBM Documentation](https://www.ibm.com/docs/en/odm).
