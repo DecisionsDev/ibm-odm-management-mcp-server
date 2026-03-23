@@ -139,7 +139,8 @@ This step is optional and only needed if you choose to run ODM as a container on
            "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server", "ibm-odm-management-mcp-server",
            "--url",      "http://localhost:9060/decisioncenter-api",
            "--res-url",  "http://localhost:9060/res",
-           "--username", "odmAdmin"
+           "--username", "odmAdmin",
+           "--trace",    "EXECUTIONS_WITH_CONTENT"
          ],
          "env": {
            "PASSWORD": "odmAdmin"
@@ -223,7 +224,34 @@ With the configuration above, the Management MCP Server :
     >
     >Other Rulesets: The other three rulesets (production_deployment and test_deployment rulesets) returned no statistics, indicating they have not been executed yet or have no recorded execution data.
 
-### Example 3: combining the Decision MCP server and Management MCP server
+### Example 3: tool executions report
+
+- Enter the following text (and press ENTER):
+    ```
+    Which tools have been executed the most?
+    ```
+
+- **Bob** collects the tool executions and generates a report:
+
+## Tool Execution Frequency Summary
+- **Total Executions:** 171
+- **Unique Tools:** 93 different tools
+- **Analysis Period:** 2026-03-23 14:29:35 to 15:26:27
+
+## Top 20 Most Executed Tools
+
+| Rank | Tool Name | Executions | Percentage | Primary Use Case |
+|------|-----------|------------|------------|------------------|
+| 1 | **addGroup** | 6 | 3.5% | User/Group Management |
+| 2 | **addUser** | 5 | 2.9% | User/Group Management |
+| 3 | **createChangeActivity** | 5 | 2.9% | Governance Workflow |
+| 4 | **createRelease** | 5 | 2.9% | Governance Workflow |
+...(truncated)
+
+> Note: The MCP server stores the tool executions thanks to option `--trace "EXECUTIONS_WITH_CONTENT"` (only the most recent executions are kept, 200 by default (configurable with the option `--traces-maxsize`).
+
+
+### Example 4: combining the Decision MCP server and Management MCP server
 
 1. To enable both MCP servers, edit the configuration file as follows:
    ```json

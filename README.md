@@ -682,7 +682,24 @@ With the configuration below, the MCP server records a file named `<tool_name>-<
 }
 ```
 
-You can also have the MCP server record a file named `parsing.json` containing the list of tools as returned to the AI agent (for debug) by adding the `CONFIGURATION` argument: `"--trace", "EXECUTIONS", "CONFIGURATION",`.
+With this configuration, an additional tool named `getToolExecutions` is available to return the tool executions. By default the MCP server only keeps 200 executions (configurable). When this limit is reached the oldest executions are deleted.
+
+This tool can query the executions of a specific tool or with a specific HTTP response code. It can optionally retrieve the inputs used to call the tools and outputs returned provided those information are stored (requires the argument `EXECUTIONS_WITH_CONTENT`).
+
+You can ask the AI agent questions such as:
+  ```
+  Which tools have been executed the most?
+  ```
+  ```
+  Have users been added or deleted? If so, which ?
+  ```
+  ```
+  Which executions failed and for which reason ?
+  ```
+
+
+
+> Note: You can also have the MCP server record a file named `parsing.json` containing the list of tools as returned to the AI agent (for debug) by adding the `CONFIGURATION` argument: `"--trace", "EXECUTIONS", "CONFIGURATION",`.
 
 ## Additional information
 
