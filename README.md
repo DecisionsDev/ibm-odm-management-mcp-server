@@ -313,7 +313,7 @@ The Decision Center API is best used by authenticating with the credentials of t
 - the user has only access to the content they are allowed to see and modify,
 - and the user's role is enforced.
 
-The Decision Server API can make use of the Client service account. Bare in mind that the user might have more privilege that way if the Client service account is granted a role (eg. `resDeployer`) that the user does not have.
+The Decision Server API can make use of the Client service account. Please notice that the user might have more privilege that way if the Client service account is granted a role (eg. `resDeployer`) that the user does not have.
 
 1) Example using a Client Secret and the user's credentials
 ```json
