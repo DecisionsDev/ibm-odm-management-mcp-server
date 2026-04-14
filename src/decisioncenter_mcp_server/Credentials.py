@@ -120,9 +120,15 @@ class Credentials:
         elif self.client_id or self.client_secret:
             if not self.client_id or not self.token_url:
                 raise ValueError("Both 'client_id' and 'token_url' are required for OpenId authentication.")
-            
+            if     self.username and not self.password or \
+               not self.username and     self.password:
+                raise ValueError("Both 'username' and 'password' are required for OAuth password grant.")
+
             # Check if we're using PKJWT (certificate-based) or client_secret
             if self.pkjwt_cert_path:
+                if not self.pkjwt_key_data:
+                    raise ValueError("Both 'pkjwt_key_path' and 'pkjwt_cert_path' are required for PKJWT authentication.")
+
                 from cryptography import x509
                 from cryptography.hazmat.backends import default_backend
                 from cryptography.hazmat.primitives import serialization
@@ -184,13 +190,20 @@ class Credentials:
                     # Sign the JWT with the private key and include headers
                     encoded_jwt = jwt.encode(payload, self.pkjwt_key_data, algorithm='RS256', headers=headers)
                     self.logger.info("JWT token created successfully.");   
-                    self.logger.debug("msg encoded JWT "+encoded_jwt)                # Prepare the token request with the JWT assertion
+                    self.logger.debug("msg encoded JWT "+encoded_jwt)
+
                     data = {
-                        'grant_type': 'client_credentials',
-                        'scope': self.scope,
-                        'client_assertion_type': 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
-                        'client_assertion': encoded_jwt
-                    }
+                            'scope': self.scope,
+                            'client_assertion_type': 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+                            'client_assertion': encoded_jwt
+                        } | \
+                        ({
+                            'grant_type': 'password',
+                            'username': self.username,
+                            'password': self.password,
+                        } if self.username and self.password else {
+                            'grant_type': 'client_credentials'
+                        })
                     
                     # Make the token request without auth header (the JWT is the auth)
                     if self.verify_ssl:
@@ -202,15 +215,18 @@ class Credentials:
             else:
                 # Standard OpenID client_secret authentication
                 if not self.client_secret:
-                    if self.pkjwt_cert_path:
-                        raise ValueError("Both 'pkjwt_key_path' and 'pkjwt_cert_path' are required for PKJWT authentication.")
-                    else:
-                        raise ValueError("Either 'client_secret' or 'pkjwt_key_path' is required for OpenId authentication.")
-                
+                    raise ValueError("Either 'client_secret' or 'pkjwt_key_path' is required for OpenId authentication.")
+
                 data = {
-                    'grant_type': 'client_credentials',
-                    'scope': self.scope,
-                }
+                        'scope': self.scope,
+                    } | \
+                    ({
+                        'grant_type': 'password',
+                        'username': self.username,
+                        'password': self.password,
+                    } if self.username and self.password else {
+                        'grant_type': 'client_credentials'
+                    })
                 auth = requests.auth.HTTPBasicAuth(self.client_id, self.client_secret)
                 if self.verify_ssl:
                     response = requests.post(self.token_url, data=data, auth=auth, verify=self.cacert)
@@ -229,7 +245,7 @@ class Credentials:
                 'Authorization': f'Basic {encoded_user_cred}'
             }
         else:
-            raise ValueError("Either username and password, bearer token, or zenapikey must be provided.")
+            raise ValueError("Either username and password, OAuth credentials, or zenapikey must be provided.")
     
     def get_session(self):
         """

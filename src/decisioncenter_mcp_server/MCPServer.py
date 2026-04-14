@@ -210,6 +210,8 @@ def create_credentials(args):
             scope=args.scope,
             client_id=args.client_id,
             client_secret=args.client_secret,
+            username=args.username,
+            password=args.password,
             mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
             ssl_cert_path=args.ssl_cert_path,
             verify_ssl=verifyssl
@@ -221,19 +223,19 @@ def create_credentials(args):
             token_url=args.token_url,
             scope=args.scope,
             client_id=args.client_id,
+            username=args.username,
+            password=args.password,
             pkjwt_cert_path=args.pkjwt_cert_path, pkjwt_key_path=args.pkjwt_key_path, pkjwt_key_password=args.pkjwt_key_password,
             mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
             ssl_cert_path=args.ssl_cert_path,
             verify_ssl=verifyssl
         )
     else:  # Default to basic authentication
-        if not args.username or not args.password:
-            raise ValueError("Username and password must be provided for basic authentication.")
         return Credentials(
             odm_url=args.url,
             odm_res_url=args.res_url,
-            username=args.username,
-            password=args.password,
+            username=args.username if args.username else "odmAdmin",
+            password=args.password if args.password else "odmAdmin",
             mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
             ssl_cert_path=args.ssl_cert_path,
             verify_ssl=verifyssl
@@ -262,8 +264,8 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="Decision MCP Server")
     parser.add_argument("--url",               type=str, default=os.getenv("ODM_URL"), help="ODM Decision Center REST API URL")
     parser.add_argument("--res-url",           type=str, default=os.getenv("ODM_RES_URL"), help="ODM Decision Server Console URL (aka RES Console)")
-    parser.add_argument("--username",          type=str, default=os.getenv("ODM_USERNAME", "odmAdmin"), help="ODM username (optional)")
-    parser.add_argument("--password",          type=str, default=os.getenv("ODM_PASSWORD", "odmAdmin"), help="ODM password (optional)")
+    parser.add_argument("--username",          type=str, default=os.getenv("ODM_USERNAME"), help="ODM username (optional)")
+    parser.add_argument("--password",          type=str, default=os.getenv("ODM_PASSWORD"), help="ODM password (optional)")
     parser.add_argument("--zenapikey",         type=str, default=os.getenv("ZENAPIKEY"), help="Zen API Key (optional)")
     parser.add_argument("--client-id",         type=str, default=os.getenv("CLIENT_ID"), help="OpenID Client ID (optional)")
     parser.add_argument("--client-secret",     type=str, default=os.getenv("CLIENT_SECRET"), help="OpenID Client Secret (optional)")

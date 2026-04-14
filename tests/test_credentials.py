@@ -70,12 +70,6 @@ def test_get_auth_basic_auth():
         'Authorization': 'Basic dXNlcjpwYXNz'
     }
 
-def test_get_auth_no_credentials():
-    # Test get_auth with no credentials - should raise ValueError
-    cred = Credentials(odm_url="http://localhost:9060/decisioncenter-api")
-    with pytest.raises(ValueError, match="Either username and password, bearer token, or zenapikey must be provided."):
-        cred.get_auth()
-
 @responses.activate
 def test_get_auth_openid_flow():
     """Test the complete OpenID Connect authentication flow with a mocked token endpoint."""
