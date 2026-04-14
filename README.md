@@ -177,8 +177,8 @@ The parameters below can be specified:
 |-------------------|---------------------|---------------------------------------------------------------------------------------------------------|-----------------------------------------|
 | `--url`           | `ODM_URL`           | URL of the Decision Center REST API                      |              |
 | `--res-url`       | `ODM_RES_URL`       | URL of the Decision Server Console (aka RES Console)     |              |
-| `--username`      | `ODM_USERNAME`      | Username for Basic Auth or Zen authentication                                                           | `odmAdmin`                              |
-| `--password`      | `ODM_PASSWORD`      | Password for Basic Auth                                                                                 | `odmAdmin`                              |
+| `--username`      | `ODM_USERNAME`      | Username (Basic Auth, Zen authentication or OpenId Connect)                                                           | `odmAdmin`                              |
+| `--password`      | `ODM_PASSWORD`      | Password (Basic Auth or OpenId Connect)                                                                                | `odmAdmin`                              |
 | `--zenapikey`     | `ZENAPIKEY`         | Zen API Key for authentication with Cloud Pak for Business Automation                                   |                                         |
 | `--client-id`     | `CLIENT_ID`         | OpenID Connect client ID for authentication                                                             |                                         |
 | `--client-secret` | `CLIENT_SECRET`     | OpenID Connect client secret for authentication                                                         |                                         |
@@ -186,7 +186,7 @@ The parameters below can be specified:
 | `--pkjwt-key-path` | `PKJWT_KEY_PATH`   | Path to the private key certificate for PKJWT authentication (mandatory for PKJWT)                      |                                         |
 | `--pkjwt-key-password` | `PKJWT_KEY_PASSWORD` | Password to decrypt the private key for PKJWT authentication. Only needed if the key is password-protected. |                               |
 | `--token-url`     | `TOKEN_URL`         | OpenID Connect token endpoint URL for authentication                                                    |                                         |
-| `--scope`         | `SCOPE`             | OpenID Connect scope used when requesting an access token using Client Credentials for authentication   | `openid`                                |
+| `--scope`         | `SCOPE`             | OpenID Connect scope used when requesting an access token   | `openid`                                |
 | `--verifyssl`     | `VERIFY_SSL`        | Whether to verify SSL certificates (`True` or `False`)                                                  | `True`                                  |
 | `--ssl-cert-path` | `SSL_CERT_PATH`     | Path to the SSL certificate file. If not provided, defaults to system certificates.                     |                                         |
 | `--mtls-cert-path`| `MTLS_CERT_PATH`    | Path to the SSL certificate file of the client for mutual TLS authentication (mandatory for mTLS)       |                                         |
@@ -299,11 +299,23 @@ For production deployments on the Cloud Pak, use the Zen API Key.
 
 For production deployments on other environments than the Cloud Pak, you may use OpenID Connect if ODM is configured to use it.
 
-The Management MCP Server can authenticate to ODM configured with OpenID Connect, using the Client Credentials flow.
+The Management MCP Server supports the options below to authenticate to the token endpoint and to ODM:
 
-Two authentication variants are possible:
+- Client authentication to the token endpoint:
+  - using a **Client Secret** or 
+  - using **Private Key JWT**
 
-1) Using a Client Secret
+- User authentication to ODM
+  - using the credentials of a user (username and password) (Password grant), or
+  - using the Client service account (Client Credentials grant)
+
+The Decision Center API is best used by authenticating with the credentials of the user so that:
+- the user has only access to the content they are allowed to see and modify,
+- and the user's role is enforced.
+
+The Decision Server API can make use of the Client service account. Please notice that the user might have more privilege that way if the Client service account is granted a role (eg. `resDeployer`) that the user does not have.
+
+1) Example using a Client Secret and the user's credentials
 ```json
 "args": [
   "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server",
@@ -312,20 +324,21 @@ Two authentication variants are possible:
   "--res-url",       "https://res-console-url",
   "--ssl-cert-path", "certificate-file",
   "--token-url",     "https://your-openid-connect_provider-token-endpoint-url",
-  "--scope",         "the_scope_to_be_used_for_client_credentials"
+  "--scope",         "the_scope_to_be_used_if_different_from_default_value_openid"
 ],
 "env": {
   "CLIENT_ID":      "YOUR_CLIENT_ID",
-  "CLIENT_SECRET":  "YOUR_CLIENT_SECRET"
+  "CLIENT_SECRET":  "YOUR_CLIENT_SECRET",
+  "ODM_USERNAME":   "YOUR_USERNAME",
+  "ODM_PASSWORD":   "YOUR_PASSWORD"
 }
 ```
 
-2) Using a Private Key (PKJWT)
+2) Example using a Private Key (PKJWT) and authenticating to the Decision Server API with Client Credentials
 ```json
 "args": [
   "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server",
   "ibm-odm-management-mcp-server",
-  "--url",           "https://decisioncenter-api-url",
   "--res-url",       "https://res-console-url",
   "--ssl-cert-path", "certificate-file",
   "--token-url",     "https://your-openid-connect_provider-token-endpoint-url",
