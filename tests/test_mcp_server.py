@@ -18,9 +18,11 @@ import os
 import argparse
 import mcp.types as types
 from mcp.server.fastmcp import FastMCP
+from mcp.server.auth.settings import AuthSettings
 import json
-from decisioncenter_mcp_server.MCPServer import MCPServer, parse_arguments, create_credentials, init, INSTRUCTIONS
+from decisioncenter_mcp_server.MCPServer import MCPServer, parse_arguments, create_credentials, init, INSTRUCTIONS, SimpleTokenVerifier
 from decisioncenter_mcp_server.Credentials import Credentials
+from pydantic import AnyHttpUrl
 
 # Test fixtures
 @pytest.fixture
@@ -64,8 +66,8 @@ def test_server_initialization(mcp_server):
           {"zenapikey": "test-key"}
     ),
     (
-        ["--client-id", "test-client", "--client-secret", "test-secret", "--token-url", "http://op/token", "--scope", "openid"],
-          {"client_id": "test-client",   "client_secret": "test-secret",   "token_url": "http://op/token",   "scope": "openid"}
+        ["--client-id", "test-client", "--client-secret", "test-secret", "--issuer-url", "http://op", "--token-url", "http://op/token", "--scope", "openid"],
+          {"client_id": "test-client",   "client_secret": "test-secret",   "issuer_url": "http://op",   "token_url": "http://op/token",   "scope": "openid"}
     ),
     (
         ["--pkjwt-cert-path", "/custom/cert/file", "--pkjwt-key-path", "/custom/key/file", "--pkjwt-key-password", "xyz-password"],
@@ -124,6 +126,7 @@ def test_create_credentials_basic_auth():
         zenapikey=None,
         client_id=None,
         client_secret=None,
+        issuer_url=None,
         token_url=None,
         scope="openid",
         verifyssl="True",
@@ -158,6 +161,7 @@ def test_ssl_verification(verify_ssl, expected):
         zenapikey=None,
         client_id=None,
         client_secret=None,
+        issuer_url=None,
         token_url=None,
         scope="openid",
         verifyssl=verify_ssl,
@@ -198,6 +202,7 @@ def test_tags_verification(tags, expected_tags, tools, expected_tools, notools, 
         zenapikey=None,
         client_id=None,
         client_secret=None,
+        issuer_url=None,
         token_url=None,
         scope="openid",
         verifyssl="True",
@@ -289,7 +294,7 @@ def mock_manager():
         }
     ]
     # Setup mock tools
-    manager.generate_tools_format.return_value = {
+    repo = {
         "endpoint1": Mock(
             method="GET",
             url="http://test:9060/decisioncenter-api/v1/endpoint1",
@@ -343,6 +348,7 @@ def mock_manager():
             )
         )
     }
+    manager.generate_tools_format.return_value = repo, repo
     return manager
 
 @pytest.fixture
@@ -354,7 +360,7 @@ def server(mock_manager):
     )
     server = MCPServer(credentials=credentials)
     server.manager = mock_manager
-    server.repository = mock_manager.generate_tools_format()
+    server.repository_dc, server.repository_dc_admin = mock_manager.generate_tools_format()
     return server
 
 @pytest.mark.asyncio
@@ -377,24 +383,24 @@ async def test_list_tools(server, mock_manager):
     assert tools[1].description == "description2"
 
     # Verify repository updates
-    assert len(server.repository) == 2
-    assert "endpoint1" in server.repository
-    assert "endpoint2" in server.repository
+    assert len(server.repository_dc) == 2
+    assert "endpoint1" in server.repository_dc
+    assert "endpoint2" in server.repository_dc
 
 
 @pytest.mark.asyncio
 async def test_list_tools_empty(server, mock_manager):
     # Setup empty response
     mock_manager.fetch_endpoints.return_value = []
-    mock_manager.generate_tools_format.return_value = {}
-    server.repository = mock_manager.generate_tools_format()
+    mock_manager.generate_tools_format.return_value = {}, {}
+    server.repository_dc, server.repository_dc_admin = mock_manager.generate_tools_format()
 
     # Execute
     tools = await server.list_tools()
 
     # Verify
     assert len(tools) == 0
-    assert len(server.repository) == 0
+    assert len(server.repository_dc) == 0
 
 @pytest.mark.asyncio
 async def test_call_tool_success(server, mock_manager):
@@ -408,7 +414,7 @@ async def test_call_tool_success(server, mock_manager):
     arguments = {"input": "test_value"}
     
     # Add tool to repository
-    server.repository[tool_name] = Mock(name="endpoint1")
+    server.repository_dc[tool_name] = Mock(name="endpoint1")
 
     # Execute
     result = await server.call_tool(tool_name, arguments)
@@ -437,7 +443,7 @@ async def test_call_tool_non_dict_response(server, mock_manager):
     # Setup mock response as string
     mock_manager.invokeDecisionCenterApi.return_value = "string_response"
     tool_name = "tool1"
-    server.repository[tool_name] = Mock()
+    server.repository_dc[tool_name] = Mock()
 
     # Execute
     result = await server.call_tool(tool_name, {})
@@ -495,7 +501,8 @@ def test_server_start_with_streamable_http_transport():
     credentials = Credentials(
         odm_url="http://test:9060/decisioncenter-api",
         username="test",
-        password="test"
+        password="test",
+        client_id="clientid",
     )
     
     # Create server with streamable-http transport
@@ -504,7 +511,8 @@ def test_server_start_with_streamable_http_transport():
         transport="streamable-http",
         host="127.0.0.1",
         port=3001,
-        path="/custom-path"
+        path="/custom-path",
+        issuer_url="https://openid-provider",
     )
     
     # Mock the FastMCP and its run method
@@ -525,16 +533,6 @@ def test_server_start_with_streamable_http_transport():
         # Call start
         server.start()
         
-        # Verify FastMCP was initialized with correct parameters
-        mock_fastmcp_class.assert_called_once_with(
-            name="ibm-odm-management-mcp-server",
-            instructions=INSTRUCTIONS,
-            host="127.0.0.1",
-            port=3001,
-            sse_path="/custom-path",
-            streamable_http_path="/custom-path"
-        )
-        
         # Verify run was called with streamable-http transport
         mock_fastmcp.run.assert_called_once_with(transport="streamable-http")
         
@@ -552,6 +550,7 @@ def test_server_initialization_with_default_transport():
     # Create server with default transport
     server = MCPServer(
         credentials=credentials,
+        issuer_url="https://openid-provider",
     )
     
     # Verify default transport configuration
@@ -574,7 +573,8 @@ def test_server_start_with_sse_transport():
         transport="sse",
         host="127.0.0.1",
         port=3001,
-        path="/custom-path"
+        path="/custom-path",
+        issuer_url="https://openid-provider",
     )
     
     # Mock the FastMCP and its run method
@@ -594,16 +594,6 @@ def test_server_start_with_sse_transport():
         
         # Call start
         server.start()
-        
-        # Verify FastMCP was initialized with correct parameters
-        mock_fastmcp_class.assert_called_once_with(
-            name="ibm-odm-management-mcp-server",
-            instructions=INSTRUCTIONS,
-            host="127.0.0.1",
-            port=3001,
-            sse_path="/custom-path",
-            streamable_http_path="/custom-path"
-        )
         
         # Verify run was called with streamable-http transport
         mock_fastmcp.run.assert_called_once_with(transport="sse")

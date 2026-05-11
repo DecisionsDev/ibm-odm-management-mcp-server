@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from . import MCPServer
+from decisioncenter_mcp_server import MCPServer
 import sys
 
 def main():
@@ -23,3 +23,6 @@ def main():
 
 # Optionally expose other important items at package level
 __all__ = ['main', 'MCPServer']
+
+if __name__ == "__main__":
+    main()

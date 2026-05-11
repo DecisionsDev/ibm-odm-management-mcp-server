@@ -140,9 +140,6 @@ class DecisionCenterManager:
             self.logger.info("Assuming connected without rtsAdministrator role")
             return False
             
-    def checkDcRole(self, uri:str, session):
-        self.credentials.isDcAdmin = self.isDcAdmin(uri, session)
-
     def isResDeployer(self, uri:str, session):
         try:
             response = session.delete(uri + '/apiauth/v1/executionunits/statistics/fake-ruleapp/99999.9/fake-ruleset/99999.9',
@@ -163,9 +160,6 @@ class DecisionCenterManager:
         self.logger.info("Assuming connected without the resDeployer role")
         return False
             
-    def checkResRole(self, uri:str, session):
-        self.credentials.isResDeployer = self.isResDeployer(uri, session)
-
     def publish_tool(self, tool_name, tool_tags : list, tools_to_publish, tools_to_ignore, tags_to_publish):
         if len(tools_to_publish) > 0 and tool_name.lower() in tools_to_publish:
             return True # publish as this tool is explicitly specified
@@ -256,7 +250,7 @@ class DecisionCenterManager:
 
                 # check if the credentials grant special roles (admin, installer)
                 # (useful when filtering out the tools requiring a special role)
-                self.checkDcRole(uri, session)
+                self.credentials.isDcAdmin = self.isDcAdmin(uri, session)
 
                 openapi_uri = uri + '/v3/api-docs'
                 self.logger.info("Parsing " + openapi_uri)
@@ -304,9 +298,11 @@ class DecisionCenterManager:
                     raise(Exception(response.text))
 
         except json.JSONDecodeError as e:
-            self.logger.error("Could not retrieve the Decision Center REST API openapi. Please check that the Decision Center API URL is valid: %s", uri)
+            self.logger.error("Could not retrieve the Decision Center REST API openapi description.")
+            self.logger.error("There was an exception while converting the response to JSON. Response: '%s'. Exception: %s", response.text, e)
+            self.logger.error("Check that the Decision Center API URL is valid: %s and check Decision Center logs", uri)
         except Exception as e:
-            self.logger.error("An error occurred: %s", e)
+            self.logger.error("Could not retrieve the Decision Center REST API openapi description. Exception: %s", e)
             raise(e)
 
     # returns the openapi
@@ -315,7 +311,7 @@ class DecisionCenterManager:
         return self._fetch_endpoints(uri = self.credentials.odm_url)
 
 
-    def generate_tools_format(self, endpoints, tags_to_publish: list[str] = [], tools_to_publish: list[str] = [], tools_to_ignore: list[str] = [], isDcAdmin: bool = False) -> dict[str, types.Tool]:
+    def generate_tools_format(self, endpoints, tags_to_publish: list[str] = [], tools_to_publish: list[str] = [], tools_to_ignore: list[str] = []):
         """
         :no-index:
         Convert the endpoints to the tools format
@@ -371,7 +367,8 @@ class DecisionCenterManager:
                               param_desc      = getattr(element.schema,        'description', None),
                               param_required  = getattr(request_body,          'required',    False))
 
-        tools : dict[str, DecisionCenterEndpoint] = {}
+        tools       : dict[str, DecisionCenterEndpoint] = {}
+        tools_admin : dict[str, DecisionCenterEndpoint] = {}
         base_url = self.credentials.odm_url
 
         if endpoints is None:
@@ -387,10 +384,6 @@ class DecisionCenterManager:
                     method       = info.method.name
                     operation_id = info.operation_id
                     tool_name    = operation_id
-
-                    # filter out the tools that require the rtsAdministrator role if the credentials used do not grant this role
-                    if not isDcAdmin and tool_name in DecisionCenterManager.rtsAdministrator_tools:
-                        continue
 
                     if not self.publish_tool(tool_name, info.tags, tools_to_publish, tools_to_ignore, tags_to_publish):
                         continue
@@ -424,7 +417,7 @@ class DecisionCenterManager:
                     if tool_name in tools:
                         raise Exception(f'tool {tool_name} already defined')
                     else:
-                        tools[tool_name] = DecisionCenterEndpoint(tool_name=tool_name,
+                        endpoint = DecisionCenterEndpoint(tool_name=tool_name,
                                                                   summary=summary,
                                                                   description=description,
                                                                   method=method,
@@ -432,12 +425,20 @@ class DecisionCenterManager:
                                                                   parameters=parameters,
                                                                   input_schema=input_schema)
 
+                        if tool_name in DecisionCenterManager.rtsAdministrator_tools:
+                            # only for rtsAdministrators
+                            tools_admin[tool_name] = endpoint
+                        else:
+                            # for both rtsAdministrators and rtsUsers
+                            tools_admin[tool_name] = endpoint
+                            tools      [tool_name] = endpoint
+
                 except Exception as e:
                     self.logger.error(e)
                     continue # ignore this REST API endpoint
         
         self.logger.info("Successfully generated the MCP tools for the Decision Center REST API")
-        return tools
+        return tools, tools_admin
 
     def _fetch_res_api_endpoints(self, uri:str):
         """
@@ -467,7 +468,8 @@ class DecisionCenterManager:
 
                 # at this point, we know the credentials grant the resMonitor role (giving access to most RES console tools)
                 # check if the credentials also grant the resDeployer role (giving access to the restricted RES console tools)
-                self.checkResRole(uri, session)
+                self.credentials.isResMonitor  = True
+                self.credentials.isResDeployer = self.isResDeployer(uri, session)
 
                 return response.text
             else:
@@ -494,7 +496,7 @@ class DecisionCenterManager:
     def fetch_res_api_endpoints(self):
         return self._fetch_res_api_endpoints(uri = self.credentials.odm_res_url)
 
-    def generate_res_tools(self, wadl : str, tools : dict[str, DecisionCenterEndpoint], tags_to_publish: list[str] = [], tools_to_publish: list[str] = [], tools_to_ignore: list[str] = [], isResDeployer: bool = False) -> dict[str, types.Tool]:
+    def generate_res_tools(self, wadl : str, tags_to_publish: list[str] = [], tools_to_publish: list[str] = [], tools_to_ignore: list[str] = []):
         """
         :no-index:
             Converts the WADL description into a list of MCP tools
@@ -712,9 +714,9 @@ class DecisionCenterManager:
                         return [{'Accept': 'application/json'}]
             return []
 
-        def parse_resources(tools, dict_params, dict_representations, xmlRepresentationGlobalList,
+        def parse_resources(tools, tools_deployer, dict_params, dict_representations, xmlRepresentationGlobalList,
                             xmlResource, path, base_url,
-                            tools_to_publish: list[str] = [], tools_to_ignore: list[str] = [], isResDeployer: bool = False):
+                            tools_to_publish: list[str] = [], tools_to_ignore: list[str] = []):
             path += '/'
             path += xmlResource.attrib.get('path')
 
@@ -724,9 +726,9 @@ class DecisionCenterManager:
 
                 if xmlSubelement.tag == '{http://wadl.dev.java.net/2009/02}resource':
                     xmlResource = xmlSubelement
-                    parse_resources(tools, dict_params, dict_representations, xmlRepresentationGlobalList,
+                    parse_resources(tools, tools_deployer, dict_params, dict_representations, xmlRepresentationGlobalList,
                                     xmlResource, path, base_url,
-                                    tools_to_publish, tools_to_ignore, isResDeployer)
+                                    tools_to_publish, tools_to_ignore)
 
                 elif xmlSubelement.tag == '{http://wadl.dev.java.net/2009/02}method':
                     xmlMethod = xmlSubelement
@@ -740,10 +742,6 @@ class DecisionCenterManager:
                     xmlParamList             = xmlRequest.findall('{http://wadl.dev.java.net/2009/02}param')
                     xmlRequestRepresentationList  = xmlRequest.findall('{http://wadl.dev.java.net/2009/02}representation')
                     xmlResponseRepresentationList = xmlResponse.findall('{http://wadl.dev.java.net/2009/02}representation')
-
-                    # filter out the tools that require the resDeployer role if the credentials used do not grant this role
-                    if not isResDeployer and tool_name in DecisionCenterManager.resDeployer_tools:
-                        continue
 
                     if not self.publish_tool(tool_name, [tool_tag], tools_to_publish, tools_to_ignore, tags_to_publish):
                         continue
@@ -841,7 +839,7 @@ class DecisionCenterManager:
                         else:
                             self.logger.warning("Found tools with the same id: %s", tool_name)
 
-                    tools[tool_name] = DecisionCenterEndpoint(tool_name    = tool_name,
+                    endpoint = DecisionCenterEndpoint(tool_name    = tool_name,
                                                               summary      = summary,
                                                               description  = description,
                                                               method       = http_method,
@@ -849,6 +847,14 @@ class DecisionCenterManager:
                                                               parameters   = parameters,
                                                               input_schema = input_schema,
                                                               headers      = Accept_header(xmlResponseRepresentationList))
+
+                    # filter out the tools that require the resDeployer role if the credentials used do not grant this role
+                    if tool_name in DecisionCenterManager.resDeployer_tools:
+                        tools_deployer[tool_name] = endpoint
+                    else:
+                        tools_deployer[tool_name] = endpoint
+                        tools         [tool_name] = endpoint
+
 
         if wadl is None:
             return tools
@@ -864,23 +870,26 @@ class DecisionCenterManager:
         dict_params={}
         dict_representations={}
 
+        tools          : dict[str, DecisionCenterEndpoint] = {}
+        tools_deployer : dict[str, DecisionCenterEndpoint] = {}
+
         for xmlParam in xmlParamList:
             parse_params(dict_params, xmlParam)
 
         for xmlResource in xmlResourceList:
-            parse_resources(tools, dict_params, dict_representations, xmlRepresentationGlobalList, 
+            parse_resources(tools, tools_deployer, dict_params, dict_representations, xmlRepresentationGlobalList, 
                             xmlResource, '', base_url,
-                            tools_to_publish, tools_to_ignore, isResDeployer)
+                            tools_to_publish, tools_to_ignore)
 
         self.logger.info("Successfully generated the MCP tools for the RES Console REST API")
 
-        return tools
+        return tools, tools_deployer
 
     def save_execution_trace(self, trace : ToolExecutionTrace):
         if self.trace_recorder:
             self.trace_recorder.save(trace)
 
-    def _invokeDecisionCenterApi(self, endpoint, arguments:dict, method:str, url:str, params_query:dict = {}, params_body:dict = {}, params_file:dict = {}, raw_data = None, raw_data_type = None, run_locally:bool = True):
+    def _invokeDecisionCenterApi(self, endpoint, arguments:dict, method:str, url:str, params_query:dict = {}, params_body:dict = {}, params_file:dict = {}, raw_data = None, raw_data_type = None, run_locally:bool = True, user_credentials = None):
         """
         :no-index:
         Invokes a decision center REST API.
@@ -895,7 +904,11 @@ class DecisionCenterManager:
             dict: The response from the decision center
         """
 
-        session = self.credentials.get_session()
+        if user_credentials:
+            session = user_credentials.get_session()
+        else:
+            session = self.credentials.get_session()
+
         if raw_data_type:
             session.headers.update({'Content-Type': raw_data_type})
         for header in endpoint.headers:
@@ -959,7 +972,7 @@ class DecisionCenterManager:
             self.logger.error(f"Request error, status: {response.status_code}, error: {err}")
             raise Exception(err)
 
-    def invokeDecisionCenterApi(self, endpoint:DecisionCenterEndpoint, arguments:dict[str, str], run_locally:bool):
+    def invokeDecisionCenterApi(self, endpoint:DecisionCenterEndpoint, arguments:dict[str, str], run_locally:bool, user_credentials = None):
 
         def replace_filepath_by_content(value, hierarchy):
             if isinstance(value, list):
@@ -1036,4 +1049,6 @@ class DecisionCenterManager:
                                              params_file = params_file,
                                              raw_data    = raw_data,
                                              raw_data_type = raw_data_type,
-                                             run_locally = run_locally)
+                                             run_locally = run_locally,
+                                             user_credentials = user_credentials,
+                                             )

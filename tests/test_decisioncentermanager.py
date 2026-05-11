@@ -74,10 +74,10 @@ def openapi9501_filepath():
 def test_dc_tools_tags_filtering(tags, expected_tools_total, openapi9501_filepath):
     manager = DecisionCenterManager(credentials=Credentials(odm_url='http://localhost:8885/decisioncenter-api', username='mock_user', password='mock_password'))
     endpoints  = manager._fetch_endpoints(openapi9501_filepath)
-    repository = manager.generate_tools_format(endpoints, tags, isDcAdmin=True)
+    repository_dc, repository_dc_admin = manager.generate_tools_format(endpoints, tags)
 
     # verify tools were filtered by tags
-    assert len(repository) == expected_tools_total
+    assert len(repository_dc_admin) == expected_tools_total
 
 @pytest.fixture
 def wadl9501_filepath():
@@ -92,10 +92,10 @@ def wadl9501_filepath():
 def test_res_tools_tags_filtering(tags, expected_tools_total, wadl9501_filepath):
     manager = DecisionCenterManager(credentials=Credentials(odm_res_url='http://localhost:8885/res', username='mock_user', password='mock_password'))
     wadl  = manager._fetch_res_api_endpoints(wadl9501_filepath)
-    repository = manager.generate_res_tools(wadl, tools={}, tags_to_publish=tags, tools_to_publish=[], tools_to_ignore=[], isResDeployer=True)
+    repository_res, repository_res_deployer = manager.generate_res_tools(wadl, tags_to_publish=tags, tools_to_publish=[], tools_to_ignore=[])
 
     # verify tools were filtered by tags
-    assert len(repository) == expected_tools_total
+    assert len(repository_res_deployer) == expected_tools_total
 
 @pytest.mark.parametrize("tags, tools, no_tools, expected_tools_total", [
     (["explore"], ["addserver", "importdt"], [],                                             35),   # publish all the tools of the 'explore' tag/category (33 in total) plus 2 from the 'manage' category
@@ -105,10 +105,10 @@ def test_res_tools_tags_filtering(tags, expected_tools_total, wadl9501_filepath)
 def test_tools_filtering(tags, tools, no_tools, expected_tools_total, openapi9501_filepath):
     manager = DecisionCenterManager(credentials=Credentials(odm_url='http://localhost:8885/decisioncenter-api', username='mock_user', password='mock_password'))
     endpoints  = manager._fetch_endpoints(openapi9501_filepath)
-    repository = manager.generate_tools_format(endpoints, tags_to_publish=tags, tools_to_publish=tools, tools_to_ignore=no_tools, isDcAdmin=True)
+    repository_dc, repository_dc_admin = manager.generate_tools_format(endpoints, tags_to_publish=tags, tools_to_publish=tools, tools_to_ignore=no_tools)
 
     # verify tools were filtered by explicit list of tools to publish or discard
-    assert len(repository) == expected_tools_total
+    assert len(repository_dc_admin) == expected_tools_total
 
 @pytest.mark.parametrize("openapi_file, expected_tools_total", [
     (os.path.join(base_dir, 'openapi-9501.json'),  133),
@@ -120,13 +120,13 @@ def test_generate_tools_format(openapi_file, expected_tools_total):
 
     manager = DecisionCenterManager(credentials=Credentials(odm_url=odm_url, username='mock_user', password='mock_password'))
     endpoints  = manager._fetch_endpoints(openapi_file)
-    repository = manager.generate_tools_format(endpoints, isDcAdmin=True)
+    repository_dc, repository_dc_admin = manager.generate_tools_format(endpoints)
 
     # verify all tools were generated
-    assert len(repository) == expected_tools_total
+    assert len(repository_dc_admin) == expected_tools_total
 
     def check_endpoint(tool_name:str, method:str, url:str, summary:str, parameters:list[Parameter]):
-        endpoint = repository[tool_name]
+        endpoint = repository_dc_admin[tool_name]
         assert endpoint
         assert endpoint.method  == method
         assert endpoint.url     == odm_url + url
