@@ -16,9 +16,9 @@ dependencies = [
  "pytest-html>=4.1.1",
  "python-dotenv>=1.2.2",
  "python-multipart>=0.0.27",
- "requests>=2.32.5",
+ "requests>=2.33.0",
  "responses>=0.25.8",
- "urllib3>=2.6.3",
+ "urllib3>=2.7.0",
  "validator-collection>=1.5.0",
 ]
 [[project.authors]]
