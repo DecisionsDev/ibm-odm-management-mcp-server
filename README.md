@@ -1,5 +1,4 @@
-# IBM ODM Management MCP Server Documentation (BETA)
-
+# IBM ODM Management MCP Server Documentation
 ## Overview
 
 The IBM ODM Management MCP Server bridges IBM ODM Management REST APIs with modern AI assistants and orchestration platforms.
