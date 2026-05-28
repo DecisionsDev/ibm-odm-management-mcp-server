@@ -20,6 +20,8 @@ class DecisionCenterEndpoint:
         method (str): GET, PUT,...
         url    (str):  full URL of a Decision Center REST API eg. https://myhost/decisioncenter-api/v1/about
         parameters (dict): list of the parameters expected with their location in the request (path, query or body)
+        headers (list): list of the headers expected in the request
+        tags   (list of strings): a list of tags to be associated with the tool, for categorization or filtering purposes.
         tool   (types.Tool): An object describing the tool, including its name, description, and input schema.
 
     Args:
@@ -30,14 +32,17 @@ class DecisionCenterEndpoint:
         url (string): 
         parameters (dict): list of the parameters expected with their location in the request (path, query or body)
         input_schema (dict): The schema describing the expected input for the tool.
+        headers (list, optional): A list of headers expected in the request. Defaults to an empty list.
+        tags (list of strings): a list of tags to be associated with the tool, for categorization or filtering purposes. Defaults to an empty list.
     """
-    def __init__(self, tool_name:str, summary:str, description:str, method:str, url:str, parameters:dict, input_schema:dict[str,str], headers:list=[]):
+    def __init__(self, tool_name:str, summary:str, description:str, method:str, url:str, parameters:dict, input_schema:dict[str,str], headers:list=[], tags:list[str]=[]):
         if description is None:
             description=summary
         self.method = method
         self.url    = url
         self.parameters = parameters
         self.headers = headers
+        self.tags = tags
         self.tool   = types.Tool(
             name=tool_name,
             title=summary,

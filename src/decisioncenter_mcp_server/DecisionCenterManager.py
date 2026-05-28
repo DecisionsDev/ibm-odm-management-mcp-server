@@ -430,7 +430,9 @@ class DecisionCenterManager:
                                                                   method=method,
                                                                   url= base_url + path_url,
                                                                   parameters=parameters,
-                                                                  input_schema=input_schema)
+                                                                  input_schema=input_schema,
+                                                                  tags=info.tags,
+                                                                  )
 
                 except Exception as e:
                     self.logger.error(e)
@@ -848,7 +850,9 @@ class DecisionCenterManager:
                                                               url          = base_url + path,
                                                               parameters   = parameters,
                                                               input_schema = input_schema,
-                                                              headers      = Accept_header(xmlResponseRepresentationList))
+                                                              headers      = Accept_header(xmlResponseRepresentationList),
+                                                              tags         = [tool_tag],
+                                                            )
 
         if wadl is None:
             return tools
