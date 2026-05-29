@@ -108,7 +108,7 @@ If ODM is deployed in IBM Cloud Pak for Business Automation, the user/service ac
   | ODM - Monitor and deploy decision services in Decision Server	   | resDeployer      | Gives access to all the Decision server console tools |
   | ODM - Monitor decision services in Decision Server               | resMonitor       | Gives access to only some Decision server console tools |
 
-Read more in [Managing user permissions](https://www.ibm.com/docs/en/cloud-paks/cp-biz-automation/25.0.0?topic=access-managing-user-permissions).
+Read more in [Managing user permissions](https://www.ibm.com/docs/en/cloud-paks/cp-biz-automation/26.0.0?topic=access-managing-user-permissions).
 
 #### 2.2. ODM on Kubernetes
 
