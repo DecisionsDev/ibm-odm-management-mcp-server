@@ -18,11 +18,9 @@ import os
 import argparse
 import mcp.types as types
 from mcp.server.fastmcp import FastMCP
-from mcp.server.auth.settings import AuthSettings
 import json
-from decisioncenter_mcp_server.MCPServer import MCPServer, parse_arguments, create_credentials, init, INSTRUCTIONS, SimpleTokenVerifier
+from decisioncenter_mcp_server.MCPServer   import MCPServer, parse_arguments, create_credentials, init
 from decisioncenter_mcp_server.Credentials import Credentials
-from pydantic import AnyHttpUrl
 
 # Test fixtures
 @pytest.fixture
@@ -66,8 +64,8 @@ def test_server_initialization(mcp_server):
           {"zenapikey": "test-key"}
     ),
     (
-        ["--client-id", "test-client", "--client-secret", "test-secret", "--issuer-url", "http://op", "--token-url", "http://op/token", "--scope", "openid"],
-          {"client_id": "test-client",   "client_secret": "test-secret",   "issuer_url": "http://op",   "token_url": "http://op/token",   "scope": "openid"}
+        ["--client-id", "test-client", "--client-secret", "test-secret", "--issuer-url", "http://op", "--introspection-url", "http://op/token/introspect",  "--token-url", "http://op/token", "--scope", "openid"],
+          {"client_id": "test-client",   "client_secret": "test-secret",   "issuer_url": "http://op",   "introspection_url": "http://op/token/introspect",    "token_url": "http://op/token",   "scope": "openid"}
     ),
     (
         ["--pkjwt-cert-path", "/custom/cert/file", "--pkjwt-key-path", "/custom/key/file", "--pkjwt-key-password", "xyz-password"],
@@ -127,6 +125,7 @@ def test_create_credentials_basic_auth():
         client_id=None,
         client_secret=None,
         issuer_url=None,
+        introspection_url=None,
         token_url=None,
         scope="openid",
         verifyssl="True",
@@ -162,6 +161,7 @@ def test_ssl_verification(verify_ssl, expected):
         client_id=None,
         client_secret=None,
         issuer_url=None,
+        introspection_url=None,
         token_url=None,
         scope="openid",
         verifyssl=verify_ssl,
@@ -203,6 +203,7 @@ def test_tags_verification(tags, expected_tags, tools, expected_tools, notools, 
         client_id=None,
         client_secret=None,
         issuer_url=None,
+        introspection_url=None,
         token_url=None,
         scope="openid",
         verifyssl="True",

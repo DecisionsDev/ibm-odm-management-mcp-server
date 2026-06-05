@@ -90,8 +90,9 @@ def wadl9501_filepath():
     (["decisiontraces", "executionunits", "utilities"], 15), # 6 + 5 + 4
 ])
 def test_res_tools_tags_filtering(tags, expected_tools_total, wadl9501_filepath):
-    manager = DecisionCenterManager(credentials=Credentials(odm_res_url='http://localhost:8885/res', username='mock_user', password='mock_password'))
-    wadl  = manager._fetch_res_api_endpoints(wadl9501_filepath)
+    credentials=Credentials(odm_res_url='http://localhost:8885/res', username='mock_user', password='mock_password')
+    manager = DecisionCenterManager(credentials)
+    wadl  = manager._fetch_res_api_endpoints(wadl9501_filepath, credentials)
     repository_res, repository_res_deployer = manager.generate_res_tools(wadl, tags_to_publish=tags, tools_to_publish=[], tools_to_ignore=[])
 
     # verify tools were filtered by tags

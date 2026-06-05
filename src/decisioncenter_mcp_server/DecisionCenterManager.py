@@ -440,7 +440,7 @@ class DecisionCenterManager:
         self.logger.info("Successfully generated the MCP tools for the Decision Center REST API")
         return tools, tools_admin
 
-    def _fetch_res_api_endpoints(self, uri:str):
+    def _fetch_res_api_endpoints(self, uri:str, credentials):
         """
         :no-index:
         Fetches the WADL description of the Decision Server REST API
@@ -454,13 +454,13 @@ class DecisionCenterManager:
                 return content
 
         try:
-            session = self.credentials.get_session()
+            session = credentials.get_session()
 
             wadl_uri = uri + '/apiauth/v1/DecisionServer.wadl'
             self.logger.info("Retrieving " + wadl_uri)
             response = session.get(wadl_uri, 
                                    headers=session.headers, 
-                                   verify=self.credentials.cacert)
+                                   verify=credentials.cacert)
             
             # Check if the request was successful
             if response.status_code == 200:
@@ -468,13 +468,13 @@ class DecisionCenterManager:
 
                 # at this point, we know the credentials grant the resMonitor role (giving access to most RES console tools)
                 # check if the credentials also grant the resDeployer role (giving access to the restricted RES console tools)
-                self.credentials.isResMonitor  = True
-                self.credentials.isResDeployer = self.isResDeployer(uri, session)
+                credentials.isResMonitor  = True
+                credentials.isResDeployer = self.isResDeployer(uri, session)
 
                 return response.text
             else:
                 if response.status_code == 403:
-                    self.logger.error("Connected without the resMonitor role. Therefore no access to the RES console tools.")
+                    self.logger.info("Connected without the resMonitor role. Therefore no access to the RES console tools.")
                 elif response.status_code == 401:
                     self.logger.error("Wrong credentials. Therefore no access to the RES console tools.")
                 elif response.status_code == 500 and "NoResourceFoundException" in response.text:
@@ -489,12 +489,12 @@ class DecisionCenterManager:
             raise(e)
 
         finally:
-            self.credentials.cleanup()
+            credentials.cleanup()
 
     # returns the WADL description of the RES console REST API
     # and sets self.credentials.isResDeployer to True if the credentials grant the resDeployer Role
     def fetch_res_api_endpoints(self):
-        return self._fetch_res_api_endpoints(uri = self.credentials.odm_res_url)
+        return self._fetch_res_api_endpoints(self.credentials.odm_res_url, self.credentials)
 
     def generate_res_tools(self, wadl : str, tags_to_publish: list[str] = [], tools_to_publish: list[str] = [], tools_to_ignore: list[str] = []):
         """
@@ -1036,10 +1036,10 @@ class DecisionCenterManager:
                         raw_data = value
 
         if self.logger.isEnabledFor(logging.DEBUG):
-            logging.debug("params_query=%s", params_query)
-            logging.debug("params_body=%s",  params_body)
-            logging.debug("params_file=%s",  params_file)
-            logging.debug("raw_data=%s",     raw_data)
+            if not params_query: logging.debug("params_query=%s", params_query)
+            if not params_body:  logging.debug("params_body=%s",  params_body)
+            if not params_file:  logging.debug("params_file=%s",  params_file)
+            if not raw_data:     logging.debug("raw_data=%s",     raw_data)
 
         return self._invokeDecisionCenterApi(endpoint, arguments,
                                              method=endpoint.method, 
