@@ -37,18 +37,30 @@ For more information, please refer to the documentation.
 class MCPServer:
 
     get_tools_executions_toolname = "getToolExecutions"
+    hello_world_toolname = "helloWorld"
     max_trace_files = 200
 
     tools_executions_tool = types.Tool(
             name=get_tools_executions_toolname,
             title="Get tool executions",
             description=f"Get the tool executions with or without content. Useful to keep track of the tools that have been executed, their arguments and results. Only the most recent executions are kept. The number of executions that are kept is defined by the MCP server option --traces-maxsize ({max_trace_files} by default).",
-            inputSchema={'type': 'object', 'required': [], 
+            inputSchema={'type': 'object', 'required': [],
                          'properties': {
                             'filter': {'type': 'string', 'description': 'Filter to apply on the tool executions. Only the executions of tools whose name matches the filter will be included in the result. The filter supports partial match.'},
                             'with_content': {'type': 'boolean', 'description': 'Whether to include the content of the tool execution (arguments and results) in the trace. If false, only metadata such as timestamps, tool name and execution status will be included.'}
                             }
                         }
+            )
+
+    hello_world_tool = types.Tool(
+            name=hello_world_toolname,
+            title="Hello World Test Tool",
+            description="A simple test tool that returns a greeting message. Use this to verify that Aegra can successfully call custom MCP tools. No parameters required.",
+            inputSchema={
+                'type': 'object',
+                'properties': {},
+                'required': []
+            }
             )
 
     def __init__(self, credentials: Credentials,
@@ -100,7 +112,9 @@ class MCPServer:
         List available tools.
         Each tool specifies its arguments using JSON Schema validation.
         """
-        tools = [MCPServer.tools_executions_tool] if self.trace_recorder.trace_executions else []
+        tools = [MCPServer.hello_world_tool]  # Always include the test tool
+        if self.trace_recorder.trace_executions:
+            tools.append(MCPServer.tools_executions_tool)
         for tool_name, endpoint in self.repository.items():
             tools.append(endpoint.tool)
         return tools
@@ -114,12 +128,28 @@ class MCPServer:
             with_content = arguments.get('with_content', False) if arguments else False
             return self.trace_recorder.get_executions(filter=filter, with_content=with_content)
 
+        def hello_world(arguments):
+            """Handle the hello_world test tool - simplified version with no parameters"""
+            return {
+                "status": "success",
+                "message": "Hello from IBM ODM Management MCP Server! This tool is working correctly.",
+                "timestamp": __import__('datetime').datetime.now().isoformat(),
+                "server_info": {
+                    "name": "IBM ODM Management MCP Server",
+                    "transport": self.transport,
+                    "odm_url": self.credentials.odm_url if self.credentials.odm_url else "Not configured",
+                    "odm_res_url": self.credentials.odm_res_url if self.credentials.odm_res_url else "Not configured"
+                }
+            }
+
         if self.logger.isEnabledFor(logging.DEBUG):
             self.logger.debug("Invoking tool: %s with arguments: %s", name, arguments)
         else:
             self.logger.info("Invoking tool: %s", name)
 
-        if name == MCPServer.get_tools_executions_toolname:
+        if name == MCPServer.hello_world_toolname:
+            result = hello_world(arguments)
+        elif name == MCPServer.get_tools_executions_toolname:
             executions = get_tools_executions(arguments)
             result = { "executions": executions }
         else:
