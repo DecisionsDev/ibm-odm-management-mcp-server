@@ -18,6 +18,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.streamable_http import MCP_SESSION_ID_HEADER
+from mcp.server.auth.routes import build_resource_metadata_url
 import mcp.server.auth.middleware.bearer_auth as bearer_auth
 from starlette.authentication import AuthCredentials
 from starlette.requests import HTTPConnection
@@ -61,7 +62,7 @@ class MCPServer:
     def __init__(self, credentials: Credentials,
                  tags: list[str] = [], tools: list[str] = [], no_tools: list[str] = [],
                  trace: list[str] = [], traces_dir: str = None, traces_maxsize: int = max_trace_files,
-                 transport: Optional[str] = 'stdio', host: Optional[str] = '0.0.0.0', port: Optional[int] = 3000, path: Optional[str] = '/mcp', issuer_url: Optional[str] = None, introspection_url: Optional[str] = None,
+                 transport: Optional[str] = 'stdio', host: Optional[str] = '0.0.0.0', port: Optional[int] = 3000, path: Optional[str] = '/mcp', mcp_ext_url: Optional[str] = None, issuer_url: Optional[str] = None, introspection_url: Optional[str] = None,
                 ):
         # Get logger for this class
         self.logger = logging.getLogger(__name__)
@@ -78,6 +79,7 @@ class MCPServer:
         self.path      = path
         self.issuer_url= issuer_url
         self.introspection_url= introspection_url
+        self.mcp_ext_url = mcp_ext_url
 
         self.repository_dc              : dict[str, DecisionCenterEndpoint] = {}
         self.repository_dc_admin        : dict[str, DecisionCenterEndpoint] = {}
@@ -210,7 +212,9 @@ class MCPServer:
            and self.credentials.client_id is not None \
            and self.credentials.client_secret is not None \
            and self.issuer_url is not None \
-           and self.introspection_url is not None
+           and self.introspection_url is not None \
+           and self.mcp_ext_url is not None
+        
 
     def update_repository(self):
 
@@ -317,9 +321,13 @@ class MCPServer:
         if self.use_user_credentials():
             token_verifier: AccessTokenVerifier | None = AccessTokenVerifier(mcpserver = self)
             auth: AuthSettings | None = AuthSettings(issuer_url          = self.issuer_url,
-                                                     required_scopes     = [self.credentials.scope],
-                                                     resource_server_url = AnyHttpUrl(f"http://{self.host}:{self.port}"))
+                                                     required_scopes     =[self.credentials.scope],
+                                                     resource_server_url = self.mcp_ext_url)
+
+            self.logger.info       (f"MCP Server running in remote mode, using users credentials. Resource metadata URL: {build_resource_metadata_url(resource_server_url = self.mcp_ext_url)}")
         else: 
+            if self.transport != "stdio": 
+                self.logger.warning("MCP Server running in remote mode, but NOT using users credentials\n" + HOWTO_USE_USERS_CREDENTIALS_MSG)
             token_verifier = None
             auth = None
 
@@ -417,12 +425,11 @@ def init(args):
         host            = args.host,
         port            = args.port,
         path            = args.mount_path,
+        mcp_ext_url     = args.mcp_ext_url,
         issuer_url      = args.issuer_url,
         introspection_url = args.introspection_url,
     )
     server.update_repository()
-    if server.use_user_credentials(): server.logger.info   ("MCP Server running in remote mode, using users credentials")
-    elif server.transport != "stdio": server.logger.warning("MCP Server running in remote mode, NOT using users credentials\n" + HOWTO_USE_USERS_CREDENTIALS_MSG)
     return server
 
 def parse_arguments():
@@ -435,8 +442,6 @@ def parse_arguments():
     parser.add_argument("--client-id",         type=str, default=os.getenv("CLIENT_ID"), help="OpenID Client ID (optional)")
     parser.add_argument("--client-secret",     type=str, default=os.getenv("CLIENT_SECRET"), help="OpenID Client Secret (optional)")
     parser.add_argument("--issuer-url",        type=str, default=os.getenv("ISSUER_URL"), help="OpenID Connect issuer URL (needed in remote mode only)")
-    parser.add_argument("--introspection-url", type=str, default=os.getenv("INTROSPECTION_URL"), help="OpenID Connect introspection URL (needed in remote mode only)")
-    parser.add_argument("--token-url",         type=str, default=os.getenv("TOKEN_URL"), help="OpenID Connect token endpoint URL (optional)")
     parser.add_argument("--scope",             type=str, default=os.getenv("SCOPE", "openid"), help="OpenID Connect scope using when requesting an access token using Client Credentials (optional)")
     parser.add_argument("--verifyssl",         type=str, default=os.getenv("VERIFY_SSL", "True"), choices=["True", "False"], help="Disable SSL check. Default is True (SSL verification enabled).")
     parser.add_argument("--ssl-cert-path",     type=str, default=os.getenv("SSL_CERT_PATH"), help="Path to the SSL certificate file. If not provided, defaults to system certificates.")
@@ -452,6 +457,9 @@ def parse_arguments():
     parser.add_argument("--host",              type=str, default=os.getenv("HOST", "0.0.0.0"), help="IP or hostname that the MCP server listens to in remote mode.")
     parser.add_argument("--port",              type=int, default=os.getenv("PORT", 3000), help="Port that the MCP server listens to in remote mode.")
     parser.add_argument("--mount-path",        type=str, default=os.getenv("MOUNT_PATH", "/mcp"), help="Path that the MCP server listens to in remote mode.")
+    parser.add_argument("--mcp-ext-url",       type=str, default=os.getenv("MCP_EXT_URL"), help="MCP server external URL. Needed in remote mode to authenticate with users credentials.")
+    parser.add_argument("--token-url",         type=str, default=os.getenv("TOKEN_URL"), help="OpenID Connect token endpoint URL. Needed in remote mode to authenticate with users credentials.")
+    parser.add_argument("--introspection-url", type=str, default=os.getenv("INTROSPECTION_URL"), help="OpenID Connect introspection URL. Needed in remote mode to authenticate with users credentials.")
     
     # Logging-related arguments
     parser.add_argument("--log-level",         type=str, default=os.getenv("LOG_LEVEL", "INFO"),
@@ -475,10 +483,10 @@ def main():
     server = init(args)
     server.start()
 
-HOWTO_USE_USERS_CREDENTIALS_MSG = """Users credentials are used if all the conditions below are met:
-    1. the MCP Server is running in remote mode
-    2. openID is used with a client secret
-    3. the issuer and introspection URLs are set"""
+HOWTO_USE_USERS_CREDENTIALS_MSG = """When MCP Server runs in remote mode, it authenticates to ODM with users credentials if all the conditions below are met:
+    1. OpenID is used with a client secret
+    3. the openID issuer and introspection URLs are set
+    4. the MCP server external URL is set"""
 
 class AccessTokenVerifier(TokenVerifier):
     def __init__(self, mcpserver: MCPServer):
