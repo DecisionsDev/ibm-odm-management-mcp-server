@@ -169,14 +169,7 @@ class MCPServer:
         return self.tokens[mcp_session_id]
 
     def mcp_session_id(self):
-        context = self.server.get_context() # may throw an exception, handled by Server.call_tool.handler
-        request=context.request_context.request
-        mcp_session_id=None
-        for transport in self.server.session_manager._server_instances.values():
-            if transport._get_session_id(request) == transport.mcp_session_id:
-                mcp_session_id=transport.mcp_session_id
-                break
-        return mcp_session_id
+        return self.server.get_context().request_context.request.headers.get(MCP_SESSION_ID_HEADER)
 
     def get_user_credentials(self, mcp_session_id : str | None):
         token = self.tokens.get(mcp_session_id)
