@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/2a7dcf8b-bc40-4290-8361-718663afe523
 
 ### 2.1 MCP server configuration
 
-- The MCP server must be started with some additional parameters specific to this usage:
+- The MCP server must be started with some additional mandatory parameters specific to this usage:
 
     | CLI Argument | Environment Variable | Description |
     |--------------|----------------------|-------------|
@@ -34,7 +34,7 @@ https://github.com/user-attachments/assets/2a7dcf8b-bc40-4290-8361-718663afe523
     | `--issuer-url` | `ISSUER_URL` | OpenID Connect issuer URL |
     | `--introspection-url` | `INTROSPECTION_URL` | OpenID Connect introspection URL |
 
-    - The MCP external URL is the URL that is configured in the AI assistant to access the MCP server (with or without the path `/mcp` appended, eg. `https://my-mcp-server.com`).
+    - The MCP external URL is the URL that is configured in the AI assistant to access the MCP server (with or without the path `/mcp` appended, eg. `https://my-mcp-server.com`). This URL MUST match the URL configured in the AI assistant (see [2.3 AI Assistant configuration](#23-ai-assistant-configuration)).
     - The issuer and introspection URL can be found when navigating to the `.well-known/openid-configuration` URL of the OpenID Connect server. The response contains the fields `issuer` and `introspection_endpoint`.
 
 - Even though the MCP server will use the credentials of the users who run tools, it still needs credentials of its own.
