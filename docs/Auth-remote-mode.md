@@ -9,7 +9,11 @@ This ensures that:
 
 This page explains how to configure the Management MCP server so that it uses the users credentials in remote mode.
 
-<< VIDEO >>
+
+
+https://github.com/user-attachments/assets/2a7dcf8b-bc40-4290-8361-718663afe523
+
+
 
 ## 1. Requirements
 
@@ -129,7 +133,7 @@ You can get more background in [3.1 How Things work](#31-how-things-work).
     }
     ```
     - optionally:
-        - add the `--silent` option if you use IBM Bob to get rid of messages that IBM Bob presents as errors even if they are not
+        - add the `--silent` option if you use IBM Bob to get rid of messages that IBM Bob displays as errors even if they are not
         - or add the `--debug` option instead for troubleshooting
         - add the `--allow-http` option if the MCP server uses HTTP
         - add the `NODE_TLS_REJECT_UNAUTHORIZED` environment variable and set it to `"0"` if the MCP server uses a self-signed certificate
@@ -139,7 +143,7 @@ You can get more background in [3.1 How Things work](#31-how-things-work).
 > [!NOTE]
 > - Alternatively Claude Desktop can be configured without using `mcp-remote`.
 > - See [Get started with custom connectors using remote MCP](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)
-> - This solution is not available in the free plan
+> - This solution is not available in the free plan though
 
 
 ## 3. Troubleshooting
