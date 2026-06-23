@@ -29,9 +29,9 @@ import copy
 
 # adds a parameter into 'input_shema' (for the MCP server client (the AI agent)) and in 'parameters' (for the MCP server)
 # used to generate the tools for both REST APIs (DC and RES Console)
-def add_param(input_schema, parameters, 
-              param_in, param_name, param_type, param_format, 
-              param_enum, param_enumNames, 
+def add_param(input_schema, parameters,
+              param_in, param_name, param_type, param_format,
+              param_enum, param_enumNames,
               param_desc, param_required):
 
     # workaround
@@ -39,20 +39,27 @@ def add_param(input_schema, parameters,
         param_enum = param_enum[0].split(',')
         param_enum = [enum.strip() for enum in param_enum]
 
+    # Add UUID guidance to description for UUID parameters
+    enhanced_desc = param_desc or ""
+    if param_format == 'uuid':
+        uuid_guidance = " IMPORTANT: This parameter requires a UUID (universally unique identifier) in the format 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'. UUIDs are globally unique identifiers that ensure reliable and portable API calls across different environments. Always use the full UUID, not short numeric IDs which are for display purposes only."
+        enhanced_desc = enhanced_desc + uuid_guidance if enhanced_desc else uuid_guidance.strip()
+
     # add in input_schema (for the MCP client) - https://modelcontextprotocol.io/specification/draft/schema#legacytitledenumschema
     if len(input_schema) == 0:
         input_schema |= {'type': 'object', 'properties': {}, 'required': []}
     input_schema.get('properties')[param_name] = {'type':        param_type}                                        | \
+                                                ({'format':      param_format}    if param_format          else {}) | \
                                                 ({'items': {'type': 'string'}}    if param_type == 'array' else {}) | \
                                                 ({'items': {'enum': [
                                                                 'rtsAdministrator',
-                                                                'rtsInstaller', 
-                                                                'rtsConfigManager', 
-                                                                'rtsUser']}}      if param_type == 'array' and 
+                                                                'rtsInstaller',
+                                                                'rtsConfigManager',
+                                                                'rtsUser']}}      if param_type == 'array' and
                                                                                      param_name == 'roles' else {}) | \
                                                 ({'enum':        param_enum}      if param_enum            else {}) | \
                                                 ({'enumNames':   param_enumNames} if param_enumNames       else {}) | \
-                                                ({'description': param_desc}      if param_desc            else {})
+                                                ({'description': enhanced_desc}   if enhanced_desc         else {})
     if param_required == True:
         input_schema.get('required').append(param_name)
 
@@ -408,11 +415,18 @@ class DecisionCenterManager:
                         if type == 'integer':
                             type = 'number'
 
+                        # detect UUID format for ID parameters
+                        param_format = getattr(parameter.schema.format, 'value', None) if hasattr(parameter.schema, 'format') else None
+                        if param_format is None and type == 'string' and parameter.name and 'id' in parameter.name.lower():
+                            # Check if it's likely a UUID parameter (ends with 'Id' or 'ID' or is just 'id')
+                            if parameter.name.endswith('Id') or parameter.name.endswith('ID') or parameter.name.lower() == 'id':
+                                param_format = 'uuid'
+
                         add_param(input_schema, parameters,
                                   param_in        = parameter.location.value,
                                   param_name      = parameter.name,
                                   param_type      = type,
-                                  param_format    = None,
+                                  param_format    = param_format,
                                   param_enum      = getattr(parameter, 'enum',        None),
                                   param_enumNames = None,
                                   param_desc      = getattr(parameter, 'description', None),
@@ -820,14 +834,21 @@ class DecisionCenterManager:
                             else:
                                 param_type = 'string'
 
-                            add_param(input_schema, parameters, 
-                                      param_in, 
-                                      param_name, 
-                                      param_type, 
-                                      None,  # param_format
+                            # detect UUID format for ID parameters
+                            param_format = None
+                            if param_type == 'string' and param_name and 'id' in param_name.lower():
+                                # Check if it's likely a UUID parameter (ends with 'Id' or 'ID' or is just 'id')
+                                if param_name.endswith('Id') or param_name.endswith('ID') or param_name.lower() == 'id':
+                                    param_format = 'uuid'
+
+                            add_param(input_schema, parameters,
+                                      param_in,
+                                      param_name,
+                                      param_type,
+                                      param_format,
                                       param_enum,
                                       param_enumNames,
-                                      param_desc, 
+                                      param_desc,
                                       param_required = True if param_required == 'true' else False)
 
                         except Exception as e:
