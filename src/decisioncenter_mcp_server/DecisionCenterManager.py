@@ -232,7 +232,7 @@ class DecisionCenterManager:
         self.logger.debug("fixing bool literals");  fix_bool_literals(json)
         return json
 
-    def _fetch_endpoints(self, uri:str):
+    def _fetch_endpoints(self, uri:str, credentials):
         """
         :no-index:
         Fetches the openapi description of the decision center REST API and extracts the endpoints.
@@ -246,19 +246,19 @@ class DecisionCenterManager:
                 endpoints = parse(uri=uri, strict_enum=False)
                 return endpoints
             else:
-                session = self.credentials.get_session()
+                session = credentials.get_session()
 
                 # check if the credentials grant special roles (admin, installer)
                 # (useful when filtering out the tools requiring a special role)
-                self.credentials.isDcAdmin = self.isDcAdmin(uri, session)
+                credentials.isDcAdmin = self.isDcAdmin(uri, session)
 
                 openapi_uri = uri + '/v3/api-docs'
                 self.logger.info("Parsing " + openapi_uri)
                 response = session.get(openapi_uri, 
-                                       headers=session.headers, 
-                                       verify=self.credentials.cacert,
+                                       headers=session.headers,
+                                       verify=credentials.cacert,
                                       )
-                self.credentials.cleanup()
+                credentials.cleanup()
 
                 # Check if the request was successful
                 if response.status_code == 200:
@@ -306,9 +306,11 @@ class DecisionCenterManager:
             raise(e)
 
     # returns the openapi
-    # and sets self.credentials.isDcAdmin to True if the credentials grant the rtsAdministrator role
-    def fetch_endpoints(self):
-        return self._fetch_endpoints(uri = self.credentials.odm_url)
+    # and sets credentials.isDcAdmin to True if the credentials grant the rtsAdministrator role
+    def fetch_endpoints(self, credentials = None):
+        if credentials is None:
+            credentials = self.credentials
+        return self._fetch_endpoints(self.credentials.odm_url, credentials)
 
 
     def generate_tools_format(self, endpoints, tags_to_publish: list[str] = [], tools_to_publish: list[str] = [], tools_to_ignore: list[str] = []):
@@ -372,7 +374,7 @@ class DecisionCenterManager:
         base_url = self.credentials.odm_url
 
         if endpoints is None:
-            return tools
+            return tools, tools_admin
         
         for path in endpoints.paths:
             for info in path.operations:
@@ -493,8 +495,10 @@ class DecisionCenterManager:
 
     # returns the WADL description of the RES console REST API
     # and sets self.credentials.isResDeployer to True if the credentials grant the resDeployer Role
-    def fetch_res_api_endpoints(self):
-        return self._fetch_res_api_endpoints(self.credentials.odm_res_url, self.credentials)
+    def fetch_res_api_endpoints(self, credentials = None):
+        if credentials is None:
+            credentials = self.credentials
+        return self._fetch_res_api_endpoints(self.credentials.odm_res_url, credentials)
 
     def generate_res_tools(self, wadl : str, tags_to_publish: list[str] = [], tools_to_publish: list[str] = [], tools_to_ignore: list[str] = []):
         """
@@ -855,9 +859,11 @@ class DecisionCenterManager:
                         tools_deployer[tool_name] = endpoint
                         tools         [tool_name] = endpoint
 
+        tools          : dict[str, DecisionCenterEndpoint] = {}
+        tools_deployer : dict[str, DecisionCenterEndpoint] = {}
 
         if wadl is None:
-            return tools
+            return tools, tools_deployer
 
         xmlRoot      = xml.etree.ElementTree.fromstring(wadl)
         xmlResources = xmlRoot.find('{http://wadl.dev.java.net/2009/02}resources')
@@ -869,9 +875,6 @@ class DecisionCenterManager:
 
         dict_params={}
         dict_representations={}
-
-        tools          : dict[str, DecisionCenterEndpoint] = {}
-        tools_deployer : dict[str, DecisionCenterEndpoint] = {}
 
         for xmlParam in xmlParamList:
             parse_params(dict_params, xmlParam)

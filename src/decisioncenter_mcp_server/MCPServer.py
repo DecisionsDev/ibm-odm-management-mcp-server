@@ -209,26 +209,34 @@ class MCPServer:
            and self.mcp_ext_url is not None
         
 
-    def update_repository(self):
+    def update_repository(self, credentials = None):
+        if credentials is None:
+            credentials = self.credentials
 
         # generate the MCP tools for Decision Center REST API
-        if self.credentials.odm_url:
-            self.repository_dc, self.repository_dc_admin = self.manager.generate_tools_format(self.manager.fetch_endpoints(), self.tags, self.tools, self.no_tools)
+        if len(self.repository_dc) == 0 and credentials.odm_url:
+            self.repository_dc, self.repository_dc_admin = self.manager.generate_tools_format(self.manager.fetch_endpoints(credentials), self.tags, self.tools, self.no_tools)
 
         # generate the MCP tools for Decision Server console REST API (aka RES console)
-        if self.credentials.odm_res_url:
-            self.repository_res_monitor, self.repository_res_deployer = self.manager.generate_res_tools(self.manager.fetch_res_api_endpoints(), self.tags, self.tools, self.no_tools)
+        if len(self.repository_res_monitor) == 0 and credentials.odm_res_url:
+            self.repository_res_monitor, self.repository_res_deployer = self.manager.generate_res_tools(self.manager.fetch_res_api_endpoints(credentials), self.tags, self.tools, self.no_tools)
 
         # save traces of all the tools
-        self.trace_recorder.save(dict(self.repository_dc_admin, **self.repository_res_deployer))
+        if credentials == self.credentials:
+            self.trace_recorder.save(dict(self.repository_dc_admin, **self.repository_res_deployer))
 
     async def list_tools(self) -> list[types.Tool]:
         """
         List available tools.
         Each tool specifies its arguments using JSON Schema validation.
         """
-        if self.use_user_credentials(): credentials = self.get_user_credentials(self.mcp_session_id())
-        else:                           credentials = self.credentials
+        if self.use_user_credentials(): 
+            credentials = self.get_user_credentials(self.mcp_session_id())
+
+            # update the list of tools (unless it was already generated during startup)
+            self.update_repository(credentials)
+        else:
+            credentials = self.credentials
 
         # select the list of tools based on the roles granted to the credentials used
         if   credentials.isDcAdmin:     dc_repository = self.repository_dc_admin
@@ -244,7 +252,7 @@ class MCPServer:
         for tool_name, endpoint in res_repository.items():
             tools.append(endpoint.tool)
 
-        self.logger.info(f"list_tools returned {len(dc_repository)} DC tools + {len(res_repository)} RES tools + 1 tool to query tool executions")
+        self.logger.info(f"list_tools returned {len(dc_repository)} DC tools + {len(res_repository)} RES tools" + " + 1 tool to query tool executions" if self.trace_recorder.trace_executions else "")
         return tools
 
     async def call_tool(self, name: str, arguments: dict | None) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
@@ -422,6 +430,9 @@ def init(args):
         issuer_url      = args.issuer_url,
         introspection_url = args.introspection_url,
     )
+    if server.use_user_credentials:
+        # the MCP server credentials are optional is this case
+        credentials.ignoreAuthErrors = True
     server.update_repository()
     return server
 

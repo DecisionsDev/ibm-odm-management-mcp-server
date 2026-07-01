@@ -110,6 +110,7 @@ class Credentials:
             self.mtls_key_data     = self.get_unencrypted_key_data(mtls_key_path, mtls_key_password)
 
         self.token = token
+        self.ignoreAuthErrors = False
 
     def get_auth(self):
         if self.token:
@@ -273,8 +274,12 @@ class Credentials:
             import urllib3
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-        headers = self.get_auth()
-        session.headers.update(headers)
+        try:
+            headers = self.get_auth()
+            session.headers.update(headers)
+        except ValueError as e:
+            if not self.ignoreAuthErrors:
+                raise e
 
         if self.mtls_cert_path:
             session.cert = self.mtls_cert_tuple()

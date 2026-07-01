@@ -37,22 +37,27 @@ https://github.com/user-attachments/assets/2a7dcf8b-bc40-4290-8361-718663afe523
     - The MCP external URL is the URL that is configured in the AI assistant to access the MCP server (with or without the path `/mcp` appended, eg. `https://my-mcp-server.com`). This URL MUST match the URL configured in the AI assistant (see [2.3 AI Assistant configuration](#23-ai-assistant-configuration)).
     - The issuer and introspection URL can be found when navigating to the `.well-known/openid-configuration` URL of the OpenID Connect server. The response contains the fields `issuer` and `introspection_endpoint`.
 
-- Even though the MCP server will use the credentials of the users who run tools, it still needs credentials of its own.
+- The MCP server also needs the following parameters to introspect the users tokens:
 
-    Those credentials:
-    - must grant the roles `rtsAdministrator` and `rtsDeployer`,
-    - in order to be gather the tools that the RES console and Decision Center REST APIs offer when the MCP server starts up. 
+    | CLI Argument | Environment Variable | Description |
+    |--------------|----------------------|-------------|
+    | `--client-id`     | `CLIENT_ID`     | OpenID Connect client ID |
+    | `--client-secret` | `CLIENT_SECRET` | OpenID Connect client Secret |
 
-    That way the MCP server can return the list of tools right away when an AI assistant connects, for a better user experience.
+- Last the MCP server can optionally be configured with credentials of its own:
+
+    - In which case the MCP server generates the list of all the tools during startup, which speeds up the connection of the AI assistant to the MCP server.
+        - those credentials must grant at least the `resMonitor` role.
+    - Otherwise the MCP server:
+        - generates the list of Decision Center tools during startup (as not authentication is required).
+        - generates the list of RES console tools when a user who has the `resMonitor` role connects (using the user's credentials).
 
     You can either use:
-    - the client credentials grant if it is available, in which case you must provide the following parameters:
+    - the client credentials grant if it is available, in which case you must provide the following parameters as well:
 
         | CLI Argument | Environment Variable | Description |
         |--------------|----------------------|-------------|
         | `--token-url`     | `TOKEN_URL`     | OpenID Connect token URL |
-        | `--client-id`     | `CLIENT_ID`     | OpenID Connect client ID |
-        | `--client-secret` | `CLIENT_SECRET` | OpenID Connect client Secret |
         | `--scope`         | `SCOPE`         | OpenID Connect scope used when requesting an access token with the client_credentials grant (`openid` by default)  |
 
     - or the password grant using a service account, in which case you must provide the following parameters:
@@ -60,8 +65,6 @@ https://github.com/user-attachments/assets/2a7dcf8b-bc40-4290-8361-718663afe523
         | CLI Argument | Environment Variable | Description |
         |--------------|----------------------|-------------|
         | `--token-url`     | `TOKEN_URL`     | OpenID Connect token URL |
-        | `--client-id`     | `CLIENT_ID`     | OpenID Connect client ID |
-        | `--client-secret` | `CLIENT_SECRET` | OpenID Connect client Secret |
         | `--scope`         | `SCOPE`         | OpenID Connect scope used when requesting an access token with the password grant (`openid` by default)  |
         | `--username`      | `ODM_USERNAME`  | Username of a service account defined in the OpenId Connect Provider |
         | `--password`      | `ODM_PASSWORD`  | Password of a service account defined in the OpenId Connect Provider |
@@ -164,8 +167,11 @@ The MCP server keeps the access token of each user in memory and when a user run
 The `mcp-remote` tool keeps the access token in memory (or in a file in debug mode) and only re-authenticate the user when the access token (and refresh token) are expired. 
 
 If you wish to authenticate yourself with different credentials, you may need to:
-- wait for some time, close down the AI Assistant completely and start it again,
-- or configure `mcp-remote` with the `--debug` option and delete the tokens manually. In debug mode, the tokens are stored in a file named `<ID>_tokens.json` located in the `~/.mcp-auth/mcp-remote-<VERSION>` directory (eg. `~/.mcp-auth/mcp-remote-0.1.37/17b244e3d408a03337239f65a72c293c_tokens.json`).
+- either wait for some time for the token to expire
+- or 
+    - configure `mcp-remote` with the `--debug` option and delete the tokens manually. In debug mode, the tokens are stored in a file named `<ID>_tokens.json` located in the `~/.mcp-auth/mcp-remote-<VERSION>` directory (eg. `~/.mcp-auth/mcp-remote-0.1.37/17b244e3d408a03337239f65a72c293c_tokens.json`).
+    - close the browser and restart it
+    - close the AI Assistant completely and restart it
 
 ### 3.2 How to get more information
 
