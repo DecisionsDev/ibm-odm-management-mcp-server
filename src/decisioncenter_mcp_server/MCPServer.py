@@ -195,7 +195,7 @@ class MCPServer:
             credentials.isDcAdmin = self.manager.isDcAdmin(credentials.odm_url, credentials.get_session())
 
             # check if the user credentials grant the resMonitor and resDeployer roles
-            self.manager._fetch_res_api_endpoints(credentials.odm_res_url, credentials)
+            self.manager.check_res_roles(credentials)
 
         self.logger.debug(f"Using user credentials. user token: '{self.token_overview(credentials.token)}', mcp-session-id: '{mcp_session_id}'")
         return credentials

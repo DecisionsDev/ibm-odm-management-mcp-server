@@ -442,7 +442,7 @@ class DecisionCenterManager:
         self.logger.info("Successfully generated the MCP tools for the Decision Center REST API")
         return tools, tools_admin
 
-    def _fetch_res_api_endpoints(self, uri:str, credentials):
+    def _fetch_res_api_endpoints(self, uri:str, credentials, only_check_roles: bool = False):
         """
         :no-index:
         Fetches the WADL description of the Decision Server REST API
@@ -458,6 +458,17 @@ class DecisionCenterManager:
         try:
             session = credentials.get_session()
 
+            if credentials.isResDeployer is None:
+                # check if the credentials grant the resDeployer role (giving access to the restricted RES console tools)
+                credentials.isResDeployer = self.isResDeployer(uri, session)
+
+            if only_check_roles and credentials.isResDeployer == True:
+                # no need to continue as 
+                # - we already know that the credentials also grant the resMonitor role
+                # - and we do not need the WADL
+                credentials.isResMonitor = True
+                return None
+
             wadl_uri = uri + '/apiauth/v1/DecisionServer.wadl'
             self.logger.info("Retrieving " + wadl_uri)
             response = session.get(wadl_uri, 
@@ -466,12 +477,10 @@ class DecisionCenterManager:
             
             # Check if the request was successful
             if response.status_code == 200:
-                self.logger.info("successfully retrieved the RES console REST API WADL")
+                self.logger.info("Successfully retrieved the RES console REST API WADL. Connected with the resMonitor role.")
 
-                # at this point, we know the credentials grant the resMonitor role (giving access to most RES console tools)
-                # check if the credentials also grant the resDeployer role (giving access to the restricted RES console tools)
+                # since the request succeeded, it means that the credentials grant the resMonitor role (giving access to most RES console tools)
                 credentials.isResMonitor  = True
-                credentials.isResDeployer = self.isResDeployer(uri, session)
 
                 return response.text
             else:
@@ -494,11 +503,16 @@ class DecisionCenterManager:
             credentials.cleanup()
 
     # returns the WADL description of the RES console REST API
-    # and sets self.credentials.isResDeployer to True if the credentials grant the resDeployer Role
+    # and sets 
+    #  - self.credentials.isResDeployer to True if the credentials grant the resDeployer Role
+    #  - self.credentials.isResMonitor  to True if the credentials grant the resMonitor Role
     def fetch_res_api_endpoints(self, credentials = None):
         if credentials is None:
             credentials = self.credentials
         return self._fetch_res_api_endpoints(self.credentials.odm_res_url, credentials)
+
+    def check_res_roles(self, credentials):
+        return self._fetch_res_api_endpoints(self.credentials.odm_res_url, credentials, only_check_roles = True)
 
     def generate_res_tools(self, wadl : str, tags_to_publish: list[str] = [], tools_to_publish: list[str] = [], tools_to_ignore: list[str] = []):
         """
