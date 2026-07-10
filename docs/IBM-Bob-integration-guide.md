@@ -197,7 +197,7 @@ With the configuration above, the Management MCP Server :
     >**Execution Unit Information**
     >- Server Name: localhost
     >- Execution Unit: xuHTDS
-    >- Product Version: 9.5.0.1.1
+    >- Product Version: 9.6.0.0.1
     >- Status: 46 warnings, 0 errors
     >
     >**Deployed RuleApps**

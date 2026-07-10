@@ -425,7 +425,9 @@ class DecisionCenterManager:
                                                                   method=method,
                                                                   url= base_url + path_url,
                                                                   parameters=parameters,
-                                                                  input_schema=input_schema)
+                                                                  input_schema=input_schema,
+                                                                  tags=info.tags,
+                                                                  )
 
                         if tool_name in DecisionCenterManager.rtsAdministrator_tools:
                             # only for rtsAdministrators
@@ -864,7 +866,9 @@ class DecisionCenterManager:
                                                               url          = base_url + path,
                                                               parameters   = parameters,
                                                               input_schema = input_schema,
-                                                              headers      = Accept_header(xmlResponseRepresentationList))
+                                                              headers      = Accept_header(xmlResponseRepresentationList),
+                                                              tags         = [tool_tag],
+                                                            )
 
                     # filter out the tools that require the resDeployer role if the credentials used do not grant this role
                     if tool_name in DecisionCenterManager.resDeployer_tools:
