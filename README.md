@@ -215,6 +215,15 @@ The parameters below can be specified:
 >| `--port`     | `PORT`               | Port that the MCP server listens to in remote mode. | `3000` |
 >| `--mount-path`| `MOUNT_PATH`        | Path that the MCP server listens to in remote mode. | `/mcp` |
 
+> Additional parameters to start the MCP server in remote mode using users credentials. 
+>   - Read more about this mode in the page [User authentication in remote mode](./docs/Auth-remote-mode.md).
+> 
+> | CLI Argument | Environment Variable | Description | Default |
+> |--------------|----------------------|-------------|---------|
+> | `--mcp-ext-url` | `MCP_EXT_URL` | MCP server external URL | |
+> | `--issuer-url` | `ISSUER_URL` | OpenID Connect issuer URL | |
+> | `--introspection-url` | `INTROSPECTION_URL` | OpenID Connect introspection URL | |
+
 ## MCP Server Configuration File          
 
 You can configure the MCP server for clients like Claude Desktop using a JSON configuration file, which can contain both environment variables and command-line arguments.

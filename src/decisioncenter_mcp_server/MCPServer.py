@@ -15,12 +15,20 @@
 from typing import Optional
 import mcp.types as types
 from mcp.server.fastmcp import FastMCP
-from pydantic import AnyUrl
+from mcp.server.auth.settings import AuthSettings
+from mcp.server.auth.provider import AccessToken, TokenVerifier
+from mcp.server.streamable_http import MCP_SESSION_ID_HEADER
+from mcp.server.auth.routes import build_resource_metadata_url
+import mcp.server.auth.middleware.bearer_auth as bearer_auth
+from starlette.authentication import AuthCredentials
+from starlette.requests import HTTPConnection
+from pydantic import AnyUrl, AnyHttpUrl
 import logging
 import json
 import argparse
 import os
 import sys
+import time
 
 from .Credentials import Credentials
 from .DecisionCenterManager import DecisionCenterManager
@@ -54,7 +62,7 @@ class MCPServer:
     def __init__(self, credentials: Credentials,
                  tags: list[str] = [], tools: list[str] = [], no_tools: list[str] = [],
                  trace: list[str] = [], traces_dir: str = None, traces_maxsize: int = max_trace_files,
-                 transport: Optional[str] = 'stdio', host: Optional[str] = '0.0.0.0', port: Optional[int] = 3000, path: Optional[str] = '/mcp',
+                 transport: Optional[str] = 'stdio', host: Optional[str] = '0.0.0.0', port: Optional[int] = 3000, path: Optional[str] = '/mcp', mcp_ext_url: Optional[str] = None, issuer_url: Optional[str] = None, introspection_url: Optional[str] = None,
                 ):
         # Get logger for this class
         self.logger = logging.getLogger(__name__)
@@ -69,7 +77,18 @@ class MCPServer:
         self.host      = host
         self.port      = port
         self.path      = path
-        self.repository: dict[str, DecisionCenterEndpoint] = {}
+        self.issuer_url= issuer_url
+        self.introspection_url= introspection_url
+        self.mcp_ext_url = mcp_ext_url
+
+        self.repository_dc              : dict[str, DecisionCenterEndpoint] = {}
+        self.repository_dc_admin        : dict[str, DecisionCenterEndpoint] = {}
+        self.repository_res_monitor     : dict[str, DecisionCenterEndpoint] = {}
+        self.repository_res_deployer    : dict[str, DecisionCenterEndpoint] = {}
+
+        self.user_credentials           : dict[str, Credentials] = {} # key = mcp_session_id, value: Credentials = user_credentials
+        self.tokens                     : dict[str, str] = {}         # key = mcp_session_id, value: str         = token
+        self.mcp_tokens                 : dict[str, AccessToken] = {} # key = token,          value: AccessToken = mcp token
 
         # Set up trace storage with configured parameters if tracing is enabled
         # If traces_dir is None, DiskTraceStorage will use the default path in user's home directory
@@ -81,28 +100,159 @@ class MCPServer:
 
         self.manager = DecisionCenterManager(credentials, self.trace_recorder)
 
-    def update_repository(self):
+    def introspect_token(self, token):
+        """Verify token via introspection endpoint."""
+        # client_id = self.credentials.client_id
+        # client_secret = self.credentials.client_secret)
+        import requests
+
+        # headers={"Content-Type": "application/x-www-form-urlencoded"},
+        request_body = {
+                'token':         token,
+                'client_id':     self.credentials.client_id,
+                'client_secret': self.credentials.client_secret
+            }
+
+        if self.credentials.verify_ssl:
+            response = requests.post(url=self.introspection_url, data=request_body, verify=self.credentials.cacert)
+        else:
+            response = requests.post(url=self.introspection_url, data=request_body, verify=False)
+
+        try:
+            response.raise_for_status() # raise an HTTPError if the request failed
+        except Exception as e:
+            self.logger.debug(f"Token introspection failed. {str(e)}")
+            return None
+
+        response_body = response.json()
+
+        if not response_body.get("active", False):
+            # the token is expired
+            return None
+
+        return AccessToken(
+                    token     = token,
+                    client_id = response_body.get("client_id", "unknown"),
+                    scopes    = response_body.get("scope", "").split() if response_body.get("scope") else [],
+                    expires_at= response_body.get("exp", 0),
+                    resource  = response_body.get("aud"),  # Include resource in token
+                )
+
+    def get_mcp_token(self, mcp_session_id, token:str):
+        self.set_session_token(mcp_session_id, token)
+        if token is None:
+            return None
+        if token in self.mcp_tokens:
+            mcp_token : AccessToken | None = self.mcp_tokens.get(token)
+        else:
+            mcp_token = self.introspect_token(token)
+            if mcp_token:
+                self.mcp_tokens[token] = mcp_token
+
+        if mcp_token and self.logger.isEnabledFor(logging.DEBUG):
+            validity = mcp_token.expires_at - int(time.time())
+            self.logger.debug("token %s", f"expiring in {validity} seconds" if validity > 0 else "expired")
+
+        return mcp_token
+
+    def token_overview(self, token):
+        return token[:5] + '...' + token[-5:]
+
+    def set_session_token(self, mcp_session_id, token:str):
+        if mcp_session_id and token:
+            current_token = self.tokens.get(mcp_session_id)
+            if current_token is None or current_token != token:
+                self.tokens[mcp_session_id] = token
+                self.logger.debug(f"token '{self.token_overview(token)}' associated to transport with mcp-session-id '{mcp_session_id}'")
+
+    def get_session_token(self, mcp_session_id : str):
+        return self.tokens[mcp_session_id]
+
+    def mcp_session_id(self):
+        return self.server.get_context().request_context.request.headers.get(MCP_SESSION_ID_HEADER)
+
+    def get_user_credentials(self, mcp_session_id : str | None):
+        token = self.tokens.get(mcp_session_id)
+        if token is None:
+            raise Exception("No user credentials / token found for transport with mcp-session-id '%s'", mcp_session_id)
+
+        credentials = self.user_credentials.get(token)
+        if credentials is None:
+            credentials = Credentials(
+                                        odm_url=self.credentials.odm_url,
+                                        odm_res_url=self.credentials.odm_res_url,
+                                        token_url=self.credentials.token_url,
+                                        scope=self.credentials.scope,
+                                        client_id=self.credentials.client_id,
+                                        mtls_cert_path=self.credentials.mtls_cert_path, mtls_key_path=self.credentials.mtls_key_path, mtls_key_password=self.credentials.mtls_key_password,
+                                        ssl_cert_path=self.credentials.ssl_cert_path,
+                                        verify_ssl=self.credentials.verify_ssl,
+                                        token = token,
+                                        )
+            self.user_credentials[token] = credentials
+
+            # check if the user credentials grant the rtsAdministrator/rtsInstaller role
+            credentials.isDcAdmin = self.manager.isDcAdmin(credentials.odm_url, credentials.get_session())
+
+            # check if the user credentials grant the resMonitor and resDeployer roles
+            self.manager.check_res_roles(credentials)
+
+        self.logger.debug(f"Using user credentials. user token: '{self.token_overview(credentials.token)}', mcp-session-id: '{mcp_session_id}'")
+        return credentials
+
+    def use_user_credentials(self) -> bool:
+        return self.transport != "stdio" \
+           and self.credentials.client_id is not None \
+           and self.credentials.client_secret is not None \
+           and self.issuer_url is not None \
+           and self.introspection_url is not None \
+           and self.mcp_ext_url is not None
+        
+
+    def update_repository(self, credentials = None):
+        if credentials is None:
+            credentials = self.credentials
 
         # generate the MCP tools for Decision Center REST API
-        if self.credentials.odm_url:
-            self.repository = self.manager.generate_tools_format(self.manager.fetch_endpoints(), 
-                                                                 self.tags, self.tools, self.no_tools, self.credentials.isDcAdmin)
+        if len(self.repository_dc) == 0 and credentials.odm_url:
+            self.repository_dc, self.repository_dc_admin = self.manager.generate_tools_format(self.manager.fetch_endpoints(credentials), self.tags, self.tools, self.no_tools)
 
         # generate the MCP tools for Decision Server console REST API (aka RES console)
-        if self.credentials.odm_res_url:
-            self.repository = self.manager.generate_res_tools(self.manager.fetch_res_api_endpoints(), self.repository,
-                                                              self.tags, self.tools, self.no_tools, self.credentials.isResDeployer)
+        if len(self.repository_res_monitor) == 0 and credentials.odm_res_url:
+            self.repository_res_monitor, self.repository_res_deployer = self.manager.generate_res_tools(self.manager.fetch_res_api_endpoints(credentials), self.tags, self.tools, self.no_tools)
 
-        self.trace_recorder.save(self.repository)
+        # save traces of all the tools
+        if credentials == self.credentials:
+            self.trace_recorder.save(dict(self.repository_dc_admin, **self.repository_res_deployer))
 
     async def list_tools(self) -> list[types.Tool]:
         """
         List available tools.
         Each tool specifies its arguments using JSON Schema validation.
         """
+        if self.use_user_credentials(): 
+            credentials = self.get_user_credentials(self.mcp_session_id())
+
+            # update the list of tools (unless it was already generated during startup)
+            self.update_repository(credentials)
+        else:
+            credentials = self.credentials
+
+        # select the list of tools based on the roles granted to the credentials used
+        if   credentials.isDcAdmin:     dc_repository = self.repository_dc_admin
+        else:                           dc_repository = self.repository_dc
+
+        if   credentials.isResDeployer: res_repository = self.repository_res_deployer
+        elif credentials.isResMonitor:  res_repository = self.repository_res_monitor
+        else:                           res_repository = {}
+
         tools = [MCPServer.tools_executions_tool] if self.trace_recorder.trace_executions else []
-        for tool_name, endpoint in self.repository.items():
+        for tool_name, endpoint in dc_repository.items():
             tools.append(endpoint.tool)
+        for tool_name, endpoint in res_repository.items():
+            tools.append(endpoint.tool)
+
+        self.logger.info(f"list_tools returned {len(dc_repository)} DC tools + {len(res_repository)} RES tools" + " + 1 tool to query tool executions" if self.trace_recorder.trace_executions else "")
         return tools
 
     async def call_tool(self, name: str, arguments: dict | None) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
@@ -114,21 +264,24 @@ class MCPServer:
             with_content = arguments.get('with_content', False) if arguments else False
             return self.trace_recorder.get_executions(filter=filter, with_content=with_content)
 
-        if self.logger.isEnabledFor(logging.DEBUG):
-            self.logger.debug("Invoking tool: %s with arguments: %s", name, arguments)
-        else:
-            self.logger.info("Invoking tool: %s", name)
+        if self.logger.isEnabledFor(logging.DEBUG): self.logger.debug("Calling tool '%s' with arguments: %s", name, arguments)
+        else:                                             self.logger.info ("Calling tool '%s'", name)
+
+        if self.use_user_credentials(): credentials = self.get_user_credentials(self.mcp_session_id())
+        else:                           credentials = self.credentials
 
         if name == MCPServer.get_tools_executions_toolname:
             executions = get_tools_executions(arguments)
             result = { "executions": executions }
         else:
-            endpoint : DecisionCenterEndpoint = self.repository.get(name)
+            endpoint : DecisionCenterEndpoint = self.repository_dc_admin.get(name)
+            if endpoint is None:
+                endpoint = self.repository_res_deployer.get(name)
             if endpoint is None:
                 raise ValueError(f"Unknown tool: {name}")
 
             # this call may throw an exception, handled by Server.call_tool.handler
-            result = self.manager.invokeDecisionCenterApi(endpoint, arguments, self.transport == 'stdio')
+            result = self.manager.invokeDecisionCenterApi(endpoint, arguments, self.transport == 'stdio', credentials)
 
         # Handle dictionary response
         if isinstance(result, dict):
@@ -149,7 +302,7 @@ class MCPServer:
         List available resources.
         """
         resources = [types.Resource(name=os.path.basename(trace_file), uri=f'file://{trace_file}') for trace_file in self.trace_recorder.trace_files]
-        self.logger.info(f"{len(resources)} resources available: {[resource.name for resource in resources]}")
+        self.logger.info(f"{len(resources)} resources available")
         return resources
 
     async def read_resource(self, uri: AnyUrl) -> str:
@@ -165,12 +318,29 @@ class MCPServer:
             raise ValueError(f"resource not found")
 
     def start(self):
+
+        if self.use_user_credentials():
+            token_verifier: AccessTokenVerifier | None = AccessTokenVerifier(mcpserver = self)
+            auth: AuthSettings | None = AuthSettings(issuer_url          = self.issuer_url,
+                                                     required_scopes     =[self.credentials.scope],
+                                                     resource_server_url = self.mcp_ext_url)
+
+            self.logger.info       (f"MCP Server running in remote mode, using users credentials. Resource metadata URL: {build_resource_metadata_url(resource_server_url = self.mcp_ext_url)}")
+        else: 
+            if self.transport != "stdio": 
+                self.logger.warning("MCP Server running in remote mode, but NOT using users credentials\n" + HOWTO_USE_USERS_CREDENTIALS_MSG)
+            token_verifier = None
+            auth = None
+
         self.server = FastMCP(name="ibm-odm-management-mcp-server",
                               instructions=INSTRUCTIONS,
                               host=self.host,
                               port=self.port,
-                              sse_path=self.path,
                               streamable_http_path=self.path,
+                              sse_path=self.path,
+                              token_verifier=token_verifier,
+                              auth=auth,
+                              debug=self.logger.isEnabledFor(logging.DEBUG),
                              )
         # Register handlers
         self.server._mcp_server.list_resources()(self.list_resources)
@@ -256,7 +426,13 @@ def init(args):
         host            = args.host,
         port            = args.port,
         path            = args.mount_path,
+        mcp_ext_url     = args.mcp_ext_url,
+        issuer_url      = args.issuer_url,
+        introspection_url = args.introspection_url,
     )
+    if server.use_user_credentials:
+        # the MCP server credentials are optional is this case
+        credentials.ignoreAuthErrors = True
     server.update_repository()
     return server
 
@@ -269,7 +445,7 @@ def parse_arguments():
     parser.add_argument("--zenapikey",         type=str, default=os.getenv("ZENAPIKEY"), help="Zen API Key (optional)")
     parser.add_argument("--client-id",         type=str, default=os.getenv("CLIENT_ID"), help="OpenID Client ID (optional)")
     parser.add_argument("--client-secret",     type=str, default=os.getenv("CLIENT_SECRET"), help="OpenID Client Secret (optional)")
-    parser.add_argument("--token-url",         type=str, default=os.getenv("TOKEN_URL"), help="OpenID Connect token endpoint URL (optional)")
+    parser.add_argument("--token-url",         type=str, default=os.getenv("TOKEN_URL"), help="OpenID Connect token endpoint URL")
     parser.add_argument("--scope",             type=str, default=os.getenv("SCOPE", "openid"), help="OpenID Connect scope using when requesting an access token using Client Credentials (optional)")
     parser.add_argument("--verifyssl",         type=str, default=os.getenv("VERIFY_SSL", "True"), choices=["True", "False"], help="Disable SSL check. Default is True (SSL verification enabled).")
     parser.add_argument("--ssl-cert-path",     type=str, default=os.getenv("SSL_CERT_PATH"), help="Path to the SSL certificate file. If not provided, defaults to system certificates.")
@@ -285,6 +461,11 @@ def parse_arguments():
     parser.add_argument("--host",              type=str, default=os.getenv("HOST", "0.0.0.0"), help="IP or hostname that the MCP server listens to in remote mode.")
     parser.add_argument("--port",              type=int, default=os.getenv("PORT", 3000), help="Port that the MCP server listens to in remote mode.")
     parser.add_argument("--mount-path",        type=str, default=os.getenv("MOUNT_PATH", "/mcp"), help="Path that the MCP server listens to in remote mode.")
+
+    # additional arguments useful when running the MCP server in remote mode using users credentials
+    parser.add_argument("--mcp-ext-url",       type=str, default=os.getenv("MCP_EXT_URL"), help="MCP server external URL. Needed in remote mode to authenticate with users credentials.")
+    parser.add_argument("--issuer-url",        type=str, default=os.getenv("ISSUER_URL"), help="OpenID Connect issuer URL. Needed in remote mode to authenticate with users credentials.")
+    parser.add_argument("--introspection-url", type=str, default=os.getenv("INTROSPECTION_URL"), help="OpenID Connect introspection URL. Needed in remote mode to authenticate with users credentials.")
     
     # Logging-related arguments
     parser.add_argument("--log-level",         type=str, default=os.getenv("LOG_LEVEL", "INFO"),
@@ -307,3 +488,41 @@ def main():
     args = parse_arguments()
     server = init(args)
     server.start()
+
+HOWTO_USE_USERS_CREDENTIALS_MSG = """When MCP Server runs in remote mode, it authenticates to ODM with users credentials if all the conditions below are met:
+    1. OpenID is used with a client secret
+    3. the openID issuer and introspection URLs are set
+    4. the MCP server external URL is set"""
+
+class AccessTokenVerifier(TokenVerifier):
+    def __init__(self, mcpserver: MCPServer):
+        self.mcpserver = mcpserver
+
+    async def verify_token_with_connection(self, token: str, conn: HTTPConnection) -> AccessToken | None:
+        return self.mcpserver.get_mcp_token(mcp_session_id = conn.headers.get(MCP_SESSION_ID_HEADER), token = token)
+
+async def authenticate(self, conn: HTTPConnection):
+    auth_header = next(
+        (conn.headers.get(key) for key in conn.headers if key.lower() == "authorization"),
+        None,
+    )
+    if not auth_header or not auth_header.lower().startswith("bearer "):
+        return None
+
+    token = auth_header[7:]  # Remove "Bearer " prefix
+
+    # Validate the token with the verifier
+    auth_info = await self.token_verifier.verify_token_with_connection(token, conn)
+
+    if not auth_info:
+        return None
+
+    if auth_info.expires_at and auth_info.expires_at < int(time.time()):
+        return None
+
+    return AuthCredentials(auth_info.scopes), bearer_auth.AuthenticatedUser(auth_info)
+
+# redefine the function 'authenticate' function of the mcp.server.auth.middleware.bearer_auth.BearerAuthBackend
+# in order to call the function 'verify_token_with_connection' with the 'conn' parameter 
+# instead of calling the function 'token_verifier' without the 'conn' parameter
+bearer_auth.BearerAuthBackend.authenticate = authenticate

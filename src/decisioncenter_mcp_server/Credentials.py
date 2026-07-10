@@ -46,7 +46,9 @@ class Credentials:
                  username=None, password=None, 
                  zenapikey=None, 
                  verify_ssl=True, ssl_cert_path=None, 
-                 mtls_cert_path=None, mtls_key_path=None, mtls_key_password=None):
+                 mtls_cert_path=None, mtls_key_path=None, mtls_key_password=None,
+                 token=None
+                 ):
 
         # Get logger for this class with explicit name to ensure consistency
         self.logger = logging.getLogger("decisioncenter_mcp_server.Credentials")
@@ -64,8 +66,9 @@ class Credentials:
         else:
             self.cacert = None
 
-        self.isDcAdmin = False
-        self.isResDeployer = False
+        self.isDcAdmin = None
+        self.isResDeployer = None
+        self.isResMonitor = None
         self.username = username
         self.password = password
         self.token_url = token_url
@@ -106,7 +109,14 @@ class Credentials:
             self.mtls_key_password = mtls_key_password
             self.mtls_key_data     = self.get_unencrypted_key_data(mtls_key_path, mtls_key_password)
 
+        self.token = token
+        self.ignoreAuthErrors = False
+
     def get_auth(self):
+        if self.token:
+            return {
+                'Authorization': f'Bearer {self.token}'
+            }
         if self.zenapikey:
             # Concatenate the strings with a colon
             concatenated_key = f"{self.username}:{self.zenapikey}"
@@ -264,8 +274,12 @@ class Credentials:
             import urllib3
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-        headers = self.get_auth()
-        session.headers.update(headers)
+        try:
+            headers = self.get_auth()
+            session.headers.update(headers)
+        except ValueError as e:
+            if not self.ignoreAuthErrors:
+                raise e
 
         if self.mtls_cert_path:
             session.cert = self.mtls_cert_tuple()
