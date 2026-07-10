@@ -295,7 +295,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=46.0.5" },
-    { name = "mcp", specifier = ">=1.23.0" },
+    { name = "mcp", specifier = ">=1.23.0,<2" },
     { name = "openapi3-parser", specifier = ">=1.1.22" },
     { name = "pyjwt", specifier = ">=2.12.0" },
     { name = "pytest", specifier = ">=9.0.2" },
