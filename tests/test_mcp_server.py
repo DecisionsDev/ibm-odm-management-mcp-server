@@ -16,8 +16,9 @@ import pytest
 from unittest.mock import Mock, patch
 import os
 import argparse
-import mcp.types as types
-from mcp.server.fastmcp import FastMCP
+from mcp_types import Tool, TextContent
+from mcp.server import MCPServer as SDK_MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 import json
 from decisioncenter_mcp_server.MCPServer   import MCPServer, parse_arguments, create_credentials, init
 from decisioncenter_mcp_server.Credentials import Credentials
@@ -33,7 +34,7 @@ def mock_credentials():
 
 @pytest.fixture
 def mock_server():
-    return Mock(spec=FastMCP)
+    return Mock(spec=SDK_MCPServer)
 
 @pytest.fixture
 def mcp_server(mock_credentials, mock_server):
@@ -306,7 +307,7 @@ def mock_manager():
                 "param1": {"in": "query"},
                 "param2": {"in": "query"}
             },
-            tool=types.Tool(
+            tool=Tool(
                 name="endpoint1",
                 title="summary1",
                 description="summary1",
@@ -332,7 +333,7 @@ def mock_manager():
                 "param1": {"in": "body/json"},
                 "param2": {"in": "body/json"}
             },
-            tool=types.Tool(
+            tool=Tool(
                 name="endpoint2",
                 title="summary2",
                 description="description2",
@@ -421,25 +422,25 @@ async def test_call_tool_success(server, mock_manager):
     server.repository_dc[tool_name] = Mock(name="endpoint1")
 
     # Execute
-    result = await server.call_tool(tool_name, arguments)
+    result = await server.call_tool(tool_name, arguments, {})
 
     # Verify
     assert mock_manager.invokeDecisionCenterApi.called
 
     # Verify response format
-    assert len(result) == 1
-    assert isinstance(result[0], types.TextContent)
-    assert result[0].type == "text"
+    assert len(result.content) == 1
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].type == "text"
     
     # Verify response content
-    response_data = json.loads(result[0].text)
+    response_data = json.loads(result.content[0].text)
     assert response_data["result"] == "endpoint_result"
 
 @pytest.mark.asyncio
 async def test_call_tool_unknown_tool(server):
     # Try to call non-existent tool
-    with pytest.raises(ValueError) as exc_info:
-        await server.call_tool("unknown_tool", {})
+    with pytest.raises(ToolError) as exc_info:
+        await server.call_tool("unknown_tool", {}, {})
     assert str(exc_info.value) == "Unknown tool: unknown_tool"
 
 @pytest.mark.asyncio
@@ -450,12 +451,12 @@ async def test_call_tool_non_dict_response(server, mock_manager):
     server.repository_dc[tool_name] = Mock()
 
     # Execute
-    result = await server.call_tool(tool_name, {})
+    result = await server.call_tool(tool_name, {}, {})
 
     # Verify string handling
-    assert len(result) == 1
-    assert isinstance(result[0], types.TextContent)
-    assert result[0].text == "string_response"
+    assert len(result.content) == 1
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "string_response"
 
 # Test transport configuration
 def test_server_initialization_with_streamable_http_transport():
@@ -501,7 +502,7 @@ def test_server_initialization_with_default_transport():
     assert server.path == "/mcp"
 
 def test_server_start_with_streamable_http_transport():
-    """Test that server.start() correctly configures FastMCP with streamable-http transport."""
+    """Test that server.start() correctly configures SDK_MCPServer with streamable-http transport."""
     credentials = Credentials(
         odm_url="http://test:9060/decisioncenter-api",
         username="test",
@@ -519,8 +520,8 @@ def test_server_start_with_streamable_http_transport():
         issuer_url="https://openid-provider",
     )
     
-    # Mock the FastMCP and its run method
-    with patch('decisioncenter_mcp_server.MCPServer.FastMCP') as mock_fastmcp_class, \
+    # Mock the SDK_MCPServer and its run method
+    with patch('decisioncenter_mcp_server.MCPServer.SDK_MCPServer') as mock_fastmcp_class, \
          patch('decisioncenter_mcp_server.MCPServer.DecisionCenterManager') as mock_manager_class:
         
         # Setup mocks
@@ -538,7 +539,7 @@ def test_server_start_with_streamable_http_transport():
         server.start()
         
         # Verify run was called with streamable-http transport
-        mock_fastmcp.run.assert_called_once_with(transport="streamable-http")
+        mock_fastmcp.run.assert_called_once_with(transport="streamable-http", host='127.0.0.1', port=3001, streamable_http_path='/custom-path')
         
         # Verify manager was initialized
         assert server.manager is not None
@@ -564,7 +565,7 @@ def test_server_initialization_with_default_transport():
     assert server.path == "/mcp"
 
 def test_server_start_with_sse_transport():
-    """Test that server.start() correctly configures FastMCP with sse transport."""
+    """Test that server.start() correctly configures SDK_MCPServer with sse transport."""
     credentials = Credentials(
         odm_url="http://test:9060/decisioncenter-api",
         username="test",
@@ -581,8 +582,8 @@ def test_server_start_with_sse_transport():
         issuer_url="https://openid-provider",
     )
     
-    # Mock the FastMCP and its run method
-    with patch('decisioncenter_mcp_server.MCPServer.FastMCP') as mock_fastmcp_class, \
+    # Mock the SDK_MCPServer and its run method
+    with patch('decisioncenter_mcp_server.MCPServer.SDK_MCPServer') as mock_fastmcp_class, \
          patch('decisioncenter_mcp_server.MCPServer.DecisionCenterManager') as mock_manager_class:
         
         # Setup mocks
@@ -600,7 +601,7 @@ def test_server_start_with_sse_transport():
         server.start()
         
         # Verify run was called with streamable-http transport
-        mock_fastmcp.run.assert_called_once_with(transport="sse")
+        mock_fastmcp.run.assert_called_once_with(transport="sse", host='127.0.0.1', port=3001, streamable_http_path='/custom-path')
         
         # Verify manager was initialized
         assert server.manager is not None

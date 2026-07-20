@@ -136,7 +136,7 @@ def test_generate_tools_format(openapi_file, expected_tools_total):
         assert endpoint.tool
         assert endpoint.tool.name  == tool_name
         assert endpoint.tool.title == summary
-        assert len(endpoint.tool.inputSchema['properties']) == len(parameters), print(repr(endpoint.tool.inputSchema['properties']))
+        assert len(endpoint.tool.input_schema['properties']) == len(parameters), print(repr(endpoint.tool.input_schema['properties']))
 
         for expected_param in parameters:
             actual_parameter = endpoint.parameters.get(expected_param.name)
@@ -144,12 +144,12 @@ def test_generate_tools_format(openapi_file, expected_tools_total):
             assert actual_parameter['in'] == expected_param.location,       print(repr(endpoint.parameters.get(expected_param.name)))
             assert actual_parameter.get('format') == expected_param.format, print(repr(endpoint.parameters.get(expected_param.name)))
 
-            actual_prop = endpoint.tool.inputSchema['properties'][expected_param.name]
+            actual_prop = endpoint.tool.input_schema['properties'][expected_param.name]
             assert actual_prop
             assert actual_prop['type'] == expected_param.type,                      print(expected_param.name, repr(actual_prop))
             assert actual_prop.get('enum') == expected_param.enum,                  print(expected_param.name, repr(actual_prop))
             assert actual_prop.get('description') == expected_param.description,    print(expected_param.name, repr(actual_prop))
-            assert (expected_param.name in endpoint.tool.inputSchema['required']) == expected_param.required
+            assert (expected_param.name in endpoint.tool.input_schema['required']) == expected_param.required
 
     # check a representative subset of tools
     check_endpoint('registerWebhook', 

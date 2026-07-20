@@ -13,16 +13,18 @@
 # limitations under the License.
 
 from typing import Optional
-import mcp.types as types
-from mcp.server.fastmcp import FastMCP
+from mcp_types import Tool, Resource, CallToolResult, TextContent
+from mcp.server.mcpserver.context import Context
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server import MCPServer as SDK_MCPServer
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.auth.provider import AccessToken, TokenVerifier
-from mcp.server.streamable_http import MCP_SESSION_ID_HEADER
 from mcp.server.auth.routes import build_resource_metadata_url
+from mcp.server.auth.middleware.auth_context import get_access_token
 import mcp.server.auth.middleware.bearer_auth as bearer_auth
 from starlette.authentication import AuthCredentials
 from starlette.requests import HTTPConnection
-from pydantic import AnyUrl, AnyHttpUrl
+from pydantic import AnyUrl
 import logging
 import json
 import argparse
@@ -47,7 +49,7 @@ class MCPServer:
     get_tools_executions_toolname = "getToolExecutions"
     max_trace_files = 200
 
-    tools_executions_tool = types.Tool(
+    tools_executions_tool = Tool(
             name=get_tools_executions_toolname,
             title="Get tool executions",
             description=f"Get the tool executions with or without content. Useful to keep track of the tools that have been executed, their arguments and results. Only the most recent executions are kept. The number of executions that are kept is defined by the MCP server option --traces-maxsize ({max_trace_files} by default).",
@@ -86,8 +88,7 @@ class MCPServer:
         self.repository_res_monitor     : dict[str, DecisionCenterEndpoint] = {}
         self.repository_res_deployer    : dict[str, DecisionCenterEndpoint] = {}
 
-        self.user_credentials           : dict[str, Credentials] = {} # key = mcp_session_id, value: Credentials = user_credentials
-        self.tokens                     : dict[str, str] = {}         # key = mcp_session_id, value: str         = token
+        self.user_credentials           : dict[str, Credentials] = {} # key = token,          value: Credentials = user_credentials
         self.mcp_tokens                 : dict[str, AccessToken] = {} # key = token,          value: AccessToken = mcp token
 
         # Set up trace storage with configured parameters if tracing is enabled
@@ -138,8 +139,7 @@ class MCPServer:
                     resource  = response_body.get("aud"),  # Include resource in token
                 )
 
-    def get_mcp_token(self, mcp_session_id, token:str):
-        self.set_session_token(mcp_session_id, token)
+    def get_mcp_token(self, token:str):
         if token is None:
             return None
         if token in self.mcp_tokens:
@@ -158,23 +158,20 @@ class MCPServer:
     def token_overview(self, token):
         return token[:5] + '...' + token[-5:]
 
-    def set_session_token(self, mcp_session_id, token:str):
-        if mcp_session_id and token:
-            current_token = self.tokens.get(mcp_session_id)
-            if current_token is None or current_token != token:
-                self.tokens[mcp_session_id] = token
-                self.logger.debug(f"token '{self.token_overview(token)}' associated to transport with mcp-session-id '{mcp_session_id}'")
+    def get_current_token(self) -> str:
+        """Return the bearer token for the current request via the SDK contextvar.
 
-    def get_session_token(self, mcp_session_id : str):
-        return self.tokens[mcp_session_id]
+        Replaces the defunct get_context().request_context.request.headers approach.
+        get_access_token() is set by AuthContextMiddleware for every HTTP request
+        that carries a valid Bearer token.
+        """
+        access_token = get_access_token()
+        if access_token is None:
+            raise Exception("No access token found for the current request")
+        return access_token.token
 
-    def mcp_session_id(self):
-        return self.server.get_context().request_context.request.headers.get(MCP_SESSION_ID_HEADER)
-
-    def get_user_credentials(self, mcp_session_id : str | None):
-        token = self.tokens.get(mcp_session_id)
-        if token is None:
-            raise Exception("No user credentials / token found for transport with mcp-session-id '%s'", mcp_session_id)
+    def get_user_credentials(self):
+        token = self.get_current_token()
 
         credentials = self.user_credentials.get(token)
         if credentials is None:
@@ -197,7 +194,7 @@ class MCPServer:
             # check if the user credentials grant the resMonitor and resDeployer roles
             self.manager.check_res_roles(credentials)
 
-        self.logger.debug(f"Using user credentials. user token: '{self.token_overview(credentials.token)}', mcp-session-id: '{mcp_session_id}'")
+        self.logger.debug(f"Using user credentials. user token: '{self.token_overview(credentials.token)}'")
         return credentials
 
     def use_user_credentials(self) -> bool:
@@ -225,13 +222,13 @@ class MCPServer:
         if credentials == self.credentials:
             self.trace_recorder.save(dict(self.repository_dc_admin, **self.repository_res_deployer))
 
-    async def list_tools(self) -> list[types.Tool]:
+    async def list_tools(self) -> list[Tool]:
         """
         List available tools.
         Each tool specifies its arguments using JSON Schema validation.
         """
-        if self.use_user_credentials(): 
-            credentials = self.get_user_credentials(self.mcp_session_id())
+        if self.use_user_credentials():
+            credentials = self.get_user_credentials()
 
             # update the list of tools (unless it was already generated during startup)
             self.update_repository(credentials)
@@ -255,7 +252,7 @@ class MCPServer:
         self.logger.info(f"list_tools returned {len(dc_repository)} DC tools + {len(res_repository)} RES tools" + " + 1 tool to query tool executions" if self.trace_recorder.trace_executions else "")
         return tools
 
-    async def call_tool(self, name: str, arguments: dict | None) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    async def call_tool(self, name: str, arguments: dict | None, context: Context) -> CallToolResult:
         """
         Handle tool execution requests.
         """
@@ -267,21 +264,26 @@ class MCPServer:
         if self.logger.isEnabledFor(logging.DEBUG): self.logger.debug("Calling tool '%s' with arguments: %s", name, arguments)
         else:                                             self.logger.info ("Calling tool '%s'", name)
 
-        if self.use_user_credentials(): credentials = self.get_user_credentials(self.mcp_session_id())
+        if self.use_user_credentials(): credentials = self.get_user_credentials()
         else:                           credentials = self.credentials
 
         if name == MCPServer.get_tools_executions_toolname:
             executions = get_tools_executions(arguments)
             result = { "executions": executions }
+            is_error = False
         else:
             endpoint : DecisionCenterEndpoint = self.repository_dc_admin.get(name)
             if endpoint is None:
                 endpoint = self.repository_res_deployer.get(name)
             if endpoint is None:
-                raise ValueError(f"Unknown tool: {name}")
+                raise ToolError(f"Unknown tool: {name}")
 
-            # this call may throw an exception, handled by Server.call_tool.handler
-            result = self.manager.invokeDecisionCenterApi(endpoint, arguments, self.transport == 'stdio', credentials)
+            try:
+                result = self.manager.invokeDecisionCenterApi(endpoint, arguments, self.transport == 'stdio', credentials)
+                is_error = False
+            except Exception as e:
+                result = str(e)
+                is_error = True
 
         # Handle dictionary response
         if isinstance(result, dict):
@@ -290,18 +292,21 @@ class MCPServer:
             # Handle non-dict response (string, etc)
             response_text = str(result)
 
-        return [
-            types.TextContent(
-                type="text",
-                text=response_text,
-            )
-        ]
+        return CallToolResult(
+                    content=[
+                        TextContent(
+                            type="text", 
+                            text=response_text,
+                        )
+                    ],
+                    is_error=is_error,
+                )
 
-    async def list_resources(self) -> list[types.Resource]:
+    async def list_resources(self) -> list[Resource]:
         """
         List available resources.
         """
-        resources = [types.Resource(name=os.path.basename(trace_file), uri=f'file://{trace_file}') for trace_file in self.trace_recorder.trace_files]
+        resources = [Resource(name=os.path.basename(trace_file), uri=f'file://{trace_file}') for trace_file in self.trace_recorder.trace_files]
         self.logger.info(f"{len(resources)} resources available")
         return resources
 
@@ -332,23 +337,24 @@ class MCPServer:
             token_verifier = None
             auth = None
 
-        self.server = FastMCP(name="ibm-odm-management-mcp-server",
+        self.server = SDK_MCPServer(name="ibm-odm-management-mcp-server",
                               instructions=INSTRUCTIONS,
-                              host=self.host,
-                              port=self.port,
-                              streamable_http_path=self.path,
-                              sse_path=self.path,
                               token_verifier=token_verifier,
                               auth=auth,
                               debug=self.logger.isEnabledFor(logging.DEBUG),
                              )
         # Register handlers
-        self.server._mcp_server.list_resources()(self.list_resources)
-        self.server._mcp_server.read_resource()(self.read_resource)
-        self.server._mcp_server.list_tools()(self.list_tools)
-        self.server._mcp_server.call_tool()(self.call_tool)
+        self.server.list_resources = self.list_resources
+        self.server.read_resource  = self.read_resource
+        self.server.list_tools = self.list_tools
+        self.server.call_tool  = self.call_tool
 
-        self.server.run(transport=self.transport)
+                        # sse_path=self.path,
+        self.server.run(transport=self.transport,
+                        host=self.host,
+                        port=self.port,
+                        streamable_http_path=self.path,
+        )
 
 def init_logging(level_name):
     level=getattr(logging, level_name, logging.INFO)
@@ -498,31 +504,5 @@ class AccessTokenVerifier(TokenVerifier):
     def __init__(self, mcpserver: MCPServer):
         self.mcpserver = mcpserver
 
-    async def verify_token_with_connection(self, token: str, conn: HTTPConnection) -> AccessToken | None:
-        return self.mcpserver.get_mcp_token(mcp_session_id = conn.headers.get(MCP_SESSION_ID_HEADER), token = token)
-
-async def authenticate(self, conn: HTTPConnection):
-    auth_header = next(
-        (conn.headers.get(key) for key in conn.headers if key.lower() == "authorization"),
-        None,
-    )
-    if not auth_header or not auth_header.lower().startswith("bearer "):
-        return None
-
-    token = auth_header[7:]  # Remove "Bearer " prefix
-
-    # Validate the token with the verifier
-    auth_info = await self.token_verifier.verify_token_with_connection(token, conn)
-
-    if not auth_info:
-        return None
-
-    if auth_info.expires_at and auth_info.expires_at < int(time.time()):
-        return None
-
-    return AuthCredentials(auth_info.scopes), bearer_auth.AuthenticatedUser(auth_info)
-
-# redefine the function 'authenticate' function of the mcp.server.auth.middleware.bearer_auth.BearerAuthBackend
-# in order to call the function 'verify_token_with_connection' with the 'conn' parameter 
-# instead of calling the function 'token_verifier' without the 'conn' parameter
-bearer_auth.BearerAuthBackend.authenticate = authenticate
+    async def verify_token(self, token: str) -> AccessToken | None:
+        return self.mcpserver.get_mcp_token(token)
