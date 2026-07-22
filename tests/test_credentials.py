@@ -722,6 +722,7 @@ def test_ssl_cert_path():
             username="user",
             password="pass",
             verify_ssl=True,
+            verify_ssl_hostname=True,
             ssl_cert_path="/path/to/custom/cert"
         )
         
@@ -729,6 +730,6 @@ def test_ssl_cert_path():
         cred.get_session()
         
         # Verify adapter was created with the correct cert path
-        mock_adapter_class.assert_called_with(certfile="/path/to/custom/cert")
+        mock_adapter_class.assert_called_with(certfile="/path/to/custom/cert", verify_ssl_hostname=True)
 
 # Made with Bob
