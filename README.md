@@ -193,7 +193,7 @@ The parameters below can be specified:
 | `--token-url`     | `TOKEN_URL`         | OpenID Connect token endpoint URL for authentication                                                    |                                         |
 | `--scope`         | `SCOPE`             | OpenID Connect scope used when requesting an access token   | `openid`                                |
 | `--verifyssl`     | `VERIFY_SSL`        | Whether to verify SSL certificates are valid and trusted (`True` or `False`)                          | `True`                                  |
-| `--verifyssl-hostname` | `VERIFY_SSL_HOSTNAME` | Whether to verify that the server certificate name matches the requested URL to ensure that the MCP server connects to the intended server (`True` or `False`) | `False`                                  |
+| `--verifyssl-hostname` | `VERIFY_SSL_HOSTNAME` | Whether to verify that the MCP server is connecting to the intended server by checking that the Common Name (CN) or Subject Alternative Name (SAN) fields of the server certificate matches the domain name in the requested URL  (`True` or `False`) | `False`                                  |
 | `--ssl-cert-path` | `SSL_CERT_PATH`     | Path to the SSL certificate file. If not provided, defaults to system certificates.                     |                                         |
 | `--mtls-cert-path`| `MTLS_CERT_PATH`    | Path to the SSL certificate file of the client for mutual TLS authentication (mandatory for mTLS)       |                                         |
 | `--mtls-key-path` | `MTLS_KEY_PATH`     | Path to the SSL private key file of the client for mutual TLS authentication (mandatory for mTLS)       |                                         |
@@ -358,6 +358,7 @@ The Decision Server API can make use of the Client service account. Please notic
   "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server",
   "ibm-odm-management-mcp-server",
   "--res-url",       "https://res-console-url",
+  "--verifyssl-hostname", "True",
   "--ssl-cert-path", "certificate-file",
   "--token-url",     "https://your-openid-connect_provider-token-endpoint-url",
   "--scope",         "the_scope_to_be_used_for_client_credentials"
@@ -381,6 +382,7 @@ mTLS must be complemented with another means of authentication/authorization for
   "ibm-odm-management-mcp-server",
   "--url",           "https://decisioncenter-api-url",
   "--res-url",       "https://res-console-url",
+  "--verifyssl-hostname", "True",
   "--ssl-cert-path", "certificate-file",
   "--username",      "USERNAME_OR_SERVICE_ACCOUNT"
 ],
