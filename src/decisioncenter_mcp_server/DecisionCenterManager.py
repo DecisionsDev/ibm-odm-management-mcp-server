@@ -27,7 +27,7 @@ import re
 import xml.etree.ElementTree
 import copy
 
-# adds a parameter into 'input_shema' (for the MCP server client (the AI agent)) and in 'parameters' (for the MCP server)
+# adds a parameter into 'input_schema' (for the MCP server client (the AI agent)) and in 'parameters' (for the MCP server)
 # used to generate the tools for both REST APIs (DC and RES Console)
 def add_param(input_schema, parameters, 
               param_in, param_name, param_type, param_format, 

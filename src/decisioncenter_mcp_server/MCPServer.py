@@ -187,6 +187,7 @@ class MCPServer:
                                         mtls_cert_path=self.credentials.mtls_cert_path, mtls_key_path=self.credentials.mtls_key_path, mtls_key_password=self.credentials.mtls_key_password,
                                         ssl_cert_path=self.credentials.ssl_cert_path,
                                         verify_ssl=self.credentials.verify_ssl,
+                                        verify_ssl_hostname=self.credentials.verify_ssl_hostname,
                                         token = token,
                                         )
             self.user_credentials[token] = credentials
@@ -361,6 +362,7 @@ def init_logging(level_name):
 
 def create_credentials(args):
     verifyssl = args.verifyssl != "False"
+    verifyssl_hostname = args.verifyssl_hostname != "False"
 
     if args.zenapikey:    # If zenapikey is provided, use it for authentication
         return Credentials(
@@ -370,7 +372,8 @@ def create_credentials(args):
             zenapikey=args.zenapikey,
             mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
             ssl_cert_path=args.ssl_cert_path,
-            verify_ssl=verifyssl
+            verify_ssl=verifyssl,
+            verify_ssl_hostname=verifyssl_hostname,
         )
     elif args.client_secret:  # OpenID Client Secret provided
         return Credentials(
@@ -384,7 +387,8 @@ def create_credentials(args):
             password=args.password,
             mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
             ssl_cert_path=args.ssl_cert_path,
-            verify_ssl=verifyssl
+            verify_ssl=verifyssl,
+            verify_ssl_hostname=verifyssl_hostname,
         )
     elif args.pkjwt_key_path:  # OpenID PKJWT
         return Credentials(
@@ -398,7 +402,8 @@ def create_credentials(args):
             pkjwt_cert_path=args.pkjwt_cert_path, pkjwt_key_path=args.pkjwt_key_path, pkjwt_key_password=args.pkjwt_key_password,
             mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
             ssl_cert_path=args.ssl_cert_path,
-            verify_ssl=verifyssl
+            verify_ssl=verifyssl,
+            verify_ssl_hostname=verifyssl_hostname,
         )
     else:  # Default to basic authentication
         return Credentials(
@@ -408,7 +413,8 @@ def create_credentials(args):
             password=args.password if args.password else "odmAdmin",
             mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
             ssl_cert_path=args.ssl_cert_path,
-            verify_ssl=verifyssl
+            verify_ssl=verifyssl,
+            verify_ssl_hostname=verifyssl_hostname,
         )
 
 def init(args):
@@ -447,7 +453,8 @@ def parse_arguments():
     parser.add_argument("--client-secret",     type=str, default=os.getenv("CLIENT_SECRET"), help="OpenID Client Secret (optional)")
     parser.add_argument("--token-url",         type=str, default=os.getenv("TOKEN_URL"), help="OpenID Connect token endpoint URL")
     parser.add_argument("--scope",             type=str, default=os.getenv("SCOPE", "openid"), help="OpenID Connect scope using when requesting an access token using Client Credentials (optional)")
-    parser.add_argument("--verifyssl",         type=str, default=os.getenv("VERIFY_SSL", "True"), choices=["True", "False"], help="Disable SSL check. Default is True (SSL verification enabled).")
+    parser.add_argument("--verifyssl",         type=str, default=os.getenv("VERIFY_SSL", "True"), choices=["True", "False"], help="Enable SSL check. Default is True (SSL verification enabled (to check that the server certificate is valid and trusted)).")
+    parser.add_argument("--verifyssl-hostname",type=str, default=os.getenv("VERIFY_SSL_HOSTNAME", "False"), choices=["True", "False"], help="Enable TLS hostname verification. Default is False (TLS hostname verification disabled for compatibility). The TLS hostname verification ensures the MCP server connects to the intended server, not a malicious interceptor by checking if the domain name in the requested URL exactly matches the Common Name (CN) or Subject Alternative Name (SAN) fields in the server’s digital certificate.")
     parser.add_argument("--ssl-cert-path",     type=str, default=os.getenv("SSL_CERT_PATH"), help="Path to the SSL certificate file. If not provided, defaults to system certificates.")
     parser.add_argument("--pkjwt-cert-path",   type=str, default=os.getenv("PKJWT_CERT_PATH"), help="Path to the certificate for PKJWT authentication (mandatory for PKJWT).")
     parser.add_argument("--pkjwt-key-path",    type=str, default=os.getenv("PKJWT_KEY_PATH"),  help="Path to the private key for PKJWT authentication (mandatory for PKJWT).")
