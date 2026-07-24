@@ -158,6 +158,8 @@ When establishing a SSL/TLS secure connection, the Management MCP server can per
       - or this signing certificate is provided to the MCP server using:
         - **CLI:** `--ssl-cert-path <certificate_filename>`
         - **Env:** `SSL_CERT_PATH=<certificate_filename>`
+      - use this latter option to solve the error `certificate verify failed: self-signed certificate in certificate chain`
+      - if needed you can concat several certificates in the same file 
 
 1. verify that the MCP server connects to the intended server and not a malicious interceptor by checking that the Common Name (CN) or Subject Alternative Name (SAN) fields in the server certificate matches the domain name in the requested URL
     - this check is disabled by default (for compatibility)
