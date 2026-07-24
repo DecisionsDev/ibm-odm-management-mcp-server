@@ -63,8 +63,11 @@ class Credentials:
         if odm_url is None and odm_res_url is None:   raise ValueError("Please set the URL of at least the Decision Center REST API or the RES Console")
 
         if verify_ssl:
-            import certifi
-            self.cacert = certifi.where()
+            if ssl_cert_path:
+                self.cacert = ssl_cert_path
+            else:
+                import certifi
+                self.cacert = certifi.where()
         else:
             self.cacert = None
 

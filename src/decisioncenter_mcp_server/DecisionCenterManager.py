@@ -258,7 +258,6 @@ class DecisionCenterManager:
                                        headers=session.headers,
                                        verify=credentials.cacert,
                                       )
-                credentials.cleanup()
 
                 # Check if the request was successful
                 if response.status_code == 200:
@@ -304,6 +303,8 @@ class DecisionCenterManager:
         except Exception as e:
             self.logger.error("Could not retrieve the Decision Center REST API openapi description. Exception: %s", e)
             raise(e)
+        finally:
+            credentials.cleanup()
 
     # returns the openapi
     # and sets credentials.isDcAdmin to True if the credentials grant the rtsAdministrator role
@@ -925,24 +926,26 @@ class DecisionCenterManager:
             dict: The response from the decision center
         """
 
-        if user_credentials:
-            session = user_credentials.get_session()
-        else:
-            session = self.credentials.get_session()
+        try:
+            if user_credentials:
+                session = user_credentials.get_session()
+            else:
+                session = self.credentials.get_session()
 
-        if raw_data_type:
-            session.headers.update({'Content-Type': raw_data_type})
-        for header in endpoint.headers:
-            session.headers.update(header)
+            if raw_data_type:
+                session.headers.update({'Content-Type': raw_data_type})
+            for header in endpoint.headers:
+                session.headers.update(header)
 
-        response = session.request(method=method, 
-                                   url=url, 
-                                   headers=session.headers,
-                                   params=params_query,
-                                   data  =raw_data,
-                                   json  =params_body,
-                                   files =params_file)
-        self.credentials.cleanup()
+            response = session.request(method=method, 
+                                    url=url, 
+                                    headers=session.headers,
+                                    params=params_query,
+                                    data  =raw_data,
+                                    json  =params_body,
+                                    files =params_file)
+        finally:
+            self.credentials.cleanup()
 
         # check response
         if response.status_code in [200, 201, 204]:
