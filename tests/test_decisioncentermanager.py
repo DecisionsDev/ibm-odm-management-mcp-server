@@ -73,7 +73,7 @@ def openapi9501_filepath():
 ])
 def test_dc_tools_tags_filtering(tags, expected_tools_total, openapi9501_filepath):
     manager = DecisionCenterManager(credentials=Credentials(odm_url='http://localhost:8885/decisioncenter-api', username='mock_user', password='mock_password'))
-    endpoints  = manager._fetch_endpoints(openapi9501_filepath, None)
+    endpoints  = manager._fetch_endpoints(openapi9501_filepath, manager.credentials)
     repository_dc, repository_dc_admin = manager.generate_tools_format(endpoints, tags)
 
     # verify tools were filtered by tags
@@ -105,7 +105,7 @@ def test_res_tools_tags_filtering(tags, expected_tools_total, wadl9501_filepath)
 ])
 def test_tools_filtering(tags, tools, no_tools, expected_tools_total, openapi9501_filepath):
     manager = DecisionCenterManager(credentials=Credentials(odm_url='http://localhost:8885/decisioncenter-api', username='mock_user', password='mock_password'))
-    endpoints  = manager._fetch_endpoints(openapi9501_filepath, None)
+    endpoints  = manager._fetch_endpoints(openapi9501_filepath, manager.credentials)
     repository_dc, repository_dc_admin = manager.generate_tools_format(endpoints, tags_to_publish=tags, tools_to_publish=tools, tools_to_ignore=no_tools)
 
     # verify tools were filtered by explicit list of tools to publish or discard
@@ -120,7 +120,7 @@ def test_generate_tools_format(openapi_file, expected_tools_total):
     odm_url = 'http://localhost:8885/decisioncenter-api'
 
     manager = DecisionCenterManager(credentials=Credentials(odm_url=odm_url, username='mock_user', password='mock_password'))
-    endpoints  = manager._fetch_endpoints(openapi_file, None)
+    endpoints  = manager._fetch_endpoints(openapi_file, manager.credentials)
     repository_dc, repository_dc_admin = manager.generate_tools_format(endpoints)
 
     # verify all tools were generated
