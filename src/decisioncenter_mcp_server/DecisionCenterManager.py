@@ -937,13 +937,18 @@ class DecisionCenterManager:
             for header in endpoint.headers:
                 session.headers.update(header)
 
-            response = session.request(method=method, 
-                                    url=url, 
-                                    headers=session.headers,
-                                    params=params_query,
-                                    data  =raw_data,
-                                    json  =params_body,
-                                    files =params_file)
+            if method == 'GET':
+                response = session.get(url=url, 
+                                        headers=session.headers, 
+                                        params=params_query)
+            else:
+                response = session.request(method=method,
+                                        url=url,
+                                        headers=session.headers,
+                                        params=params_query,
+                                        data  =raw_data,
+                                        json  =params_body if params_body else None,
+                                        files =params_file)
         finally:
             self.credentials.cleanup()
 
