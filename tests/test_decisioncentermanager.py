@@ -252,7 +252,7 @@ class TestInvokeDecisionCenterApi:
            tool_name='testEndpoint',
            summary='Test endpoint',
            description='A test endpoint for unit testing',
-           method='GET',
+           method='PUT',
            url='http://localhost:8885/decisioncenter-api/v1/test/{testId}',
            parameters={
                'testId': {'in': 'path'},
@@ -535,12 +535,12 @@ class TestInvokeDecisionCenterApi:
        mock_response.status_code = 200
        mock_response.headers = {'Content-Type': 'application/json'}
        mock_response.json.return_value = {'data': 'test'}
-       mock_session.request.return_value = mock_response
+       mock_session.get.return_value = mock_response
 
        arguments = {}
        result = manager.invokeDecisionCenterApi(endpoint, arguments, run_locally=True)
 
        # Verify request was made with empty parameters
-       call_args = mock_session.request.call_args
+       call_args = mock_session.get.call_args
        assert call_args[1]['params'] == {}
        assert result == {'data': 'test'}
