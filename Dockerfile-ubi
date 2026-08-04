@@ -1,6 +1,5 @@
-ARG PYTHON_VERSION=3.14
-
 FROM ghcr.io/astral-sh/uv:bookworm-slim AS builder
+ARG PYTHON_VERSION=3.14
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 ENV UV_PYTHON_INSTALL_DIR=/python
@@ -18,9 +17,19 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 
 FROM  registry.access.redhat.com/ubi9-minimal
-
+ARG VERSION
+LABEL org.opencontainers.image.authors="Laurent GRATEAU <laurent.grateau@fr.ibm.com>"
 LABEL name="IBM ODM Management MCP Server"
-LABEL summary="MCP Server exposing the REST APIs of both IBM ODM Decision Center and the Decision Server console (aka RES console)"
+LABEL vendor="IBM"
+LABEL description="The Management MCP Server exposes the REST APIs of both IBM ODM Decision Center \
+ and IBM ODM Decision Server console enabling to explore and manage Decision Services and Decisions (aka rulesets)"
+LABEL summary="The Management MCP Server enables to explore and manage Decision Services and Decisions (aka rulesets)"
+LABEL version=${VERSION}
+LABEL product-version=${VERSION}
+LABEL product-id="IBM Operational Decision Manager Management MCP server"
+LABEL io.openshift.tags="odm,dba,dbamc"
+LABEL io.k8s.description="MCP Server enabling to explore and manage Decision Services and Decisions (aka rulesets)"
+LABEL io.k8s.display-name="ODM Management MCP Server"
 
 RUN useradd -m worker
 USER worker
@@ -31,4 +40,5 @@ COPY --from=builder --chown=worker:worker /app/ /app/
 ENV PATH="/app/.venv/bin:$PATH"
 
 ENTRYPOINT ["ibm-odm-management-mcp-server"]
-CMD ["--transport", "streamable-http", "--url", "http://odm:9060/decisioncenter-api", "--res-url", "http://odm:9060/res"]
+CMD []
+EXPOSE 3000

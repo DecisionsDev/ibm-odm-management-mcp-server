@@ -24,3 +24,16 @@ services:
     entrypoint: >
       sh -c "cd /samples/ && ./deploy_demo_materials.sh basic http://odm:9060/decisioncenter-api http://localhost:9060/res odmAdmin odmAdmin &&  echo '✅ ODM Ready for MCP Server' "
     restart: "no"
+
+  amd64_arm64:
+    image: $REPOSITORY/$IMAGE:$TAG
+    build:
+      context: .
+      dockerfile: Dockerfile-ubi
+      platforms:
+        - "linux/amd64"
+        - "linux/arm64"
+      args:
+        BUILDKIT_INLINE_CACHE: 0
+        VERSION: $VERSION
+      no_cache: true
