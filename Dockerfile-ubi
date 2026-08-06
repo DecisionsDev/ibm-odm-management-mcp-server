@@ -18,18 +18,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 FROM  registry.access.redhat.com/ubi9-minimal
 ARG VERSION
-LABEL org.opencontainers.image.authors="Laurent GRATEAU <laurent.grateau@fr.ibm.com>"
+
 LABEL name="IBM ODM Management MCP Server"
-LABEL vendor="IBM"
-LABEL description="The Management MCP Server exposes the REST APIs of both IBM ODM Decision Center \
- and IBM ODM Decision Server console enabling to explore and manage Decision Services and Decisions (aka rulesets)"
 LABEL summary="The Management MCP Server enables to explore and manage Decision Services and Decisions (aka rulesets)"
-LABEL version=${VERSION}
-LABEL product-version=${VERSION}
-LABEL product-id="IBM Operational Decision Manager Management MCP server"
-LABEL io.openshift.tags="odm,dba,dbamc"
-LABEL io.k8s.description="MCP Server enabling to explore and manage Decision Services and Decisions (aka rulesets)"
-LABEL io.k8s.display-name="ODM Management MCP Server"
 
 RUN useradd -m worker
 USER worker
