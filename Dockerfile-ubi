@@ -17,7 +17,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 
 FROM  registry.access.redhat.com/ubi9-minimal
-ARG VERSION
 
 LABEL name="IBM ODM Management MCP Server"
 LABEL summary="The Management MCP Server enables to explore and manage Decision Services and Decisions (aka rulesets)"
