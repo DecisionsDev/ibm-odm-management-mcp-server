@@ -428,7 +428,7 @@ They can be used separately or together and in the latter case, are processed in
     For instance with the configuration below, the Decision Center tools that belong to the tag/category `Admin` or `DBAdmin` will not be published: 
     ```json
     "args": [
-      "--tags", "About", "Explore", "Manage", "Govern", "Build", "Interchange"
+      "--tags", "About", "Explore", "Manage", "Govern", "Build", "Model"
     ]
     ```
 
