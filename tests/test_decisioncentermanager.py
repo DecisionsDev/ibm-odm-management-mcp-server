@@ -84,21 +84,23 @@ def wadl9501_filepath():
     # Combine folder path with the target file name
     return os.path.join(base_dir, 'DecisionServer-9501.wadl')
 
-@pytest.mark.parametrize("tags, expected_tools_total", [
-    (["ruleapps","rulesets"], 42), # 40 + 2
-    (["libraries",  "xoms"],  21), # 10 + 11
-    (["decisiontraces", "executionunits", "utilities"], 15), # 6 + 5 + 4
+@pytest.mark.parametrize("tags, tools, tools_to_ignore, expected_tools_total", [
+    ([],                                                ["getversion"], [],              1), # 1
+    (["ruleapps","rulesets"],                           ["getversion"], [],             43), # 40 + 2 + 1
+    (["libraries",  "xoms"],                            [],             [],             21), # 10 + 11
+    (["decisiontraces", "executionunits", "utilities"], [],             ["getversion"], 14), # 6 + 5 + 4 - 1
 ])
-def test_res_tools_tags_filtering(tags, expected_tools_total, wadl9501_filepath):
+def test_res_tools_tags_filtering(tags, tools, tools_to_ignore, expected_tools_total, wadl9501_filepath):
     credentials=Credentials(odm_res_url='http://localhost:8885/res', username='mock_user', password='mock_password')
     manager = DecisionCenterManager(credentials)
     wadl  = manager._fetch_res_api_endpoints(wadl9501_filepath, credentials)
-    repository_res, repository_res_deployer = manager.generate_res_tools(wadl, tags_to_publish=tags, tools_to_publish=[], tools_to_ignore=[])
+    repository_res, repository_res_deployer = manager.generate_res_tools(wadl, tags_to_publish=tags, tools_to_publish=tools, tools_to_ignore=tools_to_ignore)
 
     # verify tools were filtered by tags
     assert len(repository_res_deployer) == expected_tools_total
 
 @pytest.mark.parametrize("tags, tools, no_tools, expected_tools_total", [
+    ([],          ["addserver", "importdt"], [],                                              2),   # publish only the tools "addserver" and "importdt"
     (["explore"], ["addserver", "importdt"], [],                                             35),   # publish all the tools of the 'explore' tag/category (33 in total) plus 2 from the 'manage' category
     ([],          [],                        ["launchcleanup", "wipe", "executesqlscript"], 130),   # publish all but the 3 ignored
     ([],          [],                        [],                                            133),   # publish all the tools

@@ -170,6 +170,9 @@ class DecisionCenterManager:
         if len(tags_to_publish) > 0 and len( [tag for tag in tool_tags if tag.lower() in tags_to_publish] ) == 0:
             return False # do not publish this tool as it does not belong to a category to publish
 
+        if len(tags_to_publish) == 0 and len(tools_to_publish) > 0:
+            return False # only the tools explicitly listed are published
+
         return True
 
     def fix_openapi(self, json):
