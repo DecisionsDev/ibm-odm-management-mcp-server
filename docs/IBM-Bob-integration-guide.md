@@ -469,6 +469,12 @@ With the configuration above, the Management MCP Server :
         >- Messages: None (no issues!)
 
 
+## Troubleshooting
+
+The MCP server log is available in the **Output** tab :
+
+![IBM Bob Output Screenshot](images/bob-output.png)
+
 ## Additional information
 
 - IBM Bob documentation: [Bob docs](https://internal.bob.ibm.com/docs/ide).
