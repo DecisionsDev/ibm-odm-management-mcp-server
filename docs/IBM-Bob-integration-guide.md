@@ -197,7 +197,7 @@ With the configuration above, the Management MCP Server :
     >**Execution Unit Information**
     >- Server Name: localhost
     >- Execution Unit: xuHTDS
-    >- Product Version: 9.5.0.1.1
+    >- Product Version: 9.6.0.0.1
     >- Status: 46 warnings, 0 errors
     >
     >**Deployed RuleApps**
@@ -468,6 +468,12 @@ With the configuration above, the Management MCP Server :
         >- Status: ✅ APPROVED
         >- Messages: None (no issues!)
 
+
+## Troubleshooting
+
+The MCP server log is available in the **Output** tab :
+
+![IBM Bob Output Screenshot](images/bob-output.png)
 
 ## Additional information
 

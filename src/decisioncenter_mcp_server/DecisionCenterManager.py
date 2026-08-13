@@ -26,7 +26,7 @@ import re
 import xml.etree.ElementTree
 import copy
 
-# adds a parameter into 'input_shema' (for the MCP server client (the AI agent)) and in 'parameters' (for the MCP server)
+# adds a parameter into 'input_schema' (for the MCP server client (the AI agent)) and in 'parameters' (for the MCP server)
 # used to generate the tools for both REST APIs (DC and RES Console)
 def add_param(input_schema, parameters, 
               param_in, param_name, param_type, param_format, 
@@ -169,6 +169,9 @@ class DecisionCenterManager:
         if len(tags_to_publish) > 0 and len( [tag for tag in tool_tags if tag.lower() in tags_to_publish] ) == 0:
             return False # do not publish this tool as it does not belong to a category to publish
 
+        if len(tags_to_publish) == 0 and len(tools_to_publish) > 0:
+            return False # only the tools explicitly listed are published
+
         return True
 
     def fix_openapi(self, json):
@@ -257,7 +260,6 @@ class DecisionCenterManager:
                                        headers=session.headers,
                                        verify=credentials.cacert,
                                       )
-                credentials.cleanup()
 
                 # Check if the request was successful
                 if response.status_code == 200:
@@ -303,6 +305,8 @@ class DecisionCenterManager:
         except Exception as e:
             self.logger.error("Could not retrieve the Decision Center REST API openapi description. Exception: %s", e)
             raise(e)
+        finally:
+            credentials.cleanup()
 
     # returns the openapi
     # and sets credentials.isDcAdmin to True if the credentials grant the rtsAdministrator role
@@ -424,7 +428,9 @@ class DecisionCenterManager:
                                                                   method=method,
                                                                   url= base_url + path_url,
                                                                   parameters=parameters,
-                                                                  input_schema=input_schema)
+                                                                  input_schema=input_schema,
+                                                                  tags=info.tags,
+                                                                  )
 
                         if tool_name in DecisionCenterManager.rtsAdministrator_tools:
                             # only for rtsAdministrators
@@ -863,7 +869,9 @@ class DecisionCenterManager:
                                                               url          = base_url + path,
                                                               parameters   = parameters,
                                                               input_schema = input_schema,
-                                                              headers      = Accept_header(xmlResponseRepresentationList))
+                                                              headers      = Accept_header(xmlResponseRepresentationList),
+                                                              tags         = [tool_tag],
+                                                            )
 
                     # filter out the tools that require the resDeployer role if the credentials used do not grant this role
                     if tool_name in DecisionCenterManager.resDeployer_tools:
@@ -920,24 +928,31 @@ class DecisionCenterManager:
             dict: The response from the decision center
         """
 
-        if user_credentials:
-            session = user_credentials.get_session()
-        else:
-            session = self.credentials.get_session()
+        try:
+            if user_credentials:
+                session = user_credentials.get_session()
+            else:
+                session = self.credentials.get_session()
 
-        if raw_data_type:
-            session.headers.update({'Content-Type': raw_data_type})
-        for header in endpoint.headers:
-            session.headers.update(header)
+            if raw_data_type:
+                session.headers.update({'Content-Type': raw_data_type})
+            for header in endpoint.headers:
+                session.headers.update(header)
 
-        response = session.request(method=method, 
-                                   url=url, 
-                                   headers=session.headers,
-                                   params=params_query,
-                                   data  =raw_data,
-                                   json  =params_body,
-                                   files =params_file)
-        self.credentials.cleanup()
+            if method == 'GET':
+                response = session.get(url=url, 
+                                        headers=session.headers, 
+                                        params=params_query)
+            else:
+                response = session.request(method=method,
+                                        url=url,
+                                        headers=session.headers,
+                                        params=params_query,
+                                        data  =raw_data,
+                                        json  =params_body if params_body else None,
+                                        files =params_file)
+        finally:
+            self.credentials.cleanup()
 
         # check response
         if response.status_code in [200, 201, 204]:
