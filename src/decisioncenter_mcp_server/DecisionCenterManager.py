@@ -14,7 +14,6 @@
 
 import logging
 import json
-import mcp.types as types
 from .DecisionCenterEndpoint import DecisionCenterEndpoint
 from .ToolTrace import ToolExecutionTrace, DiskTraceStorage
 import os.path
@@ -1068,10 +1067,10 @@ class DecisionCenterManager:
                         raw_data = value
 
         if self.logger.isEnabledFor(logging.DEBUG):
-            if not params_query: logging.debug("params_query=%s", params_query)
-            if not params_body:  logging.debug("params_body=%s",  params_body)
-            if not params_file:  logging.debug("params_file=%s",  params_file)
-            if not raw_data:     logging.debug("raw_data=%s",     raw_data)
+            if len(params_query)>0:  logging.debug("params_query=%s", params_query)
+            if len(params_body)>0:   logging.debug("params_body=%s",  params_body)
+            if len(params_file)>0:   logging.debug("params_file=%s",  params_file)
+            if raw_data is not None: logging.debug("raw_data=%s",     raw_data)
 
         return self._invokeDecisionCenterApi(endpoint, arguments,
                                              method=endpoint.method, 

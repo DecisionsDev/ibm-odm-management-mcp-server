@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import mcp.types as types
+from mcp_types import Tool
 class DecisionCenterEndpoint:
     """
     This class encapsulates the metadata and tool description for a Decision Center REST API uri.
@@ -22,7 +22,7 @@ class DecisionCenterEndpoint:
         parameters (dict): list of the parameters expected with their location in the request (path, query or body)
         headers (list): list of the headers expected in the request
         tags   (list of strings): a list of tags to be associated with the tool, for categorization or filtering purposes.
-        tool   (types.Tool): An object describing the tool, including its name, description, and input schema.
+        tool   (Tool): An object describing the tool, including its name, description, and input schema.
 
     Args:
         tool_name (str): The name of the tool.
@@ -43,7 +43,7 @@ class DecisionCenterEndpoint:
         self.parameters = parameters
         self.headers = headers
         self.tags = tags
-        self.tool   = types.Tool(
+        self.tool   = Tool(
             name=tool_name,
             title=summary,
             description=description,
