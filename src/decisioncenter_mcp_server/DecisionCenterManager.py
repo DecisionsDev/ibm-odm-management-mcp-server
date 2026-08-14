@@ -121,6 +121,8 @@ class DecisionCenterManager:
         self.trace_recorder = trace_recorder
 
     def isDcAdmin(self, uri:str, session):
+        if uri is None:
+            return False
         try:
             response = session.get(uri + '/v1/users/fake-user',
                                    headers=session.headers, 
@@ -517,7 +519,8 @@ class DecisionCenterManager:
         return self._fetch_res_api_endpoints(self.credentials.odm_res_url, credentials)
 
     def check_res_roles(self, credentials):
-        return self._fetch_res_api_endpoints(self.credentials.odm_res_url, credentials, only_check_roles = True)
+        if self.credentials.odm_res_url:
+            self._fetch_res_api_endpoints(self.credentials.odm_res_url, credentials, only_check_roles = True)
 
     def generate_res_tools(self, wadl : str, tags_to_publish: list[str] = [], tools_to_publish: list[str] = [], tools_to_ignore: list[str] = []):
         """
