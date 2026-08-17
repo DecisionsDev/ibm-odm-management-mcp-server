@@ -760,7 +760,7 @@ You can find instructions in the [Build-Docker-image](/docs/Build-Docker-image.m
 
 ## Compatibility
 
-The Management MCP server is compatible with ODM versions: 9.6, 9.5, 9.0 and 8.12.
+The Management MCP server is compatible with ODM versions: 9.6, 9.5, 9.0.
 
 ## Additional information
 
