@@ -153,7 +153,7 @@ You can get more background in [3.1 How Things work](#31-how-things-work).
 
 ### 3.1 How things work
 
-The AI assistant do not connect to the MCP server directly but use the `mcp-remote` tool instead (see [2.3 AI Assistant configuration](#23-ai-assistant-configuration)).
+The AI assistant does not connect to the MCP server directly but uses the `mcp-remote` tool instead (see [2.3 AI Assistant configuration](#23-ai-assistant-configuration)).
 
 The `mcp-remote` tool authenticates the user to obtain an access token and then use it to connect to the MCP server. 
 To do that, `mcp-remote` follows the Authorization Code flow:
@@ -162,7 +162,7 @@ To do that, `mcp-remote` follows the Authorization Code flow:
 1. `mcp-remote` listens to that redirect URI and trades the authorization code for an access token by sending a request to the OpenID Connect token endpoint
 1. `mcp-remote` connects to the MCP server with the access token in the authorization header
 
-The MCP server keeps the access token of each user in memory and when a user runs a tool, the MCP server uses the user's access token to connect to ODM RES console or Decision Center.
+When a user runs a tool, the MCP server retrieves the user's access token and connects to ODM RES console or Decision Center with it.
 
 The `mcp-remote` tool keeps the access token in memory (or in a file in debug mode) and only re-authenticate the user when the access token (and refresh token) are expired. 
 
@@ -234,7 +234,7 @@ The various logs you can check are:
         - or specify the MCP server certificate in `mcp-remote` command line using the `NODE_EXTRA_CA_CERTS` environment variable (see [2.3 AI Assistant configuration](#23-ai-assistant-configuration))
 
     - `mcp-remote` might be unable to determine the OpenId authorization endpoint, in which case
-        - navigate to https://<MY_MCP_SERVER>/.well-known/oauth-protected-resource after replacing `<MY_MCP_SERVER>` by the URL of your MCP server
+        - navigate to https://<MY_MCP_SERVER>/.well-known/oauth-protected-resource after replacing `<MY_MCP_SERVER>` by the ROOT URL of your MCP server (without '/mcp')
             - if this page does not respond, the MCP server might not be using the users credentials
             - you can check if there is a message `MCP Server running in remote mode, using users credentials` in the MCP server log
             - check that all the required MCP server parameters are set (see [2.1 MCP server configuration](#21-mcp-server-configuration))
