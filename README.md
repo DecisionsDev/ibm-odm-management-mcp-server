@@ -758,6 +758,10 @@ The repository features a [Dockerfile](/Dockerfile) so that you can build a Dock
 
 You can find instructions in the [Build-Docker-image](/docs/Build-Docker-image.md) readme.
 
+## Compatibility
+
+The Management MCP server is compatible with ODM versions: 9.6, 9.5, 9.0 and 8.12.
+
 ## Additional information
 
 - For IBM Operational Decision Manager (ODM), see [IBM Documentation](https://www.ibm.com/docs/en/odm).
