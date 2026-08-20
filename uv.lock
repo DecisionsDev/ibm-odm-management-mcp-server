@@ -425,7 +425,7 @@ requires-dist = [
     { name = "cryptography", marker = "extra == 's390x'", specifier = "==36.0.1" },
     { name = "jsonref" },
     { name = "mcp", specifier = ">=2.0.0,<3" },
-    { name = "openapi3-parser" },
+    { name = "openapi3-parser", specifier = "==1.3.0" },
     { name = "pyjwt" },
     { name = "python-multipart" },
     { name = "pyyaml" },
