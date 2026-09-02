@@ -14,6 +14,7 @@
 
 import sys
 import os
+import tempfile
 
 # Add the root directory to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
@@ -24,6 +25,7 @@ import json
 import requests  # Add this line to import the requests module
 from unittest.mock import patch, Mock
 from decisioncenter_mcp_server.Credentials import Credentials, CustomHTTPAdapter
+from decisioncenter_mcp_server.MCPServer import create_credentials
 
 def get_test_credentials():
     return Credentials(
@@ -731,5 +733,98 @@ def test_ssl_cert_path():
         
         # Verify adapter was created with the correct cert path
         mock_adapter_class.assert_called_with(certfile="/path/to/custom/cert", verify_ssl_hostname=True)
+
+# ---------------------------------------------------------------------------
+# Tests for create_credentials with a comma/semicolon-separated ssl-cert-path
+# ---------------------------------------------------------------------------
+
+def _make_args(**overrides):
+    """Return a minimal argparse-like namespace for create_credentials tests."""
+    defaults = dict(
+        url="http://localhost:9060/decisioncenter-api",
+        res_url=None,
+        username="odmAdmin",
+        password="odmAdmin",
+        zenapikey=None,
+        client_id=None,
+        client_secret=None,
+        token_url=None,
+        scope="openid",
+        pkjwt_cert_path=None,
+        pkjwt_key_path=None,
+        pkjwt_key_password=None,
+        mtls_cert_path=None,
+        mtls_key_path=None,
+        mtls_key_password=None,
+        verifyssl="True",
+        verifyssl_hostname="False",
+        ssl_cert_path=None,
+    )
+    defaults.update(overrides)
+
+    class _Namespace:
+        pass
+
+    ns = _Namespace()
+    for k, v in defaults.items():
+        setattr(ns, k, v)
+    return ns
+
+
+def test_create_credentials_single_ssl_cert_path(tmp_path):
+    """A single cert path is passed through unchanged to Credentials."""
+    cert_file = tmp_path / "ca.pem"
+    cert_file.write_text("-----BEGIN CERTIFICATE-----\nABC\n-----END CERTIFICATE-----\n")
+
+    args = _make_args(ssl_cert_path=str(cert_file))
+    cred = create_credentials(args)
+
+    assert cred.cacert == str(cert_file)
+
+
+def test_create_credentials_multi_ssl_cert_path_comma(tmp_path):
+    """Two cert paths joined by comma are merged into a single temp file."""
+    f_a = tmp_path / "a.pem"
+    f_b = tmp_path / "b.pem"
+    f_a.write_text("-----BEGIN CERTIFICATE-----\ncertA\n-----END CERTIFICATE-----\n")
+    f_b.write_text("-----BEGIN CERTIFICATE-----\ncertB\n-----END CERTIFICATE-----\n")
+
+    args = _make_args(ssl_cert_path=f"{f_a},{f_b}")
+    cred = create_credentials(args)
+
+    # cacert must be a different (temp) file — not one of the originals
+    assert cred.cacert != str(f_a)
+    assert os.path.isfile(cred.cacert)
+
+    merged_content = open(cred.cacert).read()
+    assert "certA" in merged_content
+    assert "certB" in merged_content
+    os.unlink(cred.cacert)
+
+
+def test_create_credentials_multi_ssl_cert_path_semicolon(tmp_path):
+    """Two cert paths joined by semicolon are merged into a single temp file."""
+    f_a = tmp_path / "a.pem"
+    f_b = tmp_path / "b.pem"
+    f_a.write_text("-----BEGIN CERTIFICATE-----\ncertA\n-----END CERTIFICATE-----\n")
+    f_b.write_text("-----BEGIN CERTIFICATE-----\ncertB\n-----END CERTIFICATE-----\n")
+
+    args = _make_args(ssl_cert_path=f"{f_a};{f_b}")
+    cred = create_credentials(args)
+
+    assert os.path.isfile(cred.cacert)
+    merged_content = open(cred.cacert).read()
+    assert "certA" in merged_content
+    assert "certB" in merged_content
+    os.unlink(cred.cacert)
+
+
+def test_create_credentials_no_ssl_cert_path():
+    """When ssl_cert_path is None, credentials fall back to certifi."""
+    import certifi
+    args = _make_args(ssl_cert_path=None)
+    cred = create_credentials(args)
+    assert cred.cacert == certifi.where()
+
 
 # Made with Bob

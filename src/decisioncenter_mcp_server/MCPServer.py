@@ -36,6 +36,7 @@ from .Credentials import Credentials
 from .DecisionCenterManager import DecisionCenterManager
 from .DecisionCenterEndpoint import DecisionCenterEndpoint
 from .ToolTrace import DiskTraceStorage
+from .utils.ssl_utils import merge_ssl_cert_paths
 
 INSTRUCTIONS = """
 IBM ODM Decision Center MCP server
@@ -370,6 +371,10 @@ def create_credentials(args):
     verifyssl = args.verifyssl != "False"
     verifyssl_hostname = args.verifyssl_hostname != "False"
 
+    # Resolve a comma/semicolon-separated list of cert paths into a single file
+    if args.ssl_cert_path:
+        args.ssl_cert_path = merge_ssl_cert_paths(args.ssl_cert_path)
+
     if args.zenapikey:    # If zenapikey is provided, use it for authentication
         return Credentials(
             odm_url=args.url,
@@ -461,7 +466,7 @@ def parse_arguments():
     parser.add_argument("--scope",             type=str, default=os.getenv("SCOPE", "openid"), help="OpenID Connect scope using when requesting an access token using Client Credentials (optional)")
     parser.add_argument("--verifyssl",         type=str, default=os.getenv("VERIFY_SSL", "True"), choices=["True", "False"], help="Enable SSL check. Default is True (SSL verification enabled (to check that the server certificate is valid and trusted)).")
     parser.add_argument("--verifyssl-hostname",type=str, default=os.getenv("VERIFY_SSL_HOSTNAME", "False"), choices=["True", "False"], help="Enable TLS hostname verification. Default is False (TLS hostname verification disabled for compatibility). The TLS hostname verification ensures the MCP server connects to the intended server, not a malicious interceptor by checking if the domain name in the requested URL exactly matches the Common Name (CN) or Subject Alternative Name (SAN) fields in the server’s digital certificate.")
-    parser.add_argument("--ssl-cert-path",     type=str, default=os.getenv("SSL_CERT_PATH"), help="Path to the SSL certificate file. If not provided, defaults to system certificates.")
+    parser.add_argument("--ssl-cert-path",     type=str, default=os.getenv("SSL_CERT_PATH"), help="Semi-colon (or comma) separated list of trusted SSL certificate file pathnames. If not provided, defaults to the system certificates.")
     parser.add_argument("--pkjwt-cert-path",   type=str, default=os.getenv("PKJWT_CERT_PATH"), help="Path to the certificate for PKJWT authentication (mandatory for PKJWT).")
     parser.add_argument("--pkjwt-key-path",    type=str, default=os.getenv("PKJWT_KEY_PATH"),  help="Path to the private key for PKJWT authentication (mandatory for PKJWT).")
     parser.add_argument("--pkjwt-key-password",type=str, default=os.getenv("PKJWT_KEY_PASSWORD"), help="Password to decrypt the private key for PKJWT authentication. Only needed if the key is password-protected.")
