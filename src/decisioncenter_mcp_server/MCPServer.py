@@ -230,11 +230,11 @@ class MCPServer:
         """
         if self.use_user_credentials():
             credentials = self.get_user_credentials()
-
-            # update the list of tools (unless it was already generated during startup)
-            self.update_repository(credentials)
         else:
             credentials = self.credentials
+
+        # update the list of tools (skipped if it was already generated during startup)
+        self.update_repository(credentials)
 
         # select the list of tools based on the roles granted to the credentials used
         if   credentials.isDcAdmin:     dc_repository = self.repository_dc_admin
@@ -448,7 +448,7 @@ def init(args):
     )
 
     retry = os.getenv("STARTUP_RETRY_IF_FAILURE", "False")
-    retries_count  = int(os.getenv("STARTUP_RETRIES_COUNT", 5))
+    retries_count  = int(os.getenv("STARTUP_RETRIES_COUNT",  7))
     retries_period = int(os.getenv("STARTUP_RETRIES_PERIOD", 30))
 
     for attempt in range(retries_count):
