@@ -221,8 +221,7 @@ class MCPServer:
             self.repository_res_monitor, self.repository_res_deployer = self.manager.generate_res_tools(self.manager.fetch_res_api_endpoints(credentials), self.tags, self.tools, self.no_tools)
 
         # save traces of all the tools
-        if credentials == self.credentials:
-            self.trace_recorder.save(dict(self.repository_dc_admin, **self.repository_res_deployer))
+        self.trace_recorder.save(dict(self.repository_dc_admin, **self.repository_res_deployer))
 
     async def list_tools(self) -> list[Tool]:
         """
@@ -420,8 +419,8 @@ def create_credentials(args):
         return Credentials(
             odm_url=args.url,
             odm_res_url=args.res_url,
-            username=args.username if args.username else "odmAdmin",
-            password=args.password if args.password else "odmAdmin",
+            username=args.username,
+            password=args.password,
             mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
             ssl_cert_path=args.ssl_cert_path,
             verify_ssl=verifyssl,
@@ -447,10 +446,29 @@ def init(args):
         issuer_url      = args.issuer_url,
         introspection_url = args.introspection_url,
     )
-    if server.use_user_credentials:
-        # the MCP server credentials are optional is this case
-        credentials.ignoreAuthErrors = True
-    server.update_repository()
+
+    retry = os.getenv("STARTUP_RETRY_IF_FAILURE", "False")
+    retries_count  = int(os.getenv("STARTUP_RETRIES_COUNT", 5))
+    retries_period = int(os.getenv("STARTUP_RETRIES_PERIOD", 30))
+
+    for attempt in range(retries_count):
+        try:
+            server.update_repository()
+        except Exception as e:
+            if retry != "False":
+                if attempt == 0:
+                    server.logger.info(f"Failed to retrieve the tools. Will retry {retries_count -1} more times every {retries_period} seconds")
+                time.sleep(retries_period)
+                continue
+            elif server.use_user_credentials and not isinstance(e, ValueError):
+                # in this mode, the MCP server could be missing the required credentials to log in to ODM,  but the users credentials would enable to log in to ODM later on.
+                # don't raise the exception as it would stop the MCP server, unless it is a misconfiguration
+                pass
+            else:
+                # abort as the MCP server could be misconfigured
+                raise(e)
+        break
+
     return server
 
 def parse_arguments():

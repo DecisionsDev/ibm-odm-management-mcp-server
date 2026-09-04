@@ -116,7 +116,6 @@ class Credentials:
             self.mtls_key_data     = self.get_unencrypted_key_data(mtls_key_path, mtls_key_password)
 
         self.token = token
-        self.ignoreAuthErrors = False
 
     def get_auth(self):
         if self.token:
@@ -284,8 +283,8 @@ class Credentials:
             headers = self.get_auth()
             session.headers.update(headers)
         except ValueError as e:
-            if not self.ignoreAuthErrors:
-                raise e
+            self.logger.exception("Failed to create auth header")
+            raise e
 
         if self.mtls_cert_path:
             session.cert = self.mtls_cert_tuple()
