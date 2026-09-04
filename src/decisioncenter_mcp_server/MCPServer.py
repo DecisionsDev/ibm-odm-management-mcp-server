@@ -212,13 +212,13 @@ class MCPServer:
         if credentials is None:
             credentials = self.credentials
 
-        # generate the MCP tools for Decision Center REST API
-        if len(self.repository_dc) == 0 and credentials.odm_url:
-            self.repository_dc, self.repository_dc_admin = self.manager.generate_tools_format(self.manager.fetch_endpoints(credentials), self.tags, self.tools, self.no_tools)
-
         # generate the MCP tools for Decision Server console REST API (aka RES console)
         if len(self.repository_res_monitor) == 0 and credentials.odm_res_url:
             self.repository_res_monitor, self.repository_res_deployer = self.manager.generate_res_tools(self.manager.fetch_res_api_endpoints(credentials), self.tags, self.tools, self.no_tools)
+
+        # generate the MCP tools for Decision Center REST API
+        if len(self.repository_dc) == 0 and credentials.odm_url:
+            self.repository_dc, self.repository_dc_admin = self.manager.generate_tools_format(self.manager.fetch_endpoints(credentials), self.tags, self.tools, self.no_tools)
 
         # save traces of all the tools
         self.trace_recorder.save(dict(self.repository_dc_admin, **self.repository_res_deployer))
