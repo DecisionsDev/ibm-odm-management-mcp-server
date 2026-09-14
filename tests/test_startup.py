@@ -77,6 +77,13 @@ def run_startup(tmp_path, env_overrides=None, xml_content=None, props_content=No
         text=True
     )
 
+    if res.returncode != 0:
+        pytest.fail(
+            f"startup.sh failed with exit code {res.returncode}\n"
+            f"stdout:\n{res.stdout}\n"
+            f"stderr:\n{res.stderr}"
+        )
+
     # Parse variables from mock server output
     parsed_vars = {}
     in_mock_output = False
