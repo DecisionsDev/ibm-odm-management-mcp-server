@@ -53,7 +53,12 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
     for VAR in CLIENT_ID CLIENT_SECRET TOKEN_URL SCOPE ISSUER_URL INTROSPECTION_URL; do
         # Skip if already set
         if [ -n "${!VAR}" ]; then
-            echo "[startup] ${VAR} already set, skipping."
+            if [ "${VAR}" = "CLIENT_SECRET" ]; then
+                SAFE_VALUE="${!VAR:0:1}*****${!VAR: -1}"
+            else
+                SAFE_VALUE="${!VAR}"
+            fi
+            echo "[startup] ${VAR}=${SAFE_VALUE} (defined as environment variable)."
             continue
         fi
 
