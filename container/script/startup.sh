@@ -16,6 +16,8 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
         [TOKEN_URL]="tokenEndpointUrl"
         [SCOPE]="scope"
         [ISSUER_URL]="issuerIdentifier"
+         [PKJWT_KEY_PATH]="keyAliasName"
+        [PKJWT_CERT_PATH]="keyAliasName"
     )
     declare -A PROPS_KEY=(
         [CLIENT_ID]="OPENID_CLIENT_ID"
@@ -24,6 +26,17 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
         [SCOPE]="OPENID_SCOPE"
         [ISSUER_URL]=""
         [INTROSPECTION_URL]="OPENID_INTROSPECTION_URL"
+         [PKJWT_KEY_PATH]="OPENID_CLIENT_ASSERTION_ALIAS_NAME"
+        [PKJWT_CERT_PATH]="OPENID_CLIENT_ASSERTION_ALIAS_NAME"
+    )
+    # Maps: ENV_VAR_NAME -> value prefix/suffix to wrap around the extracted value
+    declare -A VALUE_PREFIX=(
+         [PKJWT_KEY_PATH]="/mcp-certs/private-keys/"
+        [PKJWT_CERT_PATH]="/mcp-certs/private-keys/"
+    )
+    declare -A VALUE_SUFFIX=(
+         [PKJWT_KEY_PATH]="/tls.key"
+        [PKJWT_CERT_PATH]="/tls.crt"
     )
 
     # Build list of files being parsed for the startup message
@@ -50,7 +63,11 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
         fi
     fi
 
-    for VAR in CLIENT_ID CLIENT_SECRET TOKEN_URL SCOPE ISSUER_URL INTROSPECTION_URL; do
+    # Snapshot which PKJWT vars were already set before the loop (pre-set env vars must not be file-checked)
+     PKJWT_KEY_PATH_PRESET="${PKJWT_KEY_PATH}"
+    PKJWT_CERT_PATH_PRESET="${PKJWT_CERT_PATH}"
+
+    for VAR in CLIENT_ID CLIENT_SECRET TOKEN_URL SCOPE ISSUER_URL INTROSPECTION_URL PKJWT_KEY_PATH PKJWT_CERT_PATH; do
         # Skip if already set
         if [ -n "${!VAR}" ]; then
             if [ "${VAR}" = "CLIENT_SECRET" ]; then
@@ -79,28 +96,50 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
                 for V_NAME in "${!XML_VARS[@]}"; do
                     VALUE="${VALUE//\$\{$V_NAME\}/${XML_VARS[$V_NAME]}}"
                 done
-                SOURCE="${XML_FILE}"
             fi
+            SOURCE="${XML_FILE}"
         fi
 
         # Fallback to properties file (only if a key is defined for this variable)
         if [ -z "${VALUE}" ] && [ -f "${PROPS_FILE}" ] && [ -n "${PROPS_KEY[$VAR]:-}" ]; then
-            VALUE=$(grep -oP "^${PROPS_KEY[$VAR]}=\K[^# ]+" "${PROPS_FILE}" | head -1)
-            [ -n "${VALUE}" ] && SOURCE="${PROPS_FILE}"
+            VALUE=$(sed -n "s/^${PROPS_KEY[$VAR]}=\([^# ]*\).*/\1/p" "${PROPS_FILE}" | head -1)
+            SOURCE="${PROPS_FILE}"
         fi
 
         if [ -n "${VALUE}" ]; then
+            # Apply value prefix/suffix if defined for this variable
+            if [ -n "${VALUE_PREFIX[$VAR]:-}" ]; then
+                VALUE="${VALUE_PREFIX[$VAR]}${VALUE}"
+            fi
+            if [ -n "${VALUE_SUFFIX[$VAR]:-}" ]; then
+                VALUE="${VALUE}${VALUE_SUFFIX[$VAR]}"
+            fi
             export "${VAR}=${VALUE}"
+
             if [ "${VAR}" = "CLIENT_SECRET" ]; then
                 SAFE_VALUE="${VALUE:0:1}*****${VALUE: -1}"
             else
                 SAFE_VALUE="${VALUE}"
             fi
+
             echo "[startup] ${VAR}=${SAFE_VALUE} (set from ${SOURCE})."
         else
             echo "[startup] ${VAR} not found in config files, leaving unset."
         fi
     done
+
+    # Verify that the PKJWT key and cert files exist (only when derived by this script, not pre-set).
+    # Unset both if either derived file is missing.
+    if [ -z "${PKJWT_KEY_PATH_PRESET}" ] || [ -z "${PKJWT_CERT_PATH_PRESET}" ]; then
+        MISSING=""
+        [ -n "${PKJWT_KEY_PATH}"  ] && [ ! -f "${PKJWT_KEY_PATH}"  ] && MISSING="${PKJWT_KEY_PATH}"
+        [ -n "${PKJWT_CERT_PATH}" ] && [ ! -f "${PKJWT_CERT_PATH}" ] && MISSING="${MISSING:+${MISSING}, }${PKJWT_CERT_PATH}"
+        if [ -n "${MISSING}" ]; then
+            echo "[startup] WARNING: PKJWT_KEY_PATH and PKJWT_CERT_PATH unset because file(s) not found: ${MISSING}."
+            unset PKJWT_KEY_PATH
+            unset PKJWT_CERT_PATH
+        fi
+    fi
 
 fi
 

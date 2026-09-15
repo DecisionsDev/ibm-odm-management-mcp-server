@@ -43,6 +43,8 @@ def run_startup(tmp_path, env_overrides=None, xml_content=None, props_content=No
         "echo \"SCOPE=${SCOPE}\"\n"
         "echo \"ISSUER_URL=${ISSUER_URL}\"\n"
         "echo \"INTROSPECTION_URL=${INTROSPECTION_URL}\"\n"
+        "echo \"PKJWT_KEY_PATH=${PKJWT_KEY_PATH}\"\n"
+        "echo \"PKJWT_CERT_PATH=${PKJWT_CERT_PATH}\"\n"
         "echo \"===MOCK_SERVER_END===\"\n"
     )
     mock_server.chmod(0o755)
@@ -63,7 +65,8 @@ def run_startup(tmp_path, env_overrides=None, xml_content=None, props_content=No
     env["AUTHOIDC_DIR"] = str(auth_dir)
 
     # Clean any current env vars that might interfere
-    for var in ["CLIENT_ID", "CLIENT_SECRET", "TOKEN_URL", "SCOPE", "ISSUER_URL", "INTROSPECTION_URL"]:
+    for var in ["CLIENT_ID", "CLIENT_SECRET", "TOKEN_URL", "SCOPE", "ISSUER_URL", "INTROSPECTION_URL",
+                "PKJWT_KEY_PATH", "PKJWT_CERT_PATH"]:
         env.pop(var, None)
 
     if env_overrides:
@@ -241,3 +244,96 @@ def test_startup_xml_with_nested_variables(tmp_path):
     assert parsed_vars.get("CLIENT_ID") == "test-id"
     assert parsed_vars.get("TOKEN_URL") == "https://example.com/v1/token"
 
+
+
+def test_pkjwt_paths_set_from_xml(tmp_path):
+    # keyAliasName in XML → startup log must show the derived paths even when unset due to missing files
+    alias = "privateKeyJwtAliasRS512"
+    xml = f"""<server>
+      <openidConnectClient id="default"
+                           clientId="xml-id"
+                           tokenEndpointAuthMethod="private_key_jwt"
+                           keyAliasName="{alias}" />
+    </server>"""
+    # /mcp-certs is hardcoded in startup.sh; files won't exist in the test environment,
+    # so both vars are unset after the existence check — verify the WARNING and alias appear.
+    parsed_vars, stdout, stderr = run_startup(tmp_path, xml_content=xml)
+
+    assert parsed_vars.get("PKJWT_KEY_PATH") == ""
+    assert parsed_vars.get("PKJWT_CERT_PATH") == ""
+    assert "WARNING" in stdout
+    assert alias in stdout
+
+
+def test_pkjwt_paths_set_from_props(tmp_path):
+    # OPENID_CLIENT_ASSERTION_ALIAS_NAME in properties fallback (XML present but without keyAliasName)
+    alias = "myPkjwtAlias"
+    xml = """<server>
+      <openidConnectClient id="default" clientId="xml-id" />
+    </server>"""
+    props = f"OPENID_CLIENT_ASSERTION_ALIAS_NAME={alias}\n"
+    parsed_vars, stdout, stderr = run_startup(tmp_path, xml_content=xml, props_content=props)
+
+    # Files don't exist at /mcp-certs/..., so both vars must be unset after the existence check
+    assert parsed_vars.get("PKJWT_KEY_PATH") == ""
+    assert parsed_vars.get("PKJWT_CERT_PATH") == ""
+    assert "WARNING" in stdout
+    assert alias in stdout
+
+
+def test_pkjwt_paths_already_set_not_overwritten(tmp_path):
+    # If PKJWT_KEY_PATH / PKJWT_CERT_PATH are already in the environment they must not be replaced
+    alias = "xmlAlias"
+    xml = f"""<server>
+      <openidConnectClient id="default"
+                           clientId="xml-id"
+                           keyAliasName="{alias}" />
+    </server>"""
+    env_overrides = {
+        "PKJWT_KEY_PATH": "/custom/path/tls.key",
+        "PKJWT_CERT_PATH": "/custom/path/tls.crt",
+    }
+    parsed_vars, stdout, stderr = run_startup(tmp_path, env_overrides=env_overrides, xml_content=xml)
+
+    assert parsed_vars.get("PKJWT_KEY_PATH") == "/custom/path/tls.key"
+    assert parsed_vars.get("PKJWT_CERT_PATH") == "/custom/path/tls.crt"
+
+
+def test_pkjwt_paths_unset_when_key_missing(tmp_path):
+    # tls.crt exists but tls.key is absent → both vars must be unset
+    alias = "myAlias"
+    xml = f"""<server>
+      <openidConnectClient id="default"
+                           clientId="xml-id"
+                           keyAliasName="{alias}" />
+    </server>"""
+    # Only create tls.crt, not tls.key
+    certs_dir = tmp_path / "mcp-certs" / "private-keys" / alias
+    certs_dir.mkdir(parents=True)
+    (certs_dir / "tls.crt").write_text("crt")
+
+    parsed_vars, stdout, stderr = run_startup(tmp_path, xml_content=xml)
+
+    assert parsed_vars.get("PKJWT_KEY_PATH") == ""
+    assert parsed_vars.get("PKJWT_CERT_PATH") == ""
+    assert "WARNING" in stdout
+
+
+def test_pkjwt_paths_unset_when_cert_missing(tmp_path):
+    # tls.key exists but tls.crt is absent → both vars must be unset
+    alias = "myAlias"
+    xml = f"""<server>
+      <openidConnectClient id="default"
+                           clientId="xml-id"
+                           keyAliasName="{alias}" />
+    </server>"""
+    # Only create tls.key, not tls.crt
+    certs_dir = tmp_path / "mcp-certs" / "private-keys" / alias
+    certs_dir.mkdir(parents=True)
+    (certs_dir / "tls.key").write_text("key")
+
+    parsed_vars, stdout, stderr = run_startup(tmp_path, xml_content=xml)
+
+    assert parsed_vars.get("PKJWT_KEY_PATH") == ""
+    assert parsed_vars.get("PKJWT_CERT_PATH") == ""
+    assert "WARNING" in stdout
