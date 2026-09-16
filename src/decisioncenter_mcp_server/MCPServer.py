@@ -375,6 +375,7 @@ def create_credentials(args):
         args.ssl_cert_path = merge_ssl_cert_paths(args.ssl_cert_path)
 
     if args.zenapikey:    # If zenapikey is provided, use it for authentication
+        logging.info(f"Using Zen API Key credentials")
         return Credentials(
             odm_url=args.url,
             odm_res_url=args.res_url,
@@ -385,22 +386,8 @@ def create_credentials(args):
             verify_ssl=verifyssl,
             verify_ssl_hostname=verifyssl_hostname,
         )
-    elif args.client_secret:  # OpenID Client Secret provided
-        return Credentials(
-            odm_url=args.url,
-            odm_res_url=args.res_url,
-            token_url=args.token_url,
-            scope=args.scope,
-            client_id=args.client_id,
-            client_secret=args.client_secret,
-            username=args.username,
-            password=args.password,
-            mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
-            ssl_cert_path=args.ssl_cert_path,
-            verify_ssl=verifyssl,
-            verify_ssl_hostname=verifyssl_hostname,
-        )
     elif args.pkjwt_key_path:  # OpenID PKJWT
+        logging.info(f"Using OpenID Connect with PKJWT")
         return Credentials(
             odm_url=args.url,
             odm_res_url=args.res_url,
@@ -415,7 +402,24 @@ def create_credentials(args):
             verify_ssl=verifyssl,
             verify_ssl_hostname=verifyssl_hostname,
         )
+    elif args.client_secret:  # OpenID Client Secret provided
+        logging.info(f"Using OpenID Connect with Client Secret")
+        return Credentials(
+            odm_url=args.url,
+            odm_res_url=args.res_url,
+            token_url=args.token_url,
+            scope=args.scope,
+            client_id=args.client_id,
+            client_secret=args.client_secret,
+            username=args.username,
+            password=args.password,
+            mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
+            ssl_cert_path=args.ssl_cert_path,
+            verify_ssl=verifyssl,
+            verify_ssl_hostname=verifyssl_hostname,
+        )
     else:  # Default to basic authentication
+        logging.info(f"Using Basic Auth")
         return Credentials(
             odm_url=args.url,
             odm_res_url=args.res_url,
