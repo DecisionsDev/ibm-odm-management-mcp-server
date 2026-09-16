@@ -88,6 +88,9 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
                 # Extract validationEndpointUrl only from openidConnectClient elements where
                 # validationMethod is absent (defaults to introspect) or is explicitly "introspect"
                 VALUE=$(xmllint --xpath "string((//*[local-name()='openidConnectClient'][not(@validationMethod) or @validationMethod='introspect'])[1]/@validationEndpointUrl)" "${XML_FILE}" 2>/dev/null)
+            elif [ "${VAR}" = "PKJWT_KEY_PATH" ] || [ "${VAR}" = "PKJWT_CERT_PATH" ]; then
+                # Extract keyAliasName from openidConnectClient elements where tokenEndpointAuthMethod is set to "private_key_jwt"
+                VALUE=$(xmllint --xpath "string((//*[local-name()='openidConnectClient'][@tokenEndpointAuthMethod='private_key_jwt'])[1]/@keyAliasName)" "${XML_FILE}" 2>/dev/null)
             elif [ -n "${XML_ATTR[$VAR]:-}" ]; then
                 VALUE=$(xmllint --xpath "string((//*[local-name()='openidConnectClient'])[1]/@${XML_ATTR[$VAR]})" "${XML_FILE}" 2>/dev/null)
             fi

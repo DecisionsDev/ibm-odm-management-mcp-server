@@ -287,6 +287,7 @@ def test_pkjwt_paths_already_set_not_overwritten(tmp_path):
     xml = f"""<server>
       <openidConnectClient id="default"
                            clientId="xml-id"
+                           tokenEndpointAuthMethod="private_key_jwt"
                            keyAliasName="{alias}" />
     </server>"""
     env_overrides = {
@@ -305,6 +306,7 @@ def test_pkjwt_paths_unset_when_key_missing(tmp_path):
     xml = f"""<server>
       <openidConnectClient id="default"
                            clientId="xml-id"
+                           tokenEndpointAuthMethod="private_key_jwt"
                            keyAliasName="{alias}" />
     </server>"""
     # Only create tls.crt, not tls.key
@@ -325,6 +327,7 @@ def test_pkjwt_paths_unset_when_cert_missing(tmp_path):
     xml = f"""<server>
       <openidConnectClient id="default"
                            clientId="xml-id"
+                           tokenEndpointAuthMethod="private_key_jwt"
                            keyAliasName="{alias}" />
     </server>"""
     # Only create tls.key, not tls.crt
@@ -337,3 +340,16 @@ def test_pkjwt_paths_unset_when_cert_missing(tmp_path):
     assert parsed_vars.get("PKJWT_KEY_PATH") == ""
     assert parsed_vars.get("PKJWT_CERT_PATH") == ""
     assert "WARNING" in stdout
+
+
+def test_pkjwt_paths_not_set_without_private_key_jwt_method(tmp_path):
+    # keyAliasName present but tokenEndpointAuthMethod is not equal to "private_key_jwt" (omitted actually)
+    #  → PKJWT_KEY_PATH / PKJWT_CERT_PATH must not be set
+    xml = """<server>
+      <openidConnectClient id="default" clientId="xml-id" keyAliasName="someAlias" />
+    </server>"""
+    parsed_vars, stdout, stderr = run_startup(tmp_path, xml_content=xml)
+
+    assert parsed_vars.get("PKJWT_KEY_PATH") == ""
+    assert parsed_vars.get("PKJWT_CERT_PATH") == ""
+    assert "WARNING" not in stdout
