@@ -17,6 +17,7 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
         [TOKEN_URL]="tokenEndpointUrl"
         [SCOPE]="scope"
         [ISSUER_URL]="issuerIdentifier"
+        # INTROSPECTION_URL is set from validationEndpointUrl with a custom logic
          [PKJWT_KEY_PATH]="keyAliasName"
         [PKJWT_CERT_PATH]="keyAliasName"
     )
