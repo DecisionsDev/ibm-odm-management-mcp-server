@@ -452,7 +452,7 @@ def init(args):
     )
 
     retry = os.getenv("STARTUP_RETRY_IF_FAILURE", "False")
-    retries_count  = int(os.getenv("STARTUP_RETRIES_COUNT",  7))
+    retries_count  = int(os.getenv("STARTUP_RETRIES_COUNT",  10))
     retries_period = int(os.getenv("STARTUP_RETRIES_PERIOD", 30))
 
     for attempt in range(retries_count):
@@ -460,8 +460,7 @@ def init(args):
             server.update_repository()
         except Exception as e:
             if retry != "False":
-                if attempt == 0:
-                    server.logger.info(f"Failed to retrieve the tools. Will retry {retries_count -1} more times every {retries_period} seconds")
+                server.logger.info(f"Failed to retrieve the tools. Will retry {retries_count -1} more times every {retries_period} seconds")
                 time.sleep(retries_period)
                 continue
             elif server.use_user_credentials and not isinstance(e, ValueError):
