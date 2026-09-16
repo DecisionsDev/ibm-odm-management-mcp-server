@@ -41,6 +41,10 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
         [PKJWT_CERT_PATH]="/tls.crt"
     )
 
+    # Snapshot which PKJWT vars were already set before the loop (pre-set env vars must not be file-checked)
+     PKJWT_KEY_PATH_PRESET="${PKJWT_KEY_PATH}"
+    PKJWT_CERT_PATH_PRESET="${PKJWT_CERT_PATH}"
+
     # Build list of files being parsed for the startup message
     PARSING_FILES=""
     [ -f "${XML_FILE}" ]   && PARSING_FILES="${XML_FILE}"
@@ -64,10 +68,6 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
             done
         fi
     fi
-
-    # Snapshot which PKJWT vars were already set before the loop (pre-set env vars must not be file-checked)
-     PKJWT_KEY_PATH_PRESET="${PKJWT_KEY_PATH}"
-    PKJWT_CERT_PATH_PRESET="${PKJWT_CERT_PATH}"
 
     for VAR in CLIENT_ID CLIENT_SECRET TOKEN_URL SCOPE ISSUER_URL INTROSPECTION_URL PKJWT_KEY_PATH PKJWT_CERT_PATH; do
         # Skip if already set
