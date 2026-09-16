@@ -25,30 +25,42 @@ import tempfile
 import re
 import xml.etree.ElementTree
 import copy
+from typing import Any
 
 # adds a parameter into 'input_schema' (for the MCP server client (the AI agent)) and in 'parameters' (for the MCP server)
 # used to generate the tools for both REST APIs (DC and RES Console)
 def add_param(input_schema, parameters, 
-              param_in, param_name, param_type, param_format, 
+              param_in, param_name, param_type, param_format, param_items,
               param_enum, param_enumNames, 
               param_desc, param_required):
 
-    # workaround
-    if param_enum and len(param_enum) == 1: # this is likely to be an error -> create a list out of the single element
-        param_enum = param_enum[0].split(',')
-        param_enum = [enum.strip() for enum in param_enum]
+    # workaround to cope with enum list containing one single element whose value looks like a list
+    # -> create a list out of the single element
+    def get_enum_list(enum_list):
+        if enum_list and len(enum_list) == 1:
+            enum_list = [enum.strip() for enum in enum_list[0].split(',')]
+        return enum_list
+
+    param_enum = get_enum_list(param_enum)
+
+    items: dict[str, Any] | None = None
+    if param_items and param_items.type.value == 'object' and hasattr(param_items, 'properties'):
+        items = {'items': {'type': 'object', 'properties': {}}}
+        for item in param_items.properties:
+            items['items']['properties'][item.name] = {'type':         item.schema.type.value,
+                                                       'description':  item.schema.description}
+            if item.schema.enum:
+                items['items']['properties'][item.name] |= {'enum':    get_enum_list(item.schema.enum)}
+    elif param_type == 'array':
+        items = {'items': {'type': 'string'}}
+        if param_name == 'roles':
+            items['items']['enum'] = ['rtsAdministrator','rtsInstaller','rtsConfigManager','rtsUser']
 
     # add in input_schema (for the MCP client) - https://modelcontextprotocol.io/specification/draft/schema#legacytitledenumschema
     if len(input_schema) == 0:
         input_schema |= {'type': 'object', 'properties': {}, 'required': []}
     input_schema.get('properties')[param_name] = {'type':        param_type}                                        | \
-                                                ({'items': {'type': 'string'}}    if param_type == 'array' else {}) | \
-                                                ({'items': {'enum': [
-                                                                'rtsAdministrator',
-                                                                'rtsInstaller', 
-                                                                'rtsConfigManager', 
-                                                                'rtsUser']}}      if param_type == 'array' and 
-                                                                                     param_name == 'roles' else {}) | \
+                                                (items                            if items                 else {}) | \
                                                 ({'enum':        param_enum}      if param_enum            else {}) | \
                                                 ({'enumNames':   param_enumNames} if param_enumNames       else {}) | \
                                                 ({'description': param_desc}      if param_desc            else {})
@@ -359,6 +371,7 @@ class DecisionCenterManager:
                                   param_name      = props.name,
                                   param_type      = getattr(props.schema.type,   'value',      'string')  if hasattr(props.schema,'type')   else 'string',
                                   param_format    = getattr(props.schema.format, 'value',       None)     if hasattr(props.schema,'format') else None,
+                                  param_items     = getattr(props.schema,        'items',       None),
                                   param_enum      = getattr(props.schema,        'enum',        None),
                                   param_enumNames = None,
                                   param_desc      = getattr(props.schema,        'description', None),
@@ -369,6 +382,7 @@ class DecisionCenterManager:
                               param_name      = getattr(element,               'name',       'body'),
                               param_type      = getattr(element.schema.type,   'value',      'string')  if hasattr(element.schema,'type')   else 'string',
                               param_format    = getattr(element.schema.format, 'value',       None)     if hasattr(element.schema,'format') else None,
+                              param_items     = None,
                               param_enum      = getattr(element.schema,        'enum',        None),
                               param_enumNames = None,
                               param_desc      = getattr(element.schema,        'description', None),
@@ -413,6 +427,7 @@ class DecisionCenterManager:
                                   param_name      = parameter.name,
                                   param_type      = type,
                                   param_format    = None,
+                                  param_items     = None,
                                   param_enum      = getattr(parameter, 'enum',        None),
                                   param_enumNames = None,
                                   param_desc      = getattr(parameter, 'description', None),
@@ -663,6 +678,7 @@ class DecisionCenterManager:
                         param_type      = 'string', 
                         param_name      = ('file'   if mediaType == 'application/octet-stream' else 'value'),
                         param_format    = ('binary' if mediaType == 'application/octet-stream' else None),
+                        param_items     = None,
                         param_enum      = None,
                         param_enumNames = None,
                         param_desc      = param_descr, 
@@ -849,6 +865,7 @@ class DecisionCenterManager:
                                       param_name, 
                                       param_type, 
                                       None,  # param_format
+                                      None,  # param_items
                                       param_enum,
                                       param_enumNames,
                                       param_desc, 
