@@ -36,6 +36,7 @@ from .Credentials import Credentials
 from .DecisionCenterManager import DecisionCenterManager
 from .DecisionCenterEndpoint import DecisionCenterEndpoint
 from .ToolTrace import DiskTraceStorage
+from .utils.ssl_utils import merge_ssl_cert_paths
 
 INSTRUCTIONS = """
 IBM ODM Decision Center MCP server
@@ -211,17 +212,16 @@ class MCPServer:
         if credentials is None:
             credentials = self.credentials
 
-        # generate the MCP tools for Decision Center REST API
-        if len(self.repository_dc) == 0 and credentials.odm_url:
-            self.repository_dc, self.repository_dc_admin = self.manager.generate_tools_format(self.manager.fetch_endpoints(credentials), self.tags, self.tools, self.no_tools)
-
         # generate the MCP tools for Decision Server console REST API (aka RES console)
         if len(self.repository_res_monitor) == 0 and credentials.odm_res_url:
             self.repository_res_monitor, self.repository_res_deployer = self.manager.generate_res_tools(self.manager.fetch_res_api_endpoints(credentials), self.tags, self.tools, self.no_tools)
 
+        # generate the MCP tools for Decision Center REST API
+        if len(self.repository_dc) == 0 and credentials.odm_url:
+            self.repository_dc, self.repository_dc_admin = self.manager.generate_tools_format(self.manager.fetch_endpoints(credentials), self.tags, self.tools, self.no_tools)
+
         # save traces of all the tools
-        if credentials == self.credentials:
-            self.trace_recorder.save(dict(self.repository_dc_admin, **self.repository_res_deployer))
+        self.trace_recorder.save(dict(self.repository_dc_admin, **self.repository_res_deployer))
 
     async def list_tools(self) -> list[Tool]:
         """
@@ -230,11 +230,11 @@ class MCPServer:
         """
         if self.use_user_credentials():
             credentials = self.get_user_credentials()
-
-            # update the list of tools (unless it was already generated during startup)
-            self.update_repository(credentials)
         else:
             credentials = self.credentials
+
+        # update the list of tools (skipped if it was already generated during startup)
+        self.update_repository(credentials)
 
         # select the list of tools based on the roles granted to the credentials used
         if   credentials.isDcAdmin:     dc_repository = self.repository_dc_admin
@@ -370,7 +370,12 @@ def create_credentials(args):
     verifyssl = args.verifyssl != "False"
     verifyssl_hostname = args.verifyssl_hostname != "False"
 
+    # Resolve a comma/semicolon-separated list of cert paths into a single file
+    if args.ssl_cert_path:
+        args.ssl_cert_path = merge_ssl_cert_paths(args.ssl_cert_path)
+
     if args.zenapikey:    # If zenapikey is provided, use it for authentication
+        logging.info(f"Using Zen API Key credentials")
         return Credentials(
             odm_url=args.url,
             odm_res_url=args.res_url,
@@ -381,22 +386,8 @@ def create_credentials(args):
             verify_ssl=verifyssl,
             verify_ssl_hostname=verifyssl_hostname,
         )
-    elif args.client_secret:  # OpenID Client Secret provided
-        return Credentials(
-            odm_url=args.url,
-            odm_res_url=args.res_url,
-            token_url=args.token_url,
-            scope=args.scope,
-            client_id=args.client_id,
-            client_secret=args.client_secret,
-            username=args.username,
-            password=args.password,
-            mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
-            ssl_cert_path=args.ssl_cert_path,
-            verify_ssl=verifyssl,
-            verify_ssl_hostname=verifyssl_hostname,
-        )
     elif args.pkjwt_key_path:  # OpenID PKJWT
+        logging.info(f"Using OpenID Connect with PKJWT")
         return Credentials(
             odm_url=args.url,
             odm_res_url=args.res_url,
@@ -411,12 +402,29 @@ def create_credentials(args):
             verify_ssl=verifyssl,
             verify_ssl_hostname=verifyssl_hostname,
         )
-    else:  # Default to basic authentication
+    elif args.client_secret:  # OpenID Client Secret provided
+        logging.info(f"Using OpenID Connect with Client Secret")
         return Credentials(
             odm_url=args.url,
             odm_res_url=args.res_url,
-            username=args.username if args.username else "odmAdmin",
-            password=args.password if args.password else "odmAdmin",
+            token_url=args.token_url,
+            scope=args.scope,
+            client_id=args.client_id,
+            client_secret=args.client_secret,
+            username=args.username,
+            password=args.password,
+            mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
+            ssl_cert_path=args.ssl_cert_path,
+            verify_ssl=verifyssl,
+            verify_ssl_hostname=verifyssl_hostname,
+        )
+    else:  # Default to basic authentication
+        logging.info(f"Using Basic Auth")
+        return Credentials(
+            odm_url=args.url,
+            odm_res_url=args.res_url,
+            username=args.username,
+            password=args.password,
             mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
             ssl_cert_path=args.ssl_cert_path,
             verify_ssl=verifyssl,
@@ -442,10 +450,31 @@ def init(args):
         issuer_url      = args.issuer_url,
         introspection_url = args.introspection_url,
     )
-    if server.use_user_credentials:
-        # the MCP server credentials are optional is this case
-        credentials.ignoreAuthErrors = True
-    server.update_repository()
+
+    retry = os.getenv("STARTUP_RETRY_IF_FAILURE", "False")
+    retries_count  = int(os.getenv("STARTUP_RETRIES_COUNT",  10))
+    retries_period = int(os.getenv("STARTUP_RETRIES_PERIOD", 30))
+
+    attempts_left = retries_count
+    while attempts_left > 0:
+        attempts_left -= 1
+        try:
+            server.update_repository()
+        except Exception as e:
+            if retry != "False":
+                if attempts_left > 0:
+                    server.logger.info(f"Failed to retrieve the tools. Will retry {attempts_left} more times every {retries_period} seconds")
+                time.sleep(retries_period)
+                continue
+            elif server.use_user_credentials and not isinstance(e, ValueError):
+                # in this mode, the MCP server could be missing the required credentials to log in to ODM,  but the users credentials would enable to log in to ODM later on.
+                # don't raise the exception as it would stop the MCP server, unless it is a misconfiguration
+                pass
+            else:
+                # abort as the MCP server could be misconfigured
+                raise(e)
+        break
+
     return server
 
 def parse_arguments():
@@ -461,7 +490,7 @@ def parse_arguments():
     parser.add_argument("--scope",             type=str, default=os.getenv("SCOPE", "openid"), help="OpenID Connect scope using when requesting an access token using Client Credentials (optional)")
     parser.add_argument("--verifyssl",         type=str, default=os.getenv("VERIFY_SSL", "True"), choices=["True", "False"], help="Enable SSL check. Default is True (SSL verification enabled (to check that the server certificate is valid and trusted)).")
     parser.add_argument("--verifyssl-hostname",type=str, default=os.getenv("VERIFY_SSL_HOSTNAME", "False"), choices=["True", "False"], help="Enable TLS hostname verification. Default is False (TLS hostname verification disabled for compatibility). The TLS hostname verification ensures the MCP server connects to the intended server, not a malicious interceptor by checking if the domain name in the requested URL exactly matches the Common Name (CN) or Subject Alternative Name (SAN) fields in the server’s digital certificate.")
-    parser.add_argument("--ssl-cert-path",     type=str, default=os.getenv("SSL_CERT_PATH"), help="Path to the SSL certificate file. If not provided, defaults to system certificates.")
+    parser.add_argument("--ssl-cert-path",     type=str, default=os.getenv("SSL_CERT_PATH"), help="Semi-colon or comma-separated list of paths (files or directories) containing trusted SSL certificates. When a directory is specified, only the files with *.pem or *.crt extension are taken into account. If not provided, defaults to the system certificates")
     parser.add_argument("--pkjwt-cert-path",   type=str, default=os.getenv("PKJWT_CERT_PATH"), help="Path to the certificate for PKJWT authentication (mandatory for PKJWT).")
     parser.add_argument("--pkjwt-key-path",    type=str, default=os.getenv("PKJWT_KEY_PATH"),  help="Path to the private key for PKJWT authentication (mandatory for PKJWT).")
     parser.add_argument("--pkjwt-key-password",type=str, default=os.getenv("PKJWT_KEY_PASSWORD"), help="Password to decrypt the private key for PKJWT authentication. Only needed if the key is password-protected.")

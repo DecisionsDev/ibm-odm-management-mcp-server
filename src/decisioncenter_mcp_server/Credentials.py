@@ -116,7 +116,6 @@ class Credentials:
             self.mtls_key_data     = self.get_unencrypted_key_data(mtls_key_path, mtls_key_password)
 
         self.token = token
-        self.ignoreAuthErrors = False
 
     def get_auth(self):
         if self.token:
@@ -136,9 +135,7 @@ class Credentials:
         elif self.client_id or self.client_secret:
             if not self.client_id or not self.token_url:
                 raise ValueError("Both 'client_id' and 'token_url' are required for OpenId authentication.")
-            if     self.username and not self.password or \
-               not self.username and     self.password:
-                raise ValueError("Both 'username' and 'password' are required for OAuth password grant.")
+            self.logger.debug("Using password grant" if self.username and self.password else "Using client credentials")
 
             # Check if we're using PKJWT (certificate-based) or client_secret
             if self.pkjwt_cert_path:
@@ -284,8 +281,8 @@ class Credentials:
             headers = self.get_auth()
             session.headers.update(headers)
         except ValueError as e:
-            if not self.ignoreAuthErrors:
-                raise e
+            self.logger.exception("Failed to create auth header")
+            raise e
 
         if self.mtls_cert_path:
             session.cert = self.mtls_cert_tuple()
