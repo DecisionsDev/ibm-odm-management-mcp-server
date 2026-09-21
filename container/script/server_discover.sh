@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 curl ${CURL_OPTS} \
+    -H "x-probe: true" \
     -H "mcp-method: server/discover" \
     -H "mcp-protocol-version: 2026-07-28" \
     -H "Accept: application/json,text/event-stream" \
