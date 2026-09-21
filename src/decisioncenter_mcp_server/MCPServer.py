@@ -362,7 +362,8 @@ class MCPServer:
             import types
             async def _patched_run_http(inner_self, **kwargs):
                 import uvicorn
-                starlette_app = inner_self.streamable_http_app(**kwargs)
+                app_kwargs = {k: v for k, v in kwargs.items() if k != "port"}
+                starlette_app = inner_self.streamable_http_app(**app_kwargs)
                 wrapped = _wrap_app_with_access_log_filter(starlette_app)
                 config = uvicorn.Config(
                     wrapped,
