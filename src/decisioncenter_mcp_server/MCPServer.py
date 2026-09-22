@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from typing import Optional
-from contextvars import ContextVar
+import socket
 from mcp_types import Tool, Resource, CallToolResult, TextContent
 from mcp.server.mcpserver.context import Context
 from mcp.server.mcpserver.exceptions import ToolError
@@ -351,64 +351,28 @@ class MCPServer:
         self.server.list_tools = self.list_tools
         self.server.call_tool  = self.call_tool
 
-        # When running in a pod with probes enabled (streamable-http transport and STARTUP_RETRY_IF_FAILURE=True),
-        # suppress access-log entries for requests from probes (that carry the x-probe header).
-        probes_enabled = (
-            self.transport == "streamable-http"
-            and os.getenv("STARTUP_RETRY_IF_FAILURE", "False") == "True"
-        )
-        if probes_enabled:
-            logging.getLogger("uvicorn.access").addFilter(_SuppressAccessLogForProbes())
-            import types
-            async def _patched_run_http(inner_self, **kwargs):
-                import uvicorn
-                app_kwargs = {k: v for k, v in kwargs.items() if k != "port"}
-                starlette_app = inner_self.streamable_http_app(**app_kwargs)
-                wrapped = _wrap_app_with_access_log_filter(starlette_app)
-                config = uvicorn.Config(
-                    wrapped,
-                    host=kwargs["host"],
-                    port=kwargs["port"],
-                    log_level=inner_self.settings.log_level.lower(),
-                )
-                await uvicorn.Server(config).serve()
-            self.server.run_streamable_http_async = types.MethodType(  # type: ignore[method-assign]
-                _patched_run_http, self.server
-            )
-
         self.server.run(transport=self.transport,
                         host=self.host,
                         port=self.port,
                         streamable_http_path=self.path,
         )
 
-# ContextVar set to True by the ASGI middleware when the request carries a
-# header that should be silenced in the access log.
-_suppress_access_log: ContextVar[bool] = ContextVar("_suppress_access_log", default=False)
-
-_SUPPRESS_HEADER  = b"x-probe"
-_SUPPRESS_VALUE   = b"true"
-
-
 class _SuppressAccessLogForProbes(logging.Filter):
-    """Drop uvicorn access log entries flagged by the ASGI middleware."""
+    """Drop uvicorn access-log entries whose client address matches the local host IP.
+
+    Uvicorn passes the client address as ``record.args[0]`` in the format ``"<ip>:<port>"``
+    """
+
+    def __init__(self, local_ip: str) -> None:
+        super().__init__()
+        self._prefix = local_ip + ":"
 
     def filter(self, record: logging.LogRecord) -> bool:
-        return not _suppress_access_log.get()
+        args = record.args
+        return not (isinstance(args, tuple) and args and str(args[0]).startswith(self._prefix))
 
 
-def _wrap_app_with_access_log_filter(app):
-    """Return an ASGI wrapper that sets the suppression flag for matching requests."""
-    async def middleware(scope, receive, send):
-        if scope.get("type") == "http":
-            headers = dict(scope.get("headers", []))
-            if headers.get(_SUPPRESS_HEADER) == _SUPPRESS_VALUE:
-                _suppress_access_log.set(True)
-        await app(scope, receive, send)
-    return middleware
-
-
-def init_logging(level_name):
+def init_logging(level_name, transport="stdio"):
     level=getattr(logging, level_name, logging.INFO)
     logging.basicConfig(
         level=level,
@@ -416,6 +380,12 @@ def init_logging(level_name):
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     logging.info(f"Running Python {sys.version_info}. Logging level set to: {logging.getLevelName(level)}")
+    # When running in a pod with probes enabled (streamable-http transport and STARTUP_RETRY_IF_FAILURE=True),
+    # suppress access-log entries for requests originating from the same host (i.e. probes).
+    # The local IP is resolved once here so we pay the DNS cost only at startup.
+    if transport == "streamable-http" and os.getenv("STARTUP_RETRY_IF_FAILURE", "False") == "True":
+        local_ip = socket.gethostbyname(socket.gethostname())
+        logging.getLogger("uvicorn.access").addFilter(_SuppressAccessLogForProbes(local_ip))
 
 def create_credentials(args):
     verifyssl = args.verifyssl != "False"
@@ -483,7 +453,7 @@ def create_credentials(args):
         )
 
 def init(args):
-    init_logging(args.log_level)
+    init_logging(args.log_level, args.transport)
     credentials = create_credentials(args)
     server = MCPServer(
         credentials     = credentials,

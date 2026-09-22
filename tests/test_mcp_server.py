@@ -608,3 +608,46 @@ def test_server_start_with_sse_transport():
         
         # Verify manager was initialized
         assert server.manager is not None
+
+
+# ---------------------------------------------------------------------------
+# Tests for the access-log suppression filter used when probes are enabled
+# ---------------------------------------------------------------------------
+
+import logging as _logging
+from decisioncenter_mcp_server.MCPServer import _SuppressAccessLogForProbes
+
+
+def _make_record(client_addr: str) -> _logging.LogRecord:
+    """Build a uvicorn-style access log record with client_addr as args[0]."""
+    record = _logging.LogRecord("uvicorn.access", _logging.INFO, "", 0, '%s - "%s" %s', (), None)
+    record.args = (client_addr, "GET / HTTP/1.1", "200 OK")
+    return record
+
+
+def test_probes_enabled_same_host_is_suppressed():
+    """A request from the local IP must be filtered out (filter returns False)."""
+    local_ip = "10.0.0.1"
+    f = _SuppressAccessLogForProbes(local_ip)
+    assert f.filter(_make_record("10.0.0.1:12345")) is False
+
+
+def test_probes_enabled_different_host_is_not_suppressed():
+    """A request from a different IP must pass through (filter returns True)."""
+    local_ip = "10.0.0.1"
+    f = _SuppressAccessLogForProbes(local_ip)
+    assert f.filter(_make_record("10.0.0.2:12345")) is True
+
+
+def test_probes_enabled_logging_filter_passes_when_not_suppressed():
+    """A record with no args tuple passes through (non-access-log record)."""
+    f = _SuppressAccessLogForProbes("10.0.0.1")
+    record = _logging.LogRecord("uvicorn.access", _logging.INFO, "", 0, "plain message", (), None)
+    assert f.filter(record) is True
+
+
+def test_probes_enabled_logging_filter_drops_when_suppressed():
+    """IP prefix match is exact: 10.0.0.10 must not match local_ip 10.0.0.1."""
+    f = _SuppressAccessLogForProbes("10.0.0.1")
+    # 10.0.0.10 starts with "10.0.0.1" but not "10.0.0.1:" — must NOT be suppressed
+    assert f.filter(_make_record("10.0.0.10:12345")) is True
