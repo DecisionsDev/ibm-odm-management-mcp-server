@@ -20,7 +20,7 @@ from mcp_types import Tool, TextContent
 from mcp.server import MCPServer as SDK_MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 import json
-from decisioncenter_mcp_server.MCPServer   import MCPServer, parse_arguments, create_credentials, init
+from decisioncenter_mcp_server.MCPServer   import MCPServer, parse_arguments, create_credentials, init, init_logging
 from decisioncenter_mcp_server.Credentials import Credentials
 
 # Test fixtures
@@ -747,6 +747,7 @@ def test_probes_enabled_configure_logging_is_patched_on_start():
         mock_fastmcp = mock_cls.return_value
         mock_fastmcp.run = Mock()
 
+        init_logging("INFO", "streamable-http")
         server.start()
 
         # configure_logging must have been replaced with the wrapper

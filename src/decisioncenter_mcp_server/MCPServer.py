@@ -351,19 +351,6 @@ class MCPServer:
         self.server.list_tools = self.list_tools
         self.server.call_tool  = self.call_tool
 
-        # suppress access logs originating from probes when running in a k8s pod
-        running_in_pod = os.getenv("STARTUP_RETRY_IF_FAILURE", "False") != "False"
-        if running_in_pod and self.transport == "streamable-http":
-            import uvicorn.config as _uvicorn_config
-            probe_filter = _SuppressAccessLogForProbes(local_ip=socket.gethostbyname(socket.gethostname()))
-            _original_configure_logging = _uvicorn_config.Config.configure_logging
-
-            def _configure_logging_with_filter(self) -> None:  # type: ignore[override]
-                _original_configure_logging(self)
-                logging.getLogger("uvicorn.access").addFilter(probe_filter)
-
-            _uvicorn_config.Config.configure_logging = _configure_logging_with_filter
-
         self.server.run(transport=self.transport,
                         host=self.host,
                         port=self.port,
@@ -392,7 +379,7 @@ class _SuppressAccessLogForProbes(logging.Filter):
         return not any(client.startswith(p) for p in self._prefixes)
 
 
-def init_logging(level_name):
+def init_logging(level_name, transport):
     level=getattr(logging, level_name, logging.INFO)
     logging.basicConfig(
         level=level,
@@ -400,6 +387,20 @@ def init_logging(level_name):
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     logging.info(f"Running Python {sys.version_info}. Logging level set to: {logging.getLevelName(level)}")
+
+    # suppress access logs originating from probes when running in a k8s pod
+    running_in_pod = os.getenv("STARTUP_RETRY_IF_FAILURE", "False") != "False"
+    if running_in_pod and transport == "streamable-http":
+        import uvicorn.config as _uvicorn_config
+        probe_filter = _SuppressAccessLogForProbes(local_ip=socket.gethostbyname(socket.gethostname()))
+        _original_configure_logging = _uvicorn_config.Config.configure_logging
+
+        def _configure_logging_with_filter(self) -> None:  # type: ignore[override]
+            _original_configure_logging(self)
+            logging.getLogger("uvicorn.access").addFilter(probe_filter)
+
+        _uvicorn_config.Config.configure_logging = _configure_logging_with_filter
+
 
 def create_credentials(args):
     verifyssl = args.verifyssl != "False"
@@ -467,7 +468,7 @@ def create_credentials(args):
         )
 
 def init(args):
-    init_logging(args.log_level)
+    init_logging(args.log_level, args.transport)
     credentials = create_credentials(args)
     server = MCPServer(
         credentials     = credentials,
