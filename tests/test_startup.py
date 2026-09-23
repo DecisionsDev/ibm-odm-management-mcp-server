@@ -200,6 +200,23 @@ def test_startup_already_set_env_vars_skipped(tmp_path):
     # Pre-set environment variables must not be overwritten
     assert parsed_vars.get("CLIENT_ID") == "already-set-id"
     assert parsed_vars.get("CLIENT_SECRET") == "already-set-secret"
+    # Default LOG_LEVEL is not DEBUG, so client secret should be fully obfuscated in logs
+    assert "[startup] CLIENT_SECRET=***** (defined as environment variable)." in stdout
+
+
+def test_startup_client_secret_obfuscation_debug_mode(tmp_path):
+    xml = """<server>
+      <openidConnectClient id="default"
+                           clientId="xml-id"
+                           clientSecret="mySecret123" />
+    </server>"""
+    parsed_vars, stdout, stderr = run_startup(
+        tmp_path,
+        env_overrides={"LOG_LEVEL": "DEBUG"},
+        xml_content=xml
+    )
+    assert parsed_vars.get("CLIENT_SECRET") == "mySecret123"
+    assert "[startup] CLIENT_SECRET=m*****3 (set from " in stdout
 
 
 def test_startup_xml_with_variables(tmp_path):
