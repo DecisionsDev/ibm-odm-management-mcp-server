@@ -370,3 +370,52 @@ def test_pkjwt_paths_not_set_without_private_key_jwt_method(tmp_path):
     assert parsed_vars.get("PKJWT_KEY_PATH") == ""
     assert parsed_vars.get("PKJWT_CERT_PATH") == ""
     assert "WARNING" not in stdout
+def test_startup_xml_discovery_endpoint(tmp_path):
+    import http.server
+    import threading
+
+    # Start a mock HTTP server to return OIDC discovery JSON
+    discovery_data = {
+        "issuer": "https://auth.example.com/realm",
+        "token_endpoint": "https://auth.example.com/realm/token",
+        "introspection_endpoint": "https://auth.example.com/realm/introspect"
+    }
+    
+    class DiscoveryHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            import json
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(discovery_data).encode("utf-8"))
+
+        def log_message(self, format, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), DiscoveryHandler)
+    port = server.server_port
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+
+    try:
+        discovery_url = f"http://127.0.0.1:{port}/.well-known/openid-configuration"
+        xml = f"""<server>
+          <openidConnectClient id="default"
+                               clientId="disc-client"
+                               clientSecret="disc-secret"
+                               scope="openid"
+                               discoveryEndpointUrl="{discovery_url}" />
+        </server>"""
+        parsed_vars, stdout, stderr = run_startup(tmp_path, xml_content=xml)
+
+        assert parsed_vars.get("CLIENT_ID") == "disc-client"
+        assert parsed_vars.get("CLIENT_SECRET") == "disc-secret"
+        assert parsed_vars.get("TOKEN_URL") == "https://auth.example.com/realm/token"
+        assert parsed_vars.get("ISSUER_URL") == "https://auth.example.com/realm/realm" or parsed_vars.get("ISSUER_URL") == "https://auth.example.com/realm"
+        assert parsed_vars.get("INTROSPECTION_URL") == "https://auth.example.com/realm/introspect"
+        assert f"TOKEN_URL=https://auth.example.com/realm/token (set from {discovery_url})" in stdout
+        assert f"ISSUER_URL=https://auth.example.com/realm (set from {discovery_url})" in stdout
+        assert f"INTROSPECTION_URL=https://auth.example.com/realm/introspect (set from {discovery_url})" in stdout
+    finally:
+        server.shutdown()
+        server.server_close()
