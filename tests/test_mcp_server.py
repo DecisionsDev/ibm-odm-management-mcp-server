@@ -20,7 +20,7 @@ from mcp_types import Tool, TextContent
 from mcp.server import MCPServer as SDK_MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 import json
-from decisioncenter_mcp_server.MCPServer   import MCPServer, parse_arguments, create_credentials, init
+from decisioncenter_mcp_server.MCPServer   import MCPServer, parse_arguments, create_credentials, init, init_logging
 from decisioncenter_mcp_server.Credentials import Credentials
 
 # Test fixtures
@@ -110,7 +110,12 @@ def test_server_initialization(mcp_server):
     ),
 ])
 def test_parse_arguments(args, expected):  # Added 'expected' parameter
-    with patch('sys.argv', ['script'] + args):
+    with patch('sys.argv', ['script'] + args), \
+         patch.dict('os.environ', {}, clear=False) as env:
+        env.pop('PORT', None)
+        env.pop('HOST', None)
+        env.pop('TRANSPORT', None)
+        env.pop('MOUNT_PATH', None)
         parsed_args = parse_arguments()
         for key, value in expected.items():
             assert getattr(parsed_args, key) == value
@@ -608,3 +613,177 @@ def test_server_start_with_sse_transport():
         
         # Verify manager was initialized
         assert server.manager is not None
+
+
+# ---------------------------------------------------------------------------
+# Tests for the access-log suppression filter used when probes are enabled
+# ---------------------------------------------------------------------------
+
+import logging as _logging
+from decisioncenter_mcp_server.MCPServer import _SuppressAccessLogForProbes
+
+
+def _make_record(client_addr: str, method: str = "GET", path: str = "/", status_code: int = 200) -> _logging.LogRecord:
+    """Build a uvicorn-style access log record matching the real 5-element args tuple.
+
+    Uvicorn emits: logger.info('%s - "%s %s HTTP/%s" %d', client_addr, method, path, http_version, status_code)
+    so record.args is (client_addr, method, path, http_version, status_code).
+    """
+    record = _logging.LogRecord(
+        "uvicorn.access", _logging.INFO, "", 0,
+        '%s - "%s %s HTTP/%s" %d',
+        (),
+        None,
+    )
+    record.args = (client_addr, method, path, "1.1", status_code)
+    return record
+
+
+def test_probes_enabled_same_host_is_suppressed():
+    """A request from the local IP must be filtered out (filter returns False)."""
+    local_ip = "10.0.0.1"
+    f = _SuppressAccessLogForProbes(local_ip)
+    assert f.filter(_make_record("10.0.0.1:12345")) is False
+
+
+def test_probes_enabled_different_host_is_not_suppressed():
+    """A request from a different IP must pass through (filter returns True)."""
+    local_ip = "10.0.0.1"
+    f = _SuppressAccessLogForProbes(local_ip)
+    assert f.filter(_make_record("10.0.0.2:12345")) is True
+
+
+def test_probes_enabled_logging_filter_passes_when_not_suppressed():
+    """A record with no args tuple passes through (non-access-log record)."""
+    f = _SuppressAccessLogForProbes("10.0.0.1")
+    record = _logging.LogRecord("uvicorn.access", _logging.INFO, "", 0, "plain message", (), None)
+    assert f.filter(record) is True
+
+
+def test_probes_enabled_logging_filter_drops_when_suppressed():
+    """IP prefix match is exact: 10.0.0.10 must not match local_ip 10.0.0.1."""
+    f = _SuppressAccessLogForProbes("10.0.0.1")
+    # 10.0.0.10 starts with "10.0.0.1" but not "10.0.0.1:" — must NOT be suppressed
+    assert f.filter(_make_record("10.0.0.10:12345")) is True
+
+
+def test_probes_enabled_401_post_from_same_pod_ip_is_suppressed():
+    """A 401 POST /mcp from the pod's own IP (probe auth failure) must be suppressed."""
+    local_ip = "10.0.0.1"
+    f = _SuppressAccessLogForProbes(local_ip)
+    assert f.filter(_make_record("10.0.0.1:41008", method="POST", path="/mcp", status_code=401)) is False
+
+
+def test_probes_enabled_401_post_from_loopback_is_suppressed():
+    """A 401 POST /mcp arriving via 127.0.0.1 must be suppressed even when the
+    resolved pod IP is different — loopback is always treated as local."""
+    local_ip = "10.0.0.1"
+    f = _SuppressAccessLogForProbes(local_ip)
+    assert f.filter(_make_record("127.0.0.1:41008", method="POST", path="/mcp", status_code=401)) is False
+
+
+def test_probes_enabled_401_post_from_different_host_is_not_suppressed():
+    """A 401 POST /mcp from a different IP must still pass through."""
+    local_ip = "10.0.0.1"
+    f = _SuppressAccessLogForProbes(local_ip)
+    assert f.filter(_make_record("192.168.1.1:41008", method="POST", path="/mcp", status_code=401)) is True
+
+
+def test_probes_enabled_filter_on_root_handler_suppresses_propagated_record():
+    """When the filter is attached to a root handler (to intercept propagated records),
+    it must still suppress uvicorn.access records from the local IP."""
+    local_ip = "10.0.0.1"
+    f = _SuppressAccessLogForProbes(local_ip)
+    record = _make_record("10.0.0.1:41008", method="POST", path="/mcp", status_code=401)
+    # Simulate propagation: the record arrives at a root handler with logger name still "uvicorn.access"
+    assert f.filter(record) is False
+
+
+def test_probes_enabled_filter_on_root_handler_suppresses_loopback_propagated_record():
+    """Filter on a root handler must also suppress loopback records propagated from uvicorn.access."""
+    local_ip = "10.0.0.1"
+    f = _SuppressAccessLogForProbes(local_ip)
+    record = _make_record("127.0.0.1:41008", method="POST", path="/mcp", status_code=401)
+    assert f.filter(record) is False
+
+
+def test_probes_enabled_filter_on_root_handler_passes_non_uvicorn_records():
+    """When the filter is attached to a root handler, records from other loggers
+    (e.g. application code) must never be suppressed, even if their args happen
+    to start with the local IP."""
+    local_ip = "10.0.0.1"
+    f = _SuppressAccessLogForProbes(local_ip)
+    # A record from a different logger — must always pass through
+    record = _logging.LogRecord("myapp", _logging.INFO, "", 0, "some message", (), None)
+    record.args = ("10.0.0.1:9999", "extra", "data")
+    assert f.filter(record) is True
+
+
+def test_probes_enabled_configure_logging_is_patched_on_start():
+    """When STARTUP_RETRY_IF_FAILURE=True and transport is streamable-http, start() must
+    patch uvicorn.Config.configure_logging so the access-log filter survives dictConfig."""
+    import uvicorn.config as _uvicorn_config
+
+    credentials = Credentials(
+        odm_url="http://test:9060/decisioncenter-api",
+        username="test",
+        password="test",
+    )
+    server = MCPServer(
+        credentials=credentials,
+        transport="streamable-http",
+        host="127.0.0.1",
+        port=3001,
+        path="/mcp",
+    )
+
+    original_configure_logging = _uvicorn_config.Config.configure_logging
+
+    with patch('decisioncenter_mcp_server.MCPServer.SDK_MCPServer') as mock_cls, \
+         patch('decisioncenter_mcp_server.MCPServer.DecisionCenterManager'), \
+         patch.dict(os.environ, {"STARTUP_RETRY_IF_FAILURE": "True"}), \
+         patch('socket.gethostbyname', return_value="10.0.0.1"):
+
+        mock_fastmcp = mock_cls.return_value
+        mock_fastmcp.run = Mock()
+
+        init_logging("INFO", "streamable-http")
+        server.start()
+
+        # configure_logging must have been replaced with the wrapper
+        assert _uvicorn_config.Config.configure_logging is not original_configure_logging
+
+    # Restore so other tests are not affected
+    _uvicorn_config.Config.configure_logging = original_configure_logging
+
+
+def test_probes_not_enabled_configure_logging_is_not_patched():
+    """When STARTUP_RETRY_IF_FAILURE is not set, configure_logging must not be touched."""
+    import uvicorn.config as _uvicorn_config
+
+    credentials = Credentials(
+        odm_url="http://test:9060/decisioncenter-api",
+        username="test",
+        password="test",
+    )
+    server = MCPServer(
+        credentials=credentials,
+        transport="streamable-http",
+        host="127.0.0.1",
+        port=3001,
+        path="/mcp",
+    )
+
+    original_configure_logging = _uvicorn_config.Config.configure_logging
+
+    with patch('decisioncenter_mcp_server.MCPServer.SDK_MCPServer') as mock_cls, \
+         patch('decisioncenter_mcp_server.MCPServer.DecisionCenterManager'), \
+         patch.dict(os.environ, {}, clear=False):
+
+        os.environ.pop("STARTUP_RETRY_IF_FAILURE", None)
+        mock_fastmcp = mock_cls.return_value
+        mock_fastmcp.run = Mock()
+
+        server.start()
+
+        assert _uvicorn_config.Config.configure_logging is original_configure_logging

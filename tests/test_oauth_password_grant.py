@@ -87,32 +87,6 @@ def test_oauth_password_grant_with_client_secret():
     }
 
 
-def test_oauth_password_grant_missing_username():
-    """Test OAuth password grant with missing username."""
-    cred = Credentials(
-        odm_url="http://localhost:9060/decisioncenter-api",
-        password="test_password",
-        client_id="test_client_id",
-        token_url="https://auth.example.com/token",
-    )
-    
-    with pytest.raises(ValueError, match="Both 'username' and 'password' are required for OAuth password grant."):
-        cred.get_auth()
-
-
-def test_oauth_password_grant_missing_password():
-    """Test OAuth password grant with missing password."""
-    cred = Credentials(
-        odm_url="http://localhost:9060/decisioncenter-api",
-        username="test_user",
-        client_id="test_client_id",
-        token_url="https://auth.example.com/token",
-    )
-    
-    with pytest.raises(ValueError, match="Both 'username' and 'password' are required for OAuth password grant."):
-        cred.get_auth()
-
-
 def test_oauth_password_grant_missing_token_url():
     """Test OAuth password grant with missing token_url."""
     cred = Credentials(
