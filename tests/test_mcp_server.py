@@ -547,7 +547,7 @@ def test_server_start_with_streamable_http_transport():
         server.start()
         
         # Verify run was called with streamable-http transport
-        mock_fastmcp.run.assert_called_once_with(transport="streamable-http", host='127.0.0.1', port=3001, streamable_http_path='/custom-path')
+        mock_fastmcp.run.assert_called_once_with(transport="streamable-http", host='127.0.0.1', port=3001, streamable_http_path='/custom-path', stateless_http=True)
         
         # Verify manager was initialized
         assert server.manager is not None
@@ -609,7 +609,7 @@ def test_server_start_with_sse_transport():
         server.start()
         
         # Verify run was called with streamable-http transport
-        mock_fastmcp.run.assert_called_once_with(transport="sse", host='127.0.0.1', port=3001, streamable_http_path='/custom-path')
+        mock_fastmcp.run.assert_called_once_with(transport="sse", host='127.0.0.1', port=3001, streamable_http_path='/custom-path', stateless_http=True)
         
         # Verify manager was initialized
         assert server.manager is not None
