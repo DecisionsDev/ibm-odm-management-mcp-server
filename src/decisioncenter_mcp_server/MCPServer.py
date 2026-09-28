@@ -355,6 +355,7 @@ class MCPServer:
                         host=self.host,
                         port=self.port,
                         streamable_http_path=self.path,
+                        stateless_http=True,
         )
 
 class _SuppressAccessLogForProbes(logging.Filter):
