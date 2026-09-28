@@ -5,6 +5,7 @@ description = "An MCP Server to integrate with IBM ODM Decision Center"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "cachetools",
     "jsonref",
     "mcp>=2.0.0,<3",
     "openapi3-parser==1.3.0",

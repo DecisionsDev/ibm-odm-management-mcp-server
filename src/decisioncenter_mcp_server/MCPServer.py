@@ -26,6 +26,7 @@ import mcp.server.auth.middleware.bearer_auth as bearer_auth
 from starlette.authentication import AuthCredentials
 from starlette.requests import HTTPConnection
 from pydantic import AnyUrl
+from cachetools import LRUCache
 import logging
 import json
 import argparse
@@ -90,8 +91,8 @@ class MCPServer:
         self.repository_res_monitor     : dict[str, DecisionCenterEndpoint] = {}
         self.repository_res_deployer    : dict[str, DecisionCenterEndpoint] = {}
 
-        self.user_credentials           : dict[str, Credentials] = {} # key = token,          value: Credentials = user_credentials
-        self.mcp_tokens                 : dict[str, AccessToken] = {} # key = token,          value: AccessToken = mcp token
+        self.user_credentials           : LRUCache = LRUCache(maxsize=512) # key = token, value: Credentials = user_credentials
+        self.mcp_tokens                 : LRUCache = LRUCache(maxsize=512) # key = token, value: AccessToken = mcp token
 
         # Set up trace storage with configured parameters if tracing is enabled
         # If traces_dir is None, DiskTraceStorage will use the default path in user's home directory
