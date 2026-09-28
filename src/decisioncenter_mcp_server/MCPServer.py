@@ -270,6 +270,9 @@ class MCPServer:
         if self.use_user_credentials(): credentials = self.get_user_credentials()
         else:                           credentials = self.credentials
 
+        # update the list of tools (skipped if it was already generated during startup or by list_tools)
+        self.update_repository(credentials)
+
         if name == MCPServer.get_tools_executions_toolname:
             executions = get_tools_executions(arguments)
             result = { "executions": executions }
