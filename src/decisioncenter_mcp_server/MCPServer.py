@@ -204,7 +204,7 @@ class MCPServer:
     def use_user_credentials(self) -> bool:
         return self.transport != "stdio" \
            and self.credentials.client_id is not None \
-           and self.credentials.client_secret is not None \
+           and self.credentials.pkjwt_key_path is None \
            and self.issuer_url is not None \
            and self.introspection_url is not None \
            and self.mcp_ext_url is not None
@@ -443,8 +443,8 @@ def create_credentials(args):
             verify_ssl=verifyssl,
             verify_ssl_hostname=verifyssl_hostname,
         )
-    elif args.client_secret:  # OpenID Client Secret provided
-        logging.info(f"Using OpenID Connect with Client Secret")
+    elif args.client_id:  # OpenID
+        logging.info(f"Using OpenID Connect")
         return Credentials(
             odm_url=args.url,
             odm_res_url=args.res_url,
@@ -573,7 +573,7 @@ def main():
     server.start()
 
 HOWTO_USE_USERS_CREDENTIALS_MSG = """When MCP Server runs in remote mode, it authenticates to ODM with users credentials if all the conditions below are met:
-    1. OpenID is used with a client secret
+    1. OpenID is used (without PKJWT)
     3. the openID issuer and introspection URLs are set
     4. the MCP server external URL is set"""
 
