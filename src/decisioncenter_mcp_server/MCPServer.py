@@ -241,25 +241,42 @@ class MCPServer:
         return credentials
 
     def use_user_credentials(self) -> bool:
-        return self.transport != "stdio" \
-           and self.credentials.client_id is not None \
-           and self.credentials.pkjwt_key_path is None \
-           and self.issuer_url is not None \
-           and (self.introspection_url is not None or self.userinfo_url is not None) \
+        return (
+               self.transport != "stdio"
+           and self.credentials.client_id is not None
+           and self.credentials.pkjwt_key_path is None
+           and self.issuer_url is not None
+           and (self.introspection_url is not None or self.userinfo_url is not None)
            and self.mcp_ext_url is not None
-        
+        )
 
     def update_repository(self, credentials = None):
         if credentials is None:
             credentials = self.credentials
 
         # generate the MCP tools for Decision Server console REST API (aka RES console)
+        res_tools_error = None
         if len(self.repository_res_monitor) == 0 and credentials.odm_res_url:
-            self.repository_res_monitor, self.repository_res_deployer = self.manager.generate_res_tools(self.manager.fetch_res_api_endpoints(credentials), self.tags, self.tools, self.no_tools)
+            try:
+                self.repository_res_monitor, self.repository_res_deployer = self.manager.generate_res_tools(self.manager.fetch_res_api_endpoints(credentials), self.tags, self.tools, self.no_tools)
+            except Exception as e:
+                res_tools_error = e
 
         # generate the MCP tools for Decision Center REST API
+        dc_tools_error = None
         if len(self.repository_dc) == 0 and credentials.odm_url:
-            self.repository_dc, self.repository_dc_admin = self.manager.generate_tools_format(self.manager.fetch_endpoints(credentials), self.tags, self.tools, self.no_tools)
+            try:
+                self.repository_dc, self.repository_dc_admin = self.manager.generate_tools_format(self.manager.fetch_endpoints(credentials), self.tags, self.tools, self.no_tools)
+            except Exception as e:
+                dc_tools_error = e
+
+        if res_tools_error is not None and dc_tools_error is not None:
+            # if one is a PermissionError and the other is not, raise the non-PermissionError
+            raise dc_tools_error if isinstance(res_tools_error, PermissionError) else res_tools_error
+        if res_tools_error:
+            raise res_tools_error
+        if dc_tools_error:
+            raise dc_tools_error
 
         # save traces of all the tools
         self.trace_recorder.save(dict(self.repository_dc_admin, **self.repository_res_deployer))
@@ -540,7 +557,7 @@ def init(args):
         userinfo_url    = args.userinfo_url,
     )
 
-    retry = os.getenv("STARTUP_RETRY_IF_FAILURE", "False")
+    retry = os.getenv("STARTUP_RETRY_IF_FAILURE", "False") == "True"
     retries_count  = int(os.getenv("STARTUP_RETRIES_COUNT",  10))
     retries_period = int(os.getenv("STARTUP_RETRIES_PERIOD", 30))
 
@@ -550,15 +567,22 @@ def init(args):
         try:
             server.update_repository()
         except Exception as e:
-            if retry != "False":
-                if attempts_left > 0:
-                    server.logger.info(f"Failed to retrieve the tools. Will retry {attempts_left} more times every {retries_period} seconds")
-                time.sleep(retries_period)
-                continue
-            elif server.use_user_credentials and not isinstance(e, ValueError):
-                # in this mode, the MCP server could be missing the required credentials to log in to ODM,  but the users credentials would enable to log in to ODM later on.
-                # don't raise the exception as it would stop the MCP server, unless it is a misconfiguration
-                pass
+            if retry:
+                if isinstance(e, PermissionError):
+                    # no need to retry, the MCP server is not configured with the required credentials to retrieve the tools
+                    server.logger.info(f"Failed to retrieve the tools due to insufficient permissions. Proceeding with startup.")
+                else:
+                    if attempts_left > 0:
+                        server.logger.info(f"Failed to retrieve the tools. Will retry {attempts_left} more times every {retries_period} seconds")
+                    time.sleep(retries_period)
+                    continue
+            elif server.use_user_credentials():
+                # In this mode, if the MCP server is missing the required credentials to log in to ODM, 
+                # it can use the users credentials to log in the to ODM later on.
+                # So don't raise the exception as it would stop the MCP server, 
+                # unless it is a misconfiguration
+                if isinstance(e, ValueError):
+                    raise(e)
             else:
                 # abort as the MCP server could be misconfigured
                 raise(e)

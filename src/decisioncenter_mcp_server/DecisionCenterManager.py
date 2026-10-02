@@ -294,7 +294,11 @@ class DecisionCenterManager:
                         self.logger.info("Decision Center REST API openapi parsing successful")
                         return endpoints
                 elif response.status_code == 401:
-                    self.logger.error("Wrong credentials. Therefore no access to Decision Center tools.")
+                    self.logger.error("Wrong credentials (401). Therefore no access to Decision Center tools.")
+                    raise PermissionError("Authentication failed (401): wrong credentials.")
+                elif response.status_code == 403:
+                    self.logger.error("Access denied (403). Therefore no access to Decision Center tools.")
+                    raise PermissionError("Access denied (403): insufficient permissions to access Decision Center tools.")
                 else:
                     self.logger.error("Request failed with status code: %s", response.status_code)
                     self.logger.error("Response: %s", response.text)
@@ -493,8 +497,10 @@ class DecisionCenterManager:
             else:
                 if response.status_code == 403:
                     self.logger.info("Connected without the resMonitor role. Therefore no access to the RES console tools.")
+                    raise PermissionError("Access denied (403): insufficient permissions to access the RES console tools.")
                 elif response.status_code == 401:
                     self.logger.error("Wrong credentials. Therefore no access to the RES console tools.")
+                    raise PermissionError("Authentication failed (401): wrong credentials.")
                 elif response.status_code == 500 and "NoResourceFoundException" in response.text:
                     self.logger.error("Could not retrieve the RES console REST API WADL. Please check that the RES console URL is valid: %s", uri)
                 else: 
