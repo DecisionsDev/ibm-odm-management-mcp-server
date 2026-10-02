@@ -47,6 +47,7 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
         [SCOPE]="OPENID_SCOPE"
         [ISSUER_URL]=""
         [INTROSPECTION_URL]="OPENID_INTROSPECTION_URL"
+        [USERINFO_URL]="OPENID_USERINFO_URL"
          [PKJWT_KEY_PATH]="OPENID_CLIENT_ASSERTION_ALIAS_NAME"
         [PKJWT_CERT_PATH]="OPENID_CLIENT_ASSERTION_ALIAS_NAME"
     )
@@ -105,7 +106,7 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
         fi
     fi
 
-    for VAR in CLIENT_ID CLIENT_SECRET TOKEN_URL SCOPE ISSUER_URL INTROSPECTION_URL PKJWT_KEY_PATH PKJWT_CERT_PATH; do
+    for VAR in CLIENT_ID CLIENT_SECRET TOKEN_URL SCOPE ISSUER_URL INTROSPECTION_URL USERINFO_URL PKJWT_KEY_PATH PKJWT_CERT_PATH; do
         # Skip if already set
         if [ -n "${!VAR}" ]; then
             echo "[startup] ${VAR}=$(safe_value "${VAR}") (defined as environment variable)."
@@ -121,6 +122,10 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
                 # Extract validationEndpointUrl only from openidConnectClient elements where
                 # validationMethod is absent (defaults to introspect) or is explicitly "introspect"
                 VALUE=$(xmllint --xpath "string((//*[local-name()='openidConnectClient'][not(@validationMethod) or @validationMethod='introspect'])[1]/@validationEndpointUrl)" "${XML_FILE}" 2>/dev/null)
+            elif [ "${VAR}" = "USERINFO_URL" ]; then
+                # Extract validationEndpointUrl only from openidConnectClient elements where
+                # validationMethod is explicitly "userinfo"
+                VALUE=$(xmllint --xpath "string((//*[local-name()='openidConnectClient'][@validationMethod='userinfo'])[1]/@validationEndpointUrl)" "${XML_FILE}" 2>/dev/null)
             elif [ "${VAR}" = "PKJWT_KEY_PATH" ] || [ "${VAR}" = "PKJWT_CERT_PATH" ]; then
                 # Extract keyAliasName from openidConnectClient elements where tokenEndpointAuthMethod is set to "private_key_jwt"
                 VALUE=$(xmllint --xpath "string((//*[local-name()='openidConnectClient'][@tokenEndpointAuthMethod='private_key_jwt'])[1]/@keyAliasName)" "${XML_FILE}" 2>/dev/null)
@@ -136,7 +141,7 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
             fi
         fi
 
-        # If TOKEN_URL, ISSUER_URL, or INTROSPECTION_URL is missing from XML, extract from discovery JSON
+        # If TOKEN_URL, ISSUER_URL, INTROSPECTION_URL, or USERINFO_URL is missing from XML, extract from discovery JSON
         if [ -z "${VALUE}" ] && [ -n "${DISCOVERY_JSON}" ]; then
             if [ "${VAR}" = "TOKEN_URL" ]; then
                 VALUE=$(python3 -c "import sys, json; print(json.loads(sys.stdin.read()).get('token_endpoint', '') or '')" <<< "${DISCOVERY_JSON}" 2>/dev/null || true)
@@ -144,6 +149,8 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
                 VALUE=$(python3 -c "import sys, json; print(json.loads(sys.stdin.read()).get('issuer', '') or '')" <<< "${DISCOVERY_JSON}" 2>/dev/null || true)
             elif [ "${VAR}" = "INTROSPECTION_URL" ]; then
                 VALUE=$(python3 -c "import sys, json; print(json.loads(sys.stdin.read()).get('introspection_endpoint', '') or '')" <<< "${DISCOVERY_JSON}" 2>/dev/null || true)
+            elif [ "${VAR}" = "USERINFO_URL" ]; then
+                VALUE=$(python3 -c "import sys, json; print(json.loads(sys.stdin.read()).get('userinfo_endpoint', '') or '')" <<< "${DISCOVERY_JSON}" 2>/dev/null || true)
             fi
             if [ -n "${VALUE}" ]; then
                 SOURCE="${DISCOVERY_SOURCE}"

@@ -43,6 +43,7 @@ def run_startup(tmp_path, env_overrides=None, xml_content=None, props_content=No
         "echo \"SCOPE=${SCOPE}\"\n"
         "echo \"ISSUER_URL=${ISSUER_URL}\"\n"
         "echo \"INTROSPECTION_URL=${INTROSPECTION_URL}\"\n"
+        "echo \"USERINFO_URL=${USERINFO_URL}\"\n"
         "echo \"PKJWT_KEY_PATH=${PKJWT_KEY_PATH}\"\n"
         "echo \"PKJWT_CERT_PATH=${PKJWT_CERT_PATH}\"\n"
         "echo \"===MOCK_SERVER_END===\"\n"
@@ -66,7 +67,7 @@ def run_startup(tmp_path, env_overrides=None, xml_content=None, props_content=No
 
     # Clean any current env vars that might interfere
     for var in ["CLIENT_ID", "CLIENT_SECRET", "TOKEN_URL", "SCOPE", "ISSUER_URL", "INTROSPECTION_URL",
-                "PKJWT_KEY_PATH", "PKJWT_CERT_PATH"]:
+                "USERINFO_URL", "PKJWT_KEY_PATH", "PKJWT_CERT_PATH"]:
         env.pop(var, None)
 
     if env_overrides:
@@ -143,7 +144,7 @@ def test_startup_xml_with_default_introspect(tmp_path):
 
 
 def test_startup_xml_with_non_introspect(tmp_path):
-    # validationMethod is userinfo, should not extract validationEndpointUrl as INTROSPECTION_URL
+    # validationMethod is userinfo: should not set INTROSPECTION_URL, but must set USERINFO_URL
     xml = """<server>
       <openidConnectClient id="default"
                            clientId="xml-id"
@@ -157,6 +158,36 @@ def test_startup_xml_with_non_introspect(tmp_path):
     parsed_vars, stdout, stderr = run_startup(tmp_path, xml_content=xml)
     
     assert parsed_vars.get("CLIENT_ID") == "xml-id"
+    assert parsed_vars.get("INTROSPECTION_URL") == ""
+    assert parsed_vars.get("USERINFO_URL") == "https://xml.userinfo"
+
+
+def test_startup_xml_with_userinfo_variable(tmp_path):
+    # validationMethod=userinfo with variable interpolation
+    xml = """<server>
+      <variable name="IdpBase" value="https://cognito.example.com" />
+      <openidConnectClient id="default"
+                           clientId="cognito-client"
+                           clientSecret="cognito-secret"
+                           tokenEndpointUrl="${IdpBase}/oauth2/token"
+                           scope="openid"
+                           issuerIdentifier="${IdpBase}"
+                           validationEndpointUrl="${IdpBase}/oauth2/userInfo"
+                           validationMethod="userinfo" />
+    </server>"""
+    parsed_vars, stdout, stderr = run_startup(tmp_path, xml_content=xml)
+
+    assert parsed_vars.get("CLIENT_ID") == "cognito-client"
+    assert parsed_vars.get("INTROSPECTION_URL") == ""
+    assert parsed_vars.get("USERINFO_URL") == "https://cognito.example.com/oauth2/userInfo"
+
+
+def test_startup_props_userinfo_url(tmp_path):
+    # OPENID_USERINFO_URL from properties file
+    props = "OPENID_USERINFO_URL=https://props.example.com/userinfo\n"
+    parsed_vars, stdout, stderr = run_startup(tmp_path, props_content=props)
+
+    assert parsed_vars.get("USERINFO_URL") == "https://props.example.com/userinfo"
     assert parsed_vars.get("INTROSPECTION_URL") == ""
 
 
@@ -370,6 +401,54 @@ def test_pkjwt_paths_not_set_without_private_key_jwt_method(tmp_path):
     assert parsed_vars.get("PKJWT_KEY_PATH") == ""
     assert parsed_vars.get("PKJWT_CERT_PATH") == ""
     assert "WARNING" not in stdout
+def test_startup_xml_discovery_endpoint_with_userinfo(tmp_path):
+    """Discovery JSON containing userinfo_endpoint must populate USERINFO_URL."""
+    import http.server
+    import threading
+
+    discovery_data = {
+        "issuer": "https://cognito.example.com",
+        "token_endpoint": "https://cognito.example.com/oauth2/token",
+        "userinfo_endpoint": "https://cognito.example.com/oauth2/userInfo",
+    }
+
+    class DiscoveryHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            import json
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(discovery_data).encode("utf-8"))
+
+        def log_message(self, format, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), DiscoveryHandler)
+    port = server.server_port
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+
+    try:
+        discovery_url = f"http://127.0.0.1:{port}/.well-known/openid-configuration"
+        xml = f"""<server>
+          <openidConnectClient id="default"
+                               clientId="cognito-client"
+                               clientSecret="cognito-secret"
+                               scope="openid"
+                               discoveryEndpointUrl="{discovery_url}" />
+        </server>"""
+        parsed_vars, stdout, stderr = run_startup(tmp_path, xml_content=xml)
+
+        assert parsed_vars.get("TOKEN_URL") == "https://cognito.example.com/oauth2/token"
+        assert parsed_vars.get("ISSUER_URL") == "https://cognito.example.com"
+        assert parsed_vars.get("INTROSPECTION_URL") == ""
+        assert parsed_vars.get("USERINFO_URL") == "https://cognito.example.com/oauth2/userInfo"
+        assert f"USERINFO_URL=https://cognito.example.com/oauth2/userInfo (set from {discovery_url})" in stdout
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_startup_xml_discovery_endpoint(tmp_path):
     import http.server
     import threading

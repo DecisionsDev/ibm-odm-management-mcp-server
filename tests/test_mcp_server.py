@@ -214,6 +214,7 @@ def test_tags_verification(tags, expected_tags, tools, expected_tools, notools, 
         client_secret=None,
         issuer_url=None,
         introspection_url=None,
+        userinfo_url=None,
         token_url=None,
         mcp_ext_url=None,
         scope="openid",
@@ -787,3 +788,134 @@ def test_probes_not_enabled_configure_logging_is_not_patched():
         server.start()
 
         assert _uvicorn_config.Config.configure_logging is original_configure_logging
+
+
+# ---------------------------------------------------------------------------
+# Tests for userinfo-based token validation
+# ---------------------------------------------------------------------------
+
+def _make_server_with_userinfo(userinfo_url, introspection_url=None):
+    """Helper: build an MCPServer configured with the given URL(s)."""
+    credentials = Credentials(
+        odm_url="http://test:9060/decisioncenter-api",
+        client_id="test-client",
+        client_secret="test-secret",
+        token_url="https://idp.example.com/token",
+        username=None,
+        password=None,
+    )
+    return MCPServer(
+        credentials=credentials,
+        transport="streamable-http",
+        issuer_url="https://idp.example.com",
+        introspection_url=introspection_url,
+        userinfo_url=userinfo_url,
+        mcp_ext_url="https://mcp.example.com",
+    )
+
+
+def test_use_user_credentials_with_userinfo_url_only():
+    """use_user_credentials() must return True when only userinfo_url is set (no introspection_url)."""
+    server = _make_server_with_userinfo("https://idp.example.com/oauth2/userInfo")
+    assert server.use_user_credentials() is True
+
+
+def test_use_user_credentials_requires_at_least_one_validation_url():
+    """use_user_credentials() must return False when neither introspection_url nor userinfo_url is set."""
+    server = _make_server_with_userinfo(userinfo_url=None, introspection_url=None)
+    assert server.use_user_credentials() is False
+
+
+def test_parse_arguments_userinfo_url():
+    """--userinfo-url must be parsed into args.userinfo_url."""
+    with patch('sys.argv', ['script', '--userinfo-url', 'https://idp.example.com/oauth2/userInfo']), \
+         patch.dict('os.environ', {}, clear=False) as env:
+        env.pop('USERINFO_URL', None)
+        args = parse_arguments()
+        assert args.userinfo_url == 'https://idp.example.com/oauth2/userInfo'
+
+
+def test_parse_arguments_userinfo_url_from_env():
+    """USERINFO_URL env var must populate args.userinfo_url."""
+    with patch('sys.argv', ['script']), \
+         patch.dict('os.environ', {'USERINFO_URL': 'https://idp.example.com/userinfo'}, clear=False):
+        args = parse_arguments()
+        assert args.userinfo_url == 'https://idp.example.com/userinfo'
+
+
+def test_validate_token_via_userinfo_success():
+    """validate_token_via_userinfo() must return an AccessToken when the userinfo endpoint responds 200."""
+    server = _make_server_with_userinfo("https://idp.example.com/oauth2/userInfo")
+
+    userinfo_response = {
+        "sub": "user-123",
+        "email": "user@example.com",
+        "scope": "openid email",
+    }
+    mock_response = Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = userinfo_response
+    mock_response.raise_for_status = Mock()
+
+    with patch('requests.get', return_value=mock_response) as mock_get:
+        token = "eyJmake.token.here"
+        result = server.validate_token_via_userinfo(token)
+
+    mock_get.assert_called_once()
+    call_kwargs = mock_get.call_args
+    assert call_kwargs.kwargs.get("url") == "https://idp.example.com/oauth2/userInfo"
+    assert call_kwargs.kwargs["headers"]["Authorization"] == f"Bearer {token}"
+
+    from mcp.server.auth.provider import AccessToken
+    assert isinstance(result, AccessToken)
+    assert result.token == token
+    assert result.subject == "user-123"
+    assert "openid" in result.scopes
+
+
+def test_validate_token_via_userinfo_failure():
+    """validate_token_via_userinfo() must return None when the endpoint rejects the token."""
+    server = _make_server_with_userinfo("https://idp.example.com/oauth2/userInfo")
+
+    mock_response = Mock()
+    mock_response.raise_for_status.side_effect = Exception("401 Unauthorized")
+
+    with patch('requests.get', return_value=mock_response):
+        result = server.validate_token_via_userinfo("bad-token")
+
+    assert result is None
+
+
+def test_get_mcp_token_uses_userinfo_when_no_introspection():
+    """get_mcp_token() must call validate_token_via_userinfo when only userinfo_url is set."""
+    server = _make_server_with_userinfo("https://idp.example.com/oauth2/userInfo")
+
+    from mcp.server.auth.provider import AccessToken
+    fake_token = AccessToken(token="t", client_id="c", scopes=[], expires_at=9999999999)
+
+    with patch.object(server, 'validate_token_via_userinfo', return_value=fake_token) as mock_userinfo, \
+         patch.object(server, 'introspect_token') as mock_introspect:
+        result = server.get_mcp_token("t")
+
+    mock_userinfo.assert_called_once_with("t")
+    mock_introspect.assert_not_called()
+    assert result == fake_token
+
+
+def test_get_mcp_token_uses_introspection_when_both_urls_set():
+    """get_mcp_token() must prefer introspect_token when introspection_url is also set."""
+    server = _make_server_with_userinfo(
+        userinfo_url="https://idp.example.com/oauth2/userInfo",
+        introspection_url="https://idp.example.com/oauth2/introspect",
+    )
+
+    from mcp.server.auth.provider import AccessToken
+    fake_token = AccessToken(token="t", client_id="c", scopes=[], expires_at=9999999999)
+
+    with patch.object(server, 'introspect_token', return_value=fake_token) as mock_introspect, \
+         patch.object(server, 'validate_token_via_userinfo') as mock_userinfo:
+        result = server.get_mcp_token("t")
+
+    mock_introspect.assert_called_once_with("t")
+    mock_userinfo.assert_not_called()
+    assert result == fake_token

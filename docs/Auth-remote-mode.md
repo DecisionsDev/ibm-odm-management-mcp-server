@@ -32,12 +32,14 @@ https://github.com/user-attachments/assets/2a7dcf8b-bc40-4290-8361-718663afe523
     |--------------|----------------------|-------------|
     | `--mcp-ext-url` | `MCP_EXT_URL` | MCP server external URL |
     | `--issuer-url` | `ISSUER_URL` | OpenID Connect issuer URL |
-    | `--introspection-url` | `INTROSPECTION_URL` | OpenID Connect introspection URL |
+    | `--introspection-url` | `INTROSPECTION_URL` | OpenID Connect introspection URL. Either this or `--userinfo-url` is required. |
+    | `--userinfo-url` | `USERINFO_URL` | OpenID Connect userinfo URL. Alternative to `--introspection-url` for providers (e.g. Amazon Cognito) that do not support token introspection. |
 
     - The MCP external URL is the URL that is configured in the AI assistant to access the MCP server (with or without the path `/mcp` appended, eg. `https://my-mcp-server.com`). This URL MUST match the URL configured in the AI assistant (see [2.3 AI Assistant configuration](#23-ai-assistant-configuration)).
-    - The issuer and introspection URL can be found when navigating to the `.well-known/openid-configuration` URL of the OpenID Connect server. The response contains the fields `issuer` and `introspection_endpoint`.
+    - The issuer URL can be found in the `issuer` field of the `.well-known/openid-configuration` document of the OpenID Connect server.
+    - Use `--introspection-url` if your provider exposes an introspection endpoint (`introspection_endpoint` in the discovery document), or `--userinfo-url` if it exposes a userinfo endpoint instead (`userinfo_endpoint` in the discovery document, e.g. Amazon Cognito).
 
-- The MCP server also needs the following parameters to introspect the users tokens:
+- The MCP server also needs the following parameters to validate the users tokens:
 
     | CLI Argument | Environment Variable | Description |
     |--------------|----------------------|-------------|
