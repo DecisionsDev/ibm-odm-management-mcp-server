@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from typing import Optional
+import socket
 from mcp_types import Tool, Resource, CallToolResult, TextContent
 from mcp.server.mcpserver.context import Context
 from mcp.server.mcpserver.exceptions import ToolError
@@ -25,6 +26,7 @@ import mcp.server.auth.middleware.bearer_auth as bearer_auth
 from starlette.authentication import AuthCredentials
 from starlette.requests import HTTPConnection
 from pydantic import AnyUrl
+from cachetools import LRUCache
 import logging
 import json
 import argparse
@@ -36,6 +38,7 @@ from .Credentials import Credentials
 from .DecisionCenterManager import DecisionCenterManager
 from .DecisionCenterEndpoint import DecisionCenterEndpoint
 from .ToolTrace import DiskTraceStorage
+from .utils.ssl_utils import merge_ssl_cert_paths
 
 INSTRUCTIONS = """
 IBM ODM Decision Center MCP server
@@ -64,7 +67,7 @@ class MCPServer:
     def __init__(self, credentials: Credentials,
                  tags: list[str] = [], tools: list[str] = [], no_tools: list[str] = [],
                  trace: list[str] = [], traces_dir: str = None, traces_maxsize: int = max_trace_files,
-                 transport: Optional[str] = 'stdio', host: Optional[str] = '0.0.0.0', port: Optional[int] = 3000, path: Optional[str] = '/mcp', mcp_ext_url: Optional[str] = None, issuer_url: Optional[str] = None, introspection_url: Optional[str] = None,
+                 transport: Optional[str] = 'stdio', host: Optional[str] = '0.0.0.0', port: Optional[int] = 3000, path: Optional[str] = '/mcp', mcp_ext_url: Optional[str] = None, issuer_url: Optional[str] = None, introspection_url: Optional[str] = None, userinfo_url: Optional[str] = None,
                 ):
         # Get logger for this class
         self.logger = logging.getLogger(__name__)
@@ -81,6 +84,7 @@ class MCPServer:
         self.path      = path
         self.issuer_url= issuer_url
         self.introspection_url= introspection_url
+        self.userinfo_url= userinfo_url
         self.mcp_ext_url = mcp_ext_url
 
         self.repository_dc              : dict[str, DecisionCenterEndpoint] = {}
@@ -88,8 +92,8 @@ class MCPServer:
         self.repository_res_monitor     : dict[str, DecisionCenterEndpoint] = {}
         self.repository_res_deployer    : dict[str, DecisionCenterEndpoint] = {}
 
-        self.user_credentials           : dict[str, Credentials] = {} # key = token,          value: Credentials = user_credentials
-        self.mcp_tokens                 : dict[str, AccessToken] = {} # key = token,          value: AccessToken = mcp token
+        self.user_credentials           : LRUCache = LRUCache(maxsize=512) # key = token, value: Credentials = user_credentials
+        self.mcp_tokens                 : LRUCache = LRUCache(maxsize=512) # key = token, value: AccessToken = mcp token
 
         # Set up trace storage with configured parameters if tracing is enabled
         # If traces_dir is None, DiskTraceStorage will use the default path in user's home directory
@@ -102,22 +106,21 @@ class MCPServer:
         self.manager = DecisionCenterManager(credentials, self.trace_recorder)
 
     def introspect_token(self, token):
-        """Verify token via introspection endpoint."""
-        # client_id = self.credentials.client_id
-        # client_secret = self.credentials.client_secret)
+        """Verify token via introspection endpoint.
+
+        Follows RFC 7662 §2.1: the token is sent as an application/x-www-form-urlencoded
+        body parameter, and client credentials are passed via HTTP Basic authentication header
+        """
         import requests
 
-        # headers={"Content-Type": "application/x-www-form-urlencoded"},
-        request_body = {
-                'token':         token,
-                'client_id':     self.credentials.client_id,
-                'client_secret': self.credentials.client_secret
-            }
+        request_body = {'token': token}
+        auth = requests.auth.HTTPBasicAuth(self.credentials.client_id, self.credentials.client_secret) \
+               if self.credentials.client_secret else None
 
         if self.credentials.verify_ssl:
-            response = requests.post(url=self.introspection_url, data=request_body, verify=self.credentials.cacert)
+            response = requests.post(url=self.introspection_url, data=request_body, auth=auth, verify=self.credentials.cacert)
         else:
-            response = requests.post(url=self.introspection_url, data=request_body, verify=False)
+            response = requests.post(url=self.introspection_url, data=request_body, auth=auth, verify=False)
 
         try:
             response.raise_for_status() # raise an HTTPError if the request failed
@@ -131,12 +134,47 @@ class MCPServer:
             # the token is expired
             return None
 
+        claim_fields = ["email", "username", "name", "preferred_username"]
+        claims = {k: response_body[k] for k in claim_fields if k in response_body} or None
         return AccessToken(
                     token     = token,
-                    client_id = response_body.get("client_id", "unknown"),
-                    scopes    = response_body.get("scope", "").split() if response_body.get("scope") else [],
+                    client_id = response_body.get("client_id", self.credentials.client_id),
+                    scopes    = response_body.get("scope", self.credentials.scope).split(),
                     expires_at= response_body.get("exp", 0),
                     resource  = response_body.get("aud"),  # Include resource in token
+                    subject   = response_body.get("sub", "unknown"),
+                    claims    = claims,
+                )
+
+    def validate_token_via_userinfo(self, token):
+        """Verify token by calling the userinfo endpoint (GET with Bearer token)."""
+        import requests
+
+        headers = {"Authorization": f"Bearer {token}"}
+
+        if self.credentials.verify_ssl:
+            response = requests.get(url=self.userinfo_url, headers=headers, verify=self.credentials.cacert)
+        else:
+            response = requests.get(url=self.userinfo_url, headers=headers, verify=False)
+
+        try:
+            response.raise_for_status()
+        except Exception as e:
+            self.logger.debug(f"Token userinfo validation failed. {str(e)}")
+            return None
+
+        response_body = response.json()
+
+        claim_fields = ["email", "username", "name", "preferred_username"]
+        claims = {k: response_body[k] for k in claim_fields if k in response_body} or None
+        return AccessToken(
+                    token     = token,
+                    client_id = self.credentials.client_id,
+                    scopes    = response_body.get("scope", self.credentials.scope).split(),
+                    expires_at= response_body.get("exp", int(time.time()) + 60),
+                    resource  = response_body.get("aud"),
+                    subject   = response_body.get("sub", "unknown"),
+                    claims    = claims,
                 )
 
     def get_mcp_token(self, token:str):
@@ -145,7 +183,10 @@ class MCPServer:
         if token in self.mcp_tokens:
             mcp_token : AccessToken | None = self.mcp_tokens.get(token)
         else:
-            mcp_token = self.introspect_token(token)
+            if self.userinfo_url and not self.introspection_url:
+                mcp_token = self.validate_token_via_userinfo(token)
+            else:
+                mcp_token = self.introspect_token(token)
             if mcp_token:
                 self.mcp_tokens[token] = mcp_token
 
@@ -201,9 +242,9 @@ class MCPServer:
     def use_user_credentials(self) -> bool:
         return self.transport != "stdio" \
            and self.credentials.client_id is not None \
-           and self.credentials.client_secret is not None \
+           and self.credentials.pkjwt_key_path is None \
            and self.issuer_url is not None \
-           and self.introspection_url is not None \
+           and (self.introspection_url is not None or self.userinfo_url is not None) \
            and self.mcp_ext_url is not None
         
 
@@ -211,17 +252,16 @@ class MCPServer:
         if credentials is None:
             credentials = self.credentials
 
-        # generate the MCP tools for Decision Center REST API
-        if len(self.repository_dc) == 0 and credentials.odm_url:
-            self.repository_dc, self.repository_dc_admin = self.manager.generate_tools_format(self.manager.fetch_endpoints(credentials), self.tags, self.tools, self.no_tools)
-
         # generate the MCP tools for Decision Server console REST API (aka RES console)
         if len(self.repository_res_monitor) == 0 and credentials.odm_res_url:
             self.repository_res_monitor, self.repository_res_deployer = self.manager.generate_res_tools(self.manager.fetch_res_api_endpoints(credentials), self.tags, self.tools, self.no_tools)
 
+        # generate the MCP tools for Decision Center REST API
+        if len(self.repository_dc) == 0 and credentials.odm_url:
+            self.repository_dc, self.repository_dc_admin = self.manager.generate_tools_format(self.manager.fetch_endpoints(credentials), self.tags, self.tools, self.no_tools)
+
         # save traces of all the tools
-        if credentials == self.credentials:
-            self.trace_recorder.save(dict(self.repository_dc_admin, **self.repository_res_deployer))
+        self.trace_recorder.save(dict(self.repository_dc_admin, **self.repository_res_deployer))
 
     async def list_tools(self) -> list[Tool]:
         """
@@ -230,11 +270,11 @@ class MCPServer:
         """
         if self.use_user_credentials():
             credentials = self.get_user_credentials()
-
-            # update the list of tools (unless it was already generated during startup)
-            self.update_repository(credentials)
         else:
             credentials = self.credentials
+
+        # update the list of tools (skipped if it was already generated during startup)
+        self.update_repository(credentials)
 
         # select the list of tools based on the roles granted to the credentials used
         if   credentials.isDcAdmin:     dc_repository = self.repository_dc_admin
@@ -267,6 +307,9 @@ class MCPServer:
 
         if self.use_user_credentials(): credentials = self.get_user_credentials()
         else:                           credentials = self.credentials
+
+        # update the list of tools (skipped if it was already generated during startup or by list_tools)
+        self.update_repository(credentials)
 
         if name == MCPServer.get_tools_executions_toolname:
             executions = get_tools_executions(arguments)
@@ -328,7 +371,7 @@ class MCPServer:
         if self.use_user_credentials():
             token_verifier: AccessTokenVerifier | None = AccessTokenVerifier(mcpserver = self)
             auth: AuthSettings | None = AuthSettings(issuer_url          = self.issuer_url,
-                                                     required_scopes     =[self.credentials.scope],
+                                                     required_scopes     = self.credentials.scope.split(),
                                                      resource_server_url = self.mcp_ext_url)
 
             self.logger.info       (f"MCP Server running in remote mode, using users credentials. Resource metadata URL: {build_resource_metadata_url(resource_server_url = self.mcp_ext_url)}")
@@ -350,14 +393,36 @@ class MCPServer:
         self.server.list_tools = self.list_tools
         self.server.call_tool  = self.call_tool
 
-                        # sse_path=self.path,
         self.server.run(transport=self.transport,
                         host=self.host,
                         port=self.port,
                         streamable_http_path=self.path,
+                        stateless_http=True,
         )
 
-def init_logging(level_name):
+class _SuppressAccessLogForProbes(logging.Filter):
+    """Drop uvicorn access-log entries whose client address matches the local host IP or 127.0.0.1.
+
+    Uvicorn emits: logger.info('%s - "%s %s HTTP/%s" %d', client_addr, method, path, http_version, status_code)
+    so record.args is a 5-element tuple whose first element is ``"<ip>:<port>"``.
+    """
+
+    def __init__(self, local_ip: str) -> None:
+        super().__init__()
+        # Always include the loopback address in addition to the resolved pod IP.
+        self._prefixes = {local_ip + ":", "127.0.0.1:"}
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.name != "uvicorn.access":
+            return True
+        args = record.args
+        if not (isinstance(args, tuple) and args):
+            return True
+        client = str(args[0])
+        return not any(client.startswith(p) for p in self._prefixes)
+
+
+def init_logging(level_name, transport):
     level=getattr(logging, level_name, logging.INFO)
     logging.basicConfig(
         level=level,
@@ -366,11 +431,30 @@ def init_logging(level_name):
     )
     logging.info(f"Running Python {sys.version_info}. Logging level set to: {logging.getLevelName(level)}")
 
+    # suppress access logs originating from probes when running in a k8s pod
+    running_in_pod = os.getenv("STARTUP_RETRY_IF_FAILURE", "False") != "False"
+    if running_in_pod and transport == "streamable-http":
+        import uvicorn.config as _uvicorn_config
+        probe_filter = _SuppressAccessLogForProbes(local_ip=socket.gethostbyname(socket.gethostname()))
+        _original_configure_logging = _uvicorn_config.Config.configure_logging
+
+        def _configure_logging_with_filter(self) -> None:  # type: ignore[override]
+            _original_configure_logging(self)
+            logging.getLogger("uvicorn.access").addFilter(probe_filter)
+
+        _uvicorn_config.Config.configure_logging = _configure_logging_with_filter
+
+
 def create_credentials(args):
     verifyssl = args.verifyssl != "False"
     verifyssl_hostname = args.verifyssl_hostname != "False"
 
+    # Resolve a comma/semicolon-separated list of cert paths into a single file
+    if args.ssl_cert_path:
+        args.ssl_cert_path = merge_ssl_cert_paths(args.ssl_cert_path)
+
     if args.zenapikey:    # If zenapikey is provided, use it for authentication
+        logging.info(f"Using Zen API Key credentials")
         return Credentials(
             odm_url=args.url,
             odm_res_url=args.res_url,
@@ -381,22 +465,8 @@ def create_credentials(args):
             verify_ssl=verifyssl,
             verify_ssl_hostname=verifyssl_hostname,
         )
-    elif args.client_secret:  # OpenID Client Secret provided
-        return Credentials(
-            odm_url=args.url,
-            odm_res_url=args.res_url,
-            token_url=args.token_url,
-            scope=args.scope,
-            client_id=args.client_id,
-            client_secret=args.client_secret,
-            username=args.username,
-            password=args.password,
-            mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
-            ssl_cert_path=args.ssl_cert_path,
-            verify_ssl=verifyssl,
-            verify_ssl_hostname=verifyssl_hostname,
-        )
     elif args.pkjwt_key_path:  # OpenID PKJWT
+        logging.info(f"Using OpenID Connect with PKJWT")
         return Credentials(
             odm_url=args.url,
             odm_res_url=args.res_url,
@@ -411,12 +481,29 @@ def create_credentials(args):
             verify_ssl=verifyssl,
             verify_ssl_hostname=verifyssl_hostname,
         )
-    else:  # Default to basic authentication
+    elif args.client_id:  # OpenID
+        logging.info(f"Using OpenID Connect")
         return Credentials(
             odm_url=args.url,
             odm_res_url=args.res_url,
-            username=args.username if args.username else "odmAdmin",
-            password=args.password if args.password else "odmAdmin",
+            token_url=args.token_url,
+            scope=args.scope,
+            client_id=args.client_id,
+            client_secret=args.client_secret,
+            username=args.username,
+            password=args.password,
+            mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
+            ssl_cert_path=args.ssl_cert_path,
+            verify_ssl=verifyssl,
+            verify_ssl_hostname=verifyssl_hostname,
+        )
+    else:  # Default to basic authentication
+        logging.info(f"Using Basic Auth")
+        return Credentials(
+            odm_url=args.url,
+            odm_res_url=args.res_url,
+            username=args.username,
+            password=args.password,
             mtls_cert_path=args.mtls_cert_path, mtls_key_path=args.mtls_key_path, mtls_key_password=args.mtls_key_password,
             ssl_cert_path=args.ssl_cert_path,
             verify_ssl=verifyssl,
@@ -424,7 +511,7 @@ def create_credentials(args):
         )
 
 def init(args):
-    init_logging(args.log_level)
+    init_logging(args.log_level, args.transport)
     credentials = create_credentials(args)
     server = MCPServer(
         credentials     = credentials,
@@ -441,11 +528,33 @@ def init(args):
         mcp_ext_url     = args.mcp_ext_url,
         issuer_url      = args.issuer_url,
         introspection_url = args.introspection_url,
+        userinfo_url    = args.userinfo_url,
     )
-    if server.use_user_credentials:
-        # the MCP server credentials are optional is this case
-        credentials.ignoreAuthErrors = True
-    server.update_repository()
+
+    retry = os.getenv("STARTUP_RETRY_IF_FAILURE", "False")
+    retries_count  = int(os.getenv("STARTUP_RETRIES_COUNT",  10))
+    retries_period = int(os.getenv("STARTUP_RETRIES_PERIOD", 30))
+
+    attempts_left = retries_count
+    while attempts_left > 0:
+        attempts_left -= 1
+        try:
+            server.update_repository()
+        except Exception as e:
+            if retry != "False":
+                if attempts_left > 0:
+                    server.logger.info(f"Failed to retrieve the tools. Will retry {attempts_left} more times every {retries_period} seconds")
+                time.sleep(retries_period)
+                continue
+            elif server.use_user_credentials and not isinstance(e, ValueError):
+                # in this mode, the MCP server could be missing the required credentials to log in to ODM,  but the users credentials would enable to log in to ODM later on.
+                # don't raise the exception as it would stop the MCP server, unless it is a misconfiguration
+                pass
+            else:
+                # abort as the MCP server could be misconfigured
+                raise(e)
+        break
+
     return server
 
 def parse_arguments():
@@ -461,7 +570,7 @@ def parse_arguments():
     parser.add_argument("--scope",             type=str, default=os.getenv("SCOPE", "openid"), help="OpenID Connect scope using when requesting an access token using Client Credentials (optional)")
     parser.add_argument("--verifyssl",         type=str, default=os.getenv("VERIFY_SSL", "True"), choices=["True", "False"], help="Enable SSL check. Default is True (SSL verification enabled (to check that the server certificate is valid and trusted)).")
     parser.add_argument("--verifyssl-hostname",type=str, default=os.getenv("VERIFY_SSL_HOSTNAME", "False"), choices=["True", "False"], help="Enable TLS hostname verification. Default is False (TLS hostname verification disabled for compatibility). The TLS hostname verification ensures the MCP server connects to the intended server, not a malicious interceptor by checking if the domain name in the requested URL exactly matches the Common Name (CN) or Subject Alternative Name (SAN) fields in the server’s digital certificate.")
-    parser.add_argument("--ssl-cert-path",     type=str, default=os.getenv("SSL_CERT_PATH"), help="Path to the SSL certificate file. If not provided, defaults to system certificates.")
+    parser.add_argument("--ssl-cert-path",     type=str, default=os.getenv("SSL_CERT_PATH"), help="Semi-colon or comma-separated list of paths (files or directories) containing trusted SSL certificates. When a directory is specified, only the files with *.pem or *.crt extension are taken into account. If not provided, defaults to the system certificates")
     parser.add_argument("--pkjwt-cert-path",   type=str, default=os.getenv("PKJWT_CERT_PATH"), help="Path to the certificate for PKJWT authentication (mandatory for PKJWT).")
     parser.add_argument("--pkjwt-key-path",    type=str, default=os.getenv("PKJWT_KEY_PATH"),  help="Path to the private key for PKJWT authentication (mandatory for PKJWT).")
     parser.add_argument("--pkjwt-key-password",type=str, default=os.getenv("PKJWT_KEY_PASSWORD"), help="Password to decrypt the private key for PKJWT authentication. Only needed if the key is password-protected.")
@@ -479,6 +588,7 @@ def parse_arguments():
     parser.add_argument("--mcp-ext-url",       type=str, default=os.getenv("MCP_EXT_URL"), help="MCP server external URL. Needed in remote mode to authenticate with users credentials.")
     parser.add_argument("--issuer-url",        type=str, default=os.getenv("ISSUER_URL"), help="OpenID Connect issuer URL. Needed in remote mode to authenticate with users credentials.")
     parser.add_argument("--introspection-url", type=str, default=os.getenv("INTROSPECTION_URL"), help="OpenID Connect introspection URL. Needed in remote mode to authenticate with users credentials.")
+    parser.add_argument("--userinfo-url",      type=str, default=os.getenv("USERINFO_URL"), help="OpenID Connect userinfo URL. Alternative to introspection URL for providers (e.g. Amazon Cognito) that do not support token introspection.")
     
     # Logging-related arguments
     parser.add_argument("--log-level",         type=str, default=os.getenv("LOG_LEVEL", "INFO"),
@@ -503,8 +613,9 @@ def main():
     server.start()
 
 HOWTO_USE_USERS_CREDENTIALS_MSG = """When MCP Server runs in remote mode, it authenticates to ODM with users credentials if all the conditions below are met:
-    1. OpenID is used with a client secret
-    3. the openID issuer and introspection URLs are set
+    1. OpenID is used (without PKJWT)
+    2. the openID issuer URL is set
+    3. either the introspection URL or the userinfo URL is set
     4. the MCP server external URL is set"""
 
 class AccessTokenVerifier(TokenVerifier):

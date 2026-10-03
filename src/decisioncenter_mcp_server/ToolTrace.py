@@ -68,6 +68,7 @@ class DiskTraceStorage:
         self.trace_executions    = trace_executions
         self.verbose             = verbose
         self.trace_configuration = trace_configuration
+        self.configuration_size_saved = 0
 
         if trace_executions or trace_configuration:
             self.logger.info("Tracing is enabled")
@@ -106,12 +107,20 @@ class DiskTraceStorage:
                 return [to_dict(el) for el in obj]
             return obj  # Default for primitive types
 
-        # Make sure the storage directory still exists
-        self._exists_storage_dir()
-
-        if self.trace_configuration:
+        if not self.trace_configuration:
+            # not configured to save configuration/list of tools
+            return
+        
+        dict_repository = to_dict(repository)
+        len_repository = len(dict_repository)
+        if len_repository <= self.configuration_size_saved:
+            # already saved
+            return
+        
+        if self._exists_storage_dir():
+            self.configuration_size_saved = len_repository
             with open(os.path.join(self.storage_dir, "parsing.json"), 'w') as f:
-                f.write(json.dumps(to_dict(repository), indent=2))
+                f.write(json.dumps(dict_repository, indent=2))
 
     def saveExecution(self, trace: ToolExecutionTrace):
         """
