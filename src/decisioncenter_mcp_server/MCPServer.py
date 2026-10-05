@@ -407,10 +407,14 @@ class MCPServer:
         )
 
 class _SuppressAccessLogForProbes(logging.Filter):
-    """Drop uvicorn access-log entries whose client address matches the local host IP or 127.0.0.1.
+    """Drop uvicorn access-log entries from health-check probes.
+
+    Suppresses two categories:
+    - Any request to the root path ``/`` (health-check route, regardless of source).
+    - Requests whose client address matches the local pod IP or 127.0.0.1.
 
     Uvicorn emits: logger.info('%s - "%s %s HTTP/%s" %d', client_addr, method, path, http_version, status_code)
-    so record.args is a 5-element tuple whose first element is ``"<ip>:<port>"``.
+    so record.args is a 5-element tuple: (client_addr, method, path, http_version, status_code).
     """
 
     def __init__(self, local_ip: str) -> None:
@@ -422,8 +426,11 @@ class _SuppressAccessLogForProbes(logging.Filter):
         if record.name != "uvicorn.access":
             return True
         args = record.args
-        if not (isinstance(args, tuple) and args):
+        if not (isinstance(args, tuple) and len(args) >= 3):
             return True
+        # Suppress health-check hits on the root path from any source.
+        if str(args[2]) == "/":
+            return False
         client = str(args[0])
         return not any(client.startswith(p) for p in self._prefixes)
 

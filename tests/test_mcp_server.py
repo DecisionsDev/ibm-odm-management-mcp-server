@@ -677,11 +677,27 @@ def test_probes_enabled_same_host_is_suppressed():
     assert f.filter(_make_record("10.0.0.1:12345")) is False
 
 
-def test_probes_enabled_different_host_is_not_suppressed():
-    """A request from a different IP must pass through (filter returns True)."""
+def test_probes_enabled_different_host_non_root_path_is_not_suppressed():
+    """A request from a different IP to a non-root path must pass through (filter returns True)."""
     local_ip = "10.0.0.1"
     f = _SuppressAccessLogForProbes(local_ip)
-    assert f.filter(_make_record("10.0.0.2:12345")) is True
+    assert f.filter(_make_record("10.0.0.2:12345", path="/mcp")) is True
+
+
+def test_probes_enabled_root_path_from_any_host_is_suppressed():
+    """A GET / request from any external IP must be suppressed (health-check route)."""
+    local_ip = "10.0.0.1"
+    f = _SuppressAccessLogForProbes(local_ip)
+    assert f.filter(_make_record("192.168.53.112:8151",  path="/")) is False
+    assert f.filter(_make_record("192.168.92.152:58576", path="/")) is False
+    assert f.filter(_make_record("10.0.0.2:12345",       path="/")) is False
+
+
+def test_probes_enabled_root_path_from_local_host_is_suppressed():
+    """A GET / request from the local pod IP is also suppressed."""
+    local_ip = "10.0.0.1"
+    f = _SuppressAccessLogForProbes(local_ip)
+    assert f.filter(_make_record("10.0.0.1:12345", path="/")) is False
 
 
 def test_probes_enabled_logging_filter_passes_when_not_suppressed():
@@ -695,7 +711,7 @@ def test_probes_enabled_logging_filter_drops_when_suppressed():
     """IP prefix match is exact: 10.0.0.10 must not match local_ip 10.0.0.1."""
     f = _SuppressAccessLogForProbes("10.0.0.1")
     # 10.0.0.10 starts with "10.0.0.1" but not "10.0.0.1:" — must NOT be suppressed
-    assert f.filter(_make_record("10.0.0.10:12345")) is True
+    assert f.filter(_make_record("10.0.0.10:12345", path="/mcp")) is True
 
 
 def test_probes_enabled_401_post_from_same_pod_ip_is_suppressed():
