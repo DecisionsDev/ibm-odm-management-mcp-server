@@ -24,7 +24,8 @@ from mcp.server.auth.routes import build_resource_metadata_url
 from mcp.server.auth.middleware.auth_context import get_access_token
 import mcp.server.auth.middleware.bearer_auth as bearer_auth
 from starlette.authentication import AuthCredentials
-from starlette.requests import HTTPConnection
+from starlette.requests import HTTPConnection, Request
+from starlette.responses import Response
 from pydantic import AnyUrl
 from cachetools import LRUCache
 import logging
@@ -387,6 +388,11 @@ class MCPServer:
                               auth=auth,
                               debug=self.logger.isEnabledFor(logging.DEBUG),
                              )
+
+        @self.server.custom_route("/", methods=["GET"], include_in_schema=False)
+        async def health_check(request: Request) -> Response:
+            return Response(status_code=200)
+
         # Register handlers
         self.server.list_resources = self.list_resources
         self.server.read_resource  = self.read_resource
