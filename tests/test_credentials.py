@@ -732,4 +732,181 @@ def test_ssl_cert_path():
         # Verify adapter was created with the correct cert path
         mock_adapter_class.assert_called_with(certfile="/path/to/custom/cert", verify_ssl_hostname=True)
 
+def test_get_auth_pkjwt_missing_pyjwt():
+    """Test that a missing PyJWT package raises an ImportError with a helpful message."""
+    import tempfile
+    import os
+    import builtins
+    from unittest.mock import patch, MagicMock
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.key') as key_file:
+        key_file.write(b"-----BEGIN PRIVATE KEY-----\ncontent\n-----END PRIVATE KEY-----")
+        key_path = key_file.name
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.crt') as cert_file:
+        cert_file.write(b"-----BEGIN CERTIFICATE-----\ncontent\n-----END CERTIFICATE-----")
+        cert_path = cert_file.name
+
+    try:
+        real_import = builtins.__import__
+
+        def import_blocker(name, *args, **kwargs):
+            if name == 'jwt':
+                raise ImportError("No module named 'jwt'")
+            return real_import(name, *args, **kwargs)
+
+        with patch('builtins.__import__', side_effect=import_blocker):
+            cred = Credentials(
+                odm_url="http://localhost:9060/decisioncenter-api",
+                client_id="test_client_id",
+                pkjwt_key_path=key_path,
+                pkjwt_cert_path=cert_path,
+                token_url="https://auth.example.com/token"
+            )
+            with pytest.raises(ImportError, match="PyJWT package is required for PKJWT authentication"):
+                cred.get_auth()
+    finally:
+        if os.path.exists(key_path):
+            os.unlink(key_path)
+        if os.path.exists(cert_path):
+            os.unlink(cert_path)
+
+
+@responses.activate
+def test_get_auth_pkjwt_password_grant():
+    """Test PKJWT authentication using password grant (username + password provided)."""
+    import tempfile
+    import os
+    from unittest.mock import patch, MagicMock
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.key') as key_file:
+        key_file.write(b"-----BEGIN PRIVATE KEY-----\ncontent\n-----END PRIVATE KEY-----")
+        key_path = key_file.name
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.crt') as cert_file:
+        cert_file.write(b"-----BEGIN CERTIFICATE-----\ncontent\n-----END CERTIFICATE-----")
+        cert_path = cert_file.name
+
+    try:
+        token_url = "https://auth.example.com/token"
+        expected_token = "mocked_access_token_pgrant"
+
+        responses.add(
+            responses.POST,
+            token_url,
+            json={"access_token": expected_token, "token_type": "Bearer", "expires_in": 3600},
+            status=200
+        )
+
+        with patch('cryptography.x509.load_pem_x509_certificate') as mock_load_cert, \
+             patch('jwt.encode') as mock_encode:
+
+            mock_cert = MagicMock()
+            mock_cert.public_bytes.return_value = b"mocked_cert_bytes"
+            mock_load_cert.return_value = mock_cert
+            mock_encode.return_value = "dummy.jwt.token"
+
+            cred = Credentials(
+                odm_url="http://localhost:9060/decisioncenter-api",
+                client_id="test_client_id",
+                pkjwt_key_path=key_path,
+                pkjwt_cert_path=cert_path,
+                token_url=token_url,
+                username="testuser",
+                password="testpass"
+            )
+
+            headers = cred.get_auth()
+
+        # Verify grant_type=password was used
+        request_body = responses.calls[0].request.body
+        if isinstance(request_body, bytes):
+            request_body = request_body.decode('utf-8')
+        assert "grant_type=password" in request_body
+        assert "username=testuser" in request_body
+        assert "password=testpass" in request_body
+
+        assert headers == {'Authorization': f'Bearer {expected_token}'}
+    finally:
+        if os.path.exists(key_path):
+            os.unlink(key_path)
+        if os.path.exists(cert_path):
+            os.unlink(cert_path)
+
+
+def test_get_auth_pkjwt_encode_raises_valueerror():
+    """Test that an exception from jwt.encode is wrapped in a ValueError."""
+    import tempfile
+    import os
+    from unittest.mock import patch, MagicMock
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.key') as key_file:
+        key_file.write(b"-----BEGIN PRIVATE KEY-----\ncontent\n-----END PRIVATE KEY-----")
+        key_path = key_file.name
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.crt') as cert_file:
+        cert_file.write(b"-----BEGIN CERTIFICATE-----\ncontent\n-----END CERTIFICATE-----")
+        cert_path = cert_file.name
+
+    try:
+        with patch('cryptography.x509.load_pem_x509_certificate') as mock_load_cert, \
+             patch('jwt.encode') as mock_encode:
+
+            mock_cert = MagicMock()
+            mock_cert.public_bytes.return_value = b"mocked_cert_bytes"
+            mock_load_cert.return_value = mock_cert
+            mock_encode.side_effect = Exception("signing failed")
+
+            cred = Credentials(
+                odm_url="http://localhost:9060/decisioncenter-api",
+                client_id="test_client_id",
+                pkjwt_key_path=key_path,
+                pkjwt_cert_path=cert_path,
+                token_url="https://auth.example.com/token"
+            )
+
+            with pytest.raises(ValueError, match="Error creating or sending JWT token: signing failed"):
+                cred.get_auth()
+    finally:
+        if os.path.exists(key_path):
+            os.unlink(key_path)
+        if os.path.exists(cert_path):
+            os.unlink(cert_path)
+
+
+def test_get_auth_pkjwt_thumbprint_calculation_fails():
+    """Test that a failure in certificate thumbprint calculation raises a ValueError."""
+    import tempfile
+    import os
+    from unittest.mock import patch
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.key') as key_file:
+        key_file.write(b"-----BEGIN PRIVATE KEY-----\ncontent\n-----END PRIVATE KEY-----")
+        key_path = key_file.name
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.crt') as cert_file:
+        cert_file.write(b"-----BEGIN CERTIFICATE-----\ncontent\n-----END CERTIFICATE-----")
+        cert_path = cert_file.name
+
+    try:
+        with patch('cryptography.x509.load_pem_x509_certificate') as mock_load_cert:
+            mock_load_cert.side_effect = Exception("invalid certificate format")
+
+            cred = Credentials(
+                odm_url="http://localhost:9060/decisioncenter-api",
+                client_id="test_client_id",
+                pkjwt_key_path=key_path,
+                pkjwt_cert_path=cert_path,
+                token_url="https://auth.example.com/token"
+            )
+
+            with pytest.raises(ValueError, match="Error calculating certificate thumbprint from public certificate"):
+                cred.get_auth()
+    finally:
+        if os.path.exists(key_path):
+            os.unlink(key_path)
+        if os.path.exists(cert_path):
+            os.unlink(cert_path)
+
+
 # Made with Bob
