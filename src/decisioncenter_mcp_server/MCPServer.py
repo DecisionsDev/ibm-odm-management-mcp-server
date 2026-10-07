@@ -389,10 +389,6 @@ class MCPServer:
                               debug=self.logger.isEnabledFor(logging.DEBUG),
                              )
 
-        @self.server.custom_route("/", methods=["GET"], include_in_schema=False)
-        async def health_check(request: Request) -> Response:
-            return Response(status_code=200)
-
         # Register handlers
         self.server.list_resources = self.list_resources
         self.server.read_resource  = self.read_resource
