@@ -28,11 +28,12 @@ class ToolExecutionTrace:
     """
     
     def __init__(
-        self, 
-        endpoint: str, 
+        self,
+        endpoint: str,
         inputs: Dict[str, Any],
-        http_code: str, 
+        http_code: str,
         results: Any,
+        user: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize a new ToolExecutionTrace.
@@ -41,6 +42,7 @@ class ToolExecutionTrace:
         self.http_code = http_code
         self.inputs = inputs
         self.results = results
+        self.user = user
         self.timestamp = f"{int(time.time()):x}"
 
 class DiskTraceStorage:
@@ -159,6 +161,8 @@ class DiskTraceStorage:
                     "inputs":  convert(trace.inputs),
                     "results": convert(trace.results)
                 }
+                if trace.user:
+                    traces["user"] = convert(trace.user)
                 json.dump(traces, f, indent=2)
             self.logger.debug(f"Saved traces file {file_path}")
         
@@ -218,6 +222,8 @@ class DiskTraceStorage:
                 try:
                     with open(trace_file, 'r') as f:
                         trace_data = json.load(f)
+                    if "user" in trace_data:
+                        execution_info["user"] = trace_data["user"]
                     execution_info["inputs"] = trace_data.get("inputs", {})
                     execution_info["results"] = trace_data.get("results", {})
                 except Exception as e:

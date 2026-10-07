@@ -935,3 +935,81 @@ def test_get_mcp_token_uses_introspection_when_both_urls_set():
     mock_introspect.assert_called_once_with("t")
     mock_userinfo.assert_not_called()
     assert result == fake_token
+
+
+def test_get_current_user_details():
+    """get_current_user_details() returns a dict containing subject and all claims from the access token."""
+    from mcp.server.auth.provider import AccessToken
+    from decisioncenter_mcp_server.Credentials import Credentials
+    from decisioncenter_mcp_server.MCPServer import MCPServer
+
+    cred = Credentials(odm_url="http://localhost:9060/decisioncenter-api", username="test", password="pwd")
+    server = MCPServer(credentials=cred)
+
+    mock_token = AccessToken(
+        token="test-token",
+        client_id="client123",
+        scopes=["openid"],
+        expires_at=9999999999,
+        subject="user-sub-123",
+        claims={"username": "jdoe", "email": "jdoe@example.com", "name": "John Doe", "preferred_username": "john"}
+    )
+
+    with patch("decisioncenter_mcp_server.MCPServer.get_access_token", return_value=mock_token):
+        details = server.get_current_user_details()
+        assert details == {
+            "subject": "user-sub-123",
+            "username": "jdoe",
+            "email": "jdoe@example.com",
+            "name": "John Doe",
+            "preferred_username": "john"
+        }
+
+    # When no access token is found, an exception is raised
+    with patch("decisioncenter_mcp_server.MCPServer.get_access_token", return_value=None):
+        with pytest.raises(Exception, match="No access token found for the current request"):
+            server.get_current_user_details()
+
+
+@pytest.mark.asyncio
+async def test_call_tool_records_user_details_when_using_user_credentials(mock_manager):
+    """When use_user_credentials() is True, call_tool passes user_details to invokeDecisionCenterApi."""
+    from mcp.server.auth.provider import AccessToken
+    from decisioncenter_mcp_server.Credentials import Credentials
+    from decisioncenter_mcp_server.MCPServer import MCPServer
+
+    cred = Credentials(odm_url="http://localhost:9060/decisioncenter-api", client_id="my-client")
+    server = MCPServer(
+        credentials=cred,
+        transport="sse",
+        mcp_ext_url="https://mcp.example.com",
+        issuer_url="https://idp.example.com",
+        introspection_url="https://idp.example.com/introspect",
+    )
+    server.manager = mock_manager
+
+    tool_name = "endpoint1"
+    server.repository_dc_admin[tool_name] = Mock(name="endpoint1")
+    mock_manager.invokeDecisionCenterApi.return_value = {"status": "ok"}
+
+    mock_token = AccessToken(
+        token="user-bearer-token",
+        client_id="my-client",
+        scopes=["openid"],
+        expires_at=9999999999,
+        subject="john.doe@example.com",
+        claims={"username": "johndoe", "name": "John Doe"}
+    )
+
+    with patch.object(server, 'use_user_credentials', return_value=True), \
+         patch.object(server, 'get_user_credentials', return_value=cred), \
+         patch("decisioncenter_mcp_server.MCPServer.get_access_token", return_value=mock_token):
+        result = await server.call_tool(tool_name, {"arg1": "val1"}, {})
+
+    mock_manager.invokeDecisionCenterApi.assert_called_once_with(
+        server.repository_dc_admin[tool_name],
+        {"arg1": "val1"},
+        False,
+        cred,
+        user_details={"subject": "john.doe@example.com", "username": "johndoe", "name": "John Doe"}
+    )

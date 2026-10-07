@@ -53,3 +53,6 @@ build-backend = "uv_build"
 [project.scripts]
 ibm-odm-management-mcp-server = "decisioncenter_mcp_server:main"
 decisioncenter-mcp-server = "decisioncenter_mcp_server:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

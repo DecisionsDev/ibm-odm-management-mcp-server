@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from typing import Optional, Any
 import socket
 from mcp_types import Tool, Resource, CallToolResult, TextContent
 from mcp.server.mcpserver.context import Context
@@ -212,6 +212,19 @@ class MCPServer:
             raise Exception("No access token found for the current request")
         return access_token.token
 
+    def get_current_user_details(self) -> dict[str, Any]:
+        """Return user details (subject and all claims) from the access token of the current request."""
+        access_token = get_access_token()
+        if access_token is None:
+            raise Exception("No access token found for the current request")
+
+        user_details = {}
+        if access_token.subject is not None:
+            user_details["subject"] = access_token.subject
+        if access_token.claims:
+            user_details.update(access_token.claims)
+        return user_details
+
     def get_user_credentials(self):
         token = self.get_current_token()
 
@@ -323,8 +336,12 @@ class MCPServer:
         if self.logger.isEnabledFor(logging.DEBUG): self.logger.debug("Calling tool '%s' with arguments: %s", name, arguments)
         else:                                             self.logger.info ("Calling tool '%s'", name)
 
-        if self.use_user_credentials(): credentials = self.get_user_credentials()
-        else:                           credentials = self.credentials
+        if self.use_user_credentials():
+            credentials = self.get_user_credentials()
+            user_details = self.get_current_user_details()
+        else:
+            credentials = self.credentials
+            user_details = None
 
         # update the list of tools (skipped if it was already generated during startup or by list_tools)
         self.update_repository(credentials)
@@ -341,7 +358,7 @@ class MCPServer:
                 raise ToolError(f"Unknown tool: {name}")
 
             try:
-                result = self.manager.invokeDecisionCenterApi(endpoint, arguments, self.transport == 'stdio', credentials)
+                result = self.manager.invokeDecisionCenterApi(endpoint, arguments, self.transport == 'stdio', credentials, user_details=user_details)
                 is_error = False
             except Exception as e:
                 result = str(e)
