@@ -294,15 +294,11 @@ class DecisionCenterManager:
                         self.logger.info("Decision Center REST API openapi parsing successful")
                         return endpoints
                 elif response.status_code == 401:
-                    self.logger.error("Wrong credentials (401). Therefore no access to Decision Center tools.")
                     raise PermissionError("Authentication failed (401): wrong credentials.")
                 elif response.status_code == 403:
-                    self.logger.error("Access denied (403). Therefore no access to Decision Center tools.")
-                    raise PermissionError("Access denied (403): insufficient permissions to access Decision Center tools.")
+                    raise PermissionError("Access denied (403): insufficient permissions.")
                 else:
-                    self.logger.error("Request failed with status code: %s", response.status_code)
-                    self.logger.error("Response: %s", response.text)
-                    raise(Exception(response.text))
+                    raise(Exception(f"Request failed with status code: {response.status_code} - Response: {response.text}"))
 
         except json.JSONDecodeError as e:
             self.logger.error("Could not retrieve the Decision Center REST API openapi description.")
