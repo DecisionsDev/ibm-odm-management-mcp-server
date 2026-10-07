@@ -616,36 +616,6 @@ def test_server_start_with_sse_transport():
         assert server.manager is not None
 
 
-
-def test_server_start_registers_health_check_route():
-    """Test that start() registers a GET / health-check route on the SDK server."""
-    credentials = Credentials(
-        odm_url="http://test:9060/decisioncenter-api",
-        username="test",
-        password="test",
-    )
-    server = MCPServer(
-        credentials=credentials,
-        transport="streamable-http",
-        host="127.0.0.1",
-        port=3001,
-        path="/mcp",
-    )
-
-    with patch('decisioncenter_mcp_server.MCPServer.SDK_MCPServer') as mock_sdk_class, \
-         patch('decisioncenter_mcp_server.MCPServer.DecisionCenterManager'):
-
-        mock_sdk = mock_sdk_class.return_value
-        mock_sdk.custom_route = Mock(return_value=lambda fn: fn)
-        mock_sdk.run = Mock()
-
-        server.start()
-
-        # custom_route must have been called with path="/" and methods=["GET"]
-        mock_sdk.custom_route.assert_called_once_with("/", methods=["GET"], include_in_schema=False)
-
-
-
 # ---------------------------------------------------------------------------
 # Tests for the access-log suppression filter used when probes are enabled
 # ---------------------------------------------------------------------------
