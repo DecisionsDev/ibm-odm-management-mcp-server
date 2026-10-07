@@ -129,7 +129,7 @@ def test_oauth_password_grant_error_handling():
     )
     
     # Call get_auth which should make the token request and raise an exception
-    with pytest.raises(requests.exceptions.HTTPError) as excinfo:
+    with pytest.raises(PermissionError) as excinfo:
         cred.get_auth()
     
     # Verify the correct error was raised
