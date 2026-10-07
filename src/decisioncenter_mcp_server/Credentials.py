@@ -242,7 +242,14 @@ class Credentials:
                     response = requests.post(self.token_url, data=data, auth=auth, verify=self.cacert)
                 else:
                     response = requests.post(url=self.token_url, data=data, auth=auth, verify=False)
-            response.raise_for_status() # raise an HTTPError if the request failed
+
+            # raise a PermissionError if the request failed due to a bad request from the client
+            if 400 <= response.status_code < 500:
+                raise PermissionError(f"{response.status_code} Client Error: {response.text} for url: {response.url}")
+
+            # raise an HTTPError if the request failed due to the server
+            response.raise_for_status()
+
             token_data = response.json()
             access_token = token_data['access_token']
             return {
