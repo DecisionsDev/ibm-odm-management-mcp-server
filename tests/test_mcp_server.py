@@ -238,6 +238,8 @@ def test_tags_verification(tags, expected_tags, tools, expected_tools, notools, 
         host=None,
         port=None,
         mount_path=None,
+        jwks_url=None,
+        jwt_algorithms=None,
     )
     MCPServer.update_repository = Mock(return_value = {})
     server = init(args)
@@ -1013,3 +1015,278 @@ async def test_call_tool_records_user_details_when_using_user_credentials(mock_m
         cred,
         user_details={"subject": "john.doe@example.com", "username": "johndoe", "name": "John Doe"}
     )
+
+
+# ---------------------------------------------------------------------------
+# decode_token / JWKS tests
+# ---------------------------------------------------------------------------
+
+def _make_rsa_key_pair():
+    """Generate a fresh RSA key pair and return (private_key, public_key)."""
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.backends import default_backend
+    private_key = rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048,
+        backend=default_backend(),
+    )
+    return private_key, private_key.public_key()
+
+
+def _make_signed_jwt(private_key, payload: dict, kid: str = "key-1") -> str:
+    """Sign *payload* with *private_key* using RS256 and embed *kid* in the header."""
+    import jwt as pyjwt
+    return pyjwt.encode(payload, private_key, algorithm="RS256", headers={"kid": kid})
+
+
+def _make_server_with_jwks(jwks_url: str, jwt_algorithms=None):
+    credentials = Credentials(
+        odm_url="http://test:9060/decisioncenter-api",
+        client_id="test-client",
+        client_secret="test-secret",
+        token_url="https://idp.example.com/token",
+        username=None,
+        password=None,
+        scope="openid",
+    )
+    kwargs = dict(
+        credentials=credentials,
+        transport="streamable-http",
+        issuer_url="https://idp.example.com",
+        mcp_ext_url="https://mcp.example.com",
+        jwks_url=jwks_url,
+    )
+    if jwt_algorithms is not None:
+        kwargs["jwt_algorithms"] = jwt_algorithms
+    return MCPServer(**kwargs)
+
+
+def _make_jwk_set(public_key, kid: str = "key-1") -> dict:
+    """Return a minimal JWKS dict for the given RSA public key."""
+    from jwt import PyJWKSet
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+    import base64, struct
+
+    pub = public_key.public_numbers()
+
+    def _int_to_base64url(n):
+        length = (n.bit_length() + 7) // 8
+        return base64.urlsafe_b64encode(n.to_bytes(length, "big")).rstrip(b"=").decode()
+
+    return {
+        "keys": [{
+            "kty": "RSA",
+            "use": "sig",
+            "alg": "RS256",
+            "kid": kid,
+            "n": _int_to_base64url(pub.n),
+            "e": _int_to_base64url(pub.e),
+        }]
+    }
+
+
+# -- argument parsing --------------------------------------------------------
+
+def test_parse_arguments_jwks_url():
+    """--jwks-url must be parsed into args.jwks_url."""
+    with patch('sys.argv', ['script', '--jwks-url', 'https://idp.example.com/jwks']), \
+         patch.dict('os.environ', {}, clear=False) as env:
+        env.pop('JWKS_URL', None)
+        args = parse_arguments()
+        assert args.jwks_url == 'https://idp.example.com/jwks'
+
+
+def test_parse_arguments_jwks_url_from_env():
+    """JWKS_URL env var must populate args.jwks_url."""
+    with patch('sys.argv', ['script']), \
+         patch.dict('os.environ', {'JWKS_URL': 'https://idp.example.com/jwks'}, clear=False):
+        args = parse_arguments()
+        assert args.jwks_url == 'https://idp.example.com/jwks'
+
+
+def test_parse_arguments_jwt_algorithms():
+    """--jwt-algorithms must be parsed as a list of strings."""
+    with patch('sys.argv', ['script', '--jwt-algorithms', 'RS256', 'ES256']), \
+         patch.dict('os.environ', {}, clear=False) as env:
+        env.pop('JWT_ALGORITHMS', None)
+        args = parse_arguments()
+        assert args.jwt_algorithms == ['RS256', 'ES256']
+
+
+def test_parse_arguments_jwt_algorithms_default():
+    """When --jwt-algorithms is omitted, args.jwt_algorithms must be None (default applied by MCPServer)."""
+    with patch('sys.argv', ['script']), \
+         patch.dict('os.environ', {}, clear=False) as env:
+        env.pop('JWT_ALGORITHMS', None)
+        args = parse_arguments()
+        assert args.jwt_algorithms is None
+
+
+# -- MCPServer constructor ---------------------------------------------------
+
+def test_server_default_jwt_algorithms():
+    """When jwt_algorithms is not passed, MCPServer uses DEFAULT_JWT_ALGORITHMS."""
+    server = _make_server_with_jwks("https://idp.example.com/jwks")
+    assert server.jwt_algorithms == MCPServer.DEFAULT_JWT_ALGORITHMS
+
+
+def test_server_custom_jwt_algorithms():
+    """When jwt_algorithms is passed, MCPServer uses it."""
+    server = _make_server_with_jwks("https://idp.example.com/jwks", jwt_algorithms=["RS256"])
+    assert server.jwt_algorithms == ["RS256"]
+
+
+# -- decode_token ------------------------------------------------------------
+
+def test_decode_token_success():
+    """decode_token() must return an AccessToken for a valid RS256-signed JWT."""
+    import time
+    from mcp.server.auth.provider import AccessToken
+
+    private_key, public_key = _make_rsa_key_pair()
+    kid = "key-1"
+    exp = int(time.time()) + 3600
+    payload = {
+        "sub": "user-42",
+        "azp": "my-client",
+        "scope": "openid email",
+        "exp": exp,
+        "aud": "my-resource",
+        "email": "user@example.com",
+        "preferred_username": "u42",
+    }
+    token = _make_signed_jwt(private_key, payload, kid=kid)
+    jwks = _make_jwk_set(public_key, kid=kid)
+
+    server = _make_server_with_jwks("https://idp.example.com/jwks")
+
+    with patch("jwt.PyJWKClient.get_signing_key_from_jwt") as mock_get_key:
+        from jwt import PyJWK
+        mock_get_key.return_value = PyJWK.from_dict(jwks["keys"][0])
+        result = server.decode_token(token)
+
+    assert isinstance(result, AccessToken)
+    assert result.token == token
+    assert result.subject == "user-42"
+    assert result.client_id == "my-client"
+    assert result.expires_at == exp
+    assert result.resource == "my-resource"
+    assert "openid" in result.scopes
+    assert result.claims == {"email": "user@example.com", "preferred_username": "u42"}
+
+
+def test_decode_token_uses_cache_on_second_call():
+    """decode_token() must not hit the JWKS endpoint on the second call for the same kid."""
+    import time
+
+    private_key, public_key = _make_rsa_key_pair()
+    kid = "key-1"
+    payload = {"sub": "u1", "scope": "openid", "exp": int(time.time()) + 3600}
+    token = _make_signed_jwt(private_key, payload, kid=kid)
+    jwks = _make_jwk_set(public_key, kid=kid)
+
+    server = _make_server_with_jwks("https://idp.example.com/jwks")
+
+    from jwt import PyJWK
+    signing_key = PyJWK.from_dict(jwks["keys"][0])
+
+    with patch("jwt.PyJWKClient.get_signing_key_from_jwt", return_value=signing_key) as mock_get_key:
+        server.decode_token(token)  # first call — populates cache
+        server.decode_token(token)  # second call — must use cache
+        assert mock_get_key.call_count == 1  # JWKS endpoint called only once
+
+
+def test_decode_token_logs_jwks_failure(caplog):
+    """decode_token() must log at DEBUG level when the JWKS key resolution fails."""
+    import jwt as pyjwt
+    import logging
+
+    # Build a token with a kid that the JWKS endpoint won't recognise
+    private_key, _ = _make_rsa_key_pair()
+    token = _make_signed_jwt(private_key, {"sub": "u", "exp": 9999999999, "scope": "openid"}, kid="unknown-kid")
+
+    server = _make_server_with_jwks("https://idp.example.com/jwks")
+
+    with patch("jwt.PyJWKClient.get_signing_key_from_jwt", side_effect=Exception("No key found for kid")), \
+         caplog.at_level(logging.DEBUG):
+        result = server.decode_token(token)
+
+    assert result is None
+    assert any("JWKS key resolution failed" in r.message for r in caplog.records)
+    assert any("https://idp.example.com/jwks" in r.message for r in caplog.records)
+
+
+def test_decode_token_returns_none_for_jwe():
+    """decode_token() must return None for an encrypted (JWE) token."""
+    # A JWE has 5 dot-separated parts; jwt.get_unverified_header raises on it
+    jwe_token = "eyJhbGciOiJSU0EtT0FFUCIsImVuYyI6IkEyNTZHQ00ifQ.abc.def.ghi.jkl"
+    server = _make_server_with_jwks("https://idp.example.com/jwks")
+    result = server.decode_token(jwe_token)
+    assert result is None
+
+
+def test_decode_token_returns_none_for_bad_signature():
+    """decode_token() must return None when the token signature does not match the key."""
+    import time
+
+    private_key_a, public_key_a = _make_rsa_key_pair()
+    private_key_b, _            = _make_rsa_key_pair()
+
+    kid = "key-1"
+    # Sign with key B, but verify against key A
+    token = _make_signed_jwt(private_key_b, {"sub": "u", "exp": int(time.time()) + 3600, "scope": "openid"}, kid=kid)
+    jwks = _make_jwk_set(public_key_a, kid=kid)  # key A
+
+    server = _make_server_with_jwks("https://idp.example.com/jwks")
+
+    from jwt import PyJWK
+    with patch("jwt.PyJWKClient.get_signing_key_from_jwt", return_value=PyJWK.from_dict(jwks["keys"][0])):
+        result = server.decode_token(token)
+
+    assert result is None
+
+
+# -- get_mcp_token with jwks_url --------------------------------------------
+
+def test_get_mcp_token_skips_decode_when_no_jwks_url():
+    """get_mcp_token() must not call decode_token when jwks_url is not set."""
+    server = _make_server_with_userinfo("https://idp.example.com/userinfo")
+
+    from mcp.server.auth.provider import AccessToken
+    fake = AccessToken(token="t", client_id="c", scopes=[], expires_at=9999999999)
+
+    with patch.object(server, 'decode_token') as mock_decode, \
+         patch.object(server, 'validate_token_via_userinfo', return_value=fake):
+        server.get_mcp_token("t")
+
+    mock_decode.assert_not_called()
+
+
+def test_get_mcp_token_uses_decode_when_jwks_url_set():
+    """get_mcp_token() must call decode_token first when jwks_url is set."""
+    server = _make_server_with_jwks("https://idp.example.com/jwks")
+
+    from mcp.server.auth.provider import AccessToken
+    fake = AccessToken(token="t", client_id="c", scopes=[], expires_at=9999999999)
+
+    with patch.object(server, 'decode_token', return_value=fake) as mock_decode:
+        result = server.get_mcp_token("t")
+
+    mock_decode.assert_called_once_with("t")
+    assert result == fake
+
+
+def test_get_mcp_token_falls_back_to_introspection_when_decode_fails():
+    """get_mcp_token() must fall back to introspect_token when decode_token returns None."""
+    server = _make_server_with_jwks("https://idp.example.com/jwks")
+    server.introspection_url = "https://idp.example.com/introspect"
+
+    from mcp.server.auth.provider import AccessToken
+    fake = AccessToken(token="t", client_id="c", scopes=[], expires_at=9999999999)
+
+    with patch.object(server, 'decode_token', return_value=None), \
+         patch.object(server, 'introspect_token', return_value=fake) as mock_introspect:
+        result = server.get_mcp_token("t")
+
+    mock_introspect.assert_called_once_with("t")
+    assert result == fake

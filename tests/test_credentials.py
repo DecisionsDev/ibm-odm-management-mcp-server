@@ -813,45 +813,6 @@ def test_create_credentials_no_ssl_cert_path():
     args = _make_args(ssl_cert_path=None)
     cred = create_credentials(args)
     assert cred.cacert == certifi.where()
-def test_get_auth_pkjwt_missing_pyjwt():
-    """Test that a missing PyJWT package raises an ImportError with a helpful message."""
-    import tempfile
-    import os
-    import builtins
-    from unittest.mock import patch, MagicMock
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.key') as key_file:
-        key_file.write(b"-----BEGIN PRIVATE KEY-----\ncontent\n-----END PRIVATE KEY-----")
-        key_path = key_file.name
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.crt') as cert_file:
-        cert_file.write(b"-----BEGIN CERTIFICATE-----\ncontent\n-----END CERTIFICATE-----")
-        cert_path = cert_file.name
-
-    try:
-        real_import = builtins.__import__
-
-        def import_blocker(name, *args, **kwargs):
-            if name == 'jwt':
-                raise ImportError("No module named 'jwt'")
-            return real_import(name, *args, **kwargs)
-
-        with patch('builtins.__import__', side_effect=import_blocker):
-            cred = Credentials(
-                odm_url="http://localhost:9060/decisioncenter-api",
-                client_id="test_client_id",
-                pkjwt_key_path=key_path,
-                pkjwt_cert_path=cert_path,
-                token_url="https://auth.example.com/token"
-            )
-            with pytest.raises(ImportError, match="PyJWT package is required for PKJWT authentication"):
-                cred.get_auth()
-    finally:
-        if os.path.exists(key_path):
-            os.unlink(key_path)
-        if os.path.exists(cert_path):
-            os.unlink(cert_path)
-
 
 @responses.activate
 def test_get_auth_pkjwt_password_grant():

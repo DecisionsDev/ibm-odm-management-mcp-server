@@ -237,6 +237,8 @@ The parameters below can be specified:
 > | `--issuer-url` | `ISSUER_URL` | OpenID Connect issuer URL | |
 > | `--introspection-url` | `INTROSPECTION_URL` | OpenID Connect introspection URL. Either this or `--userinfo-url` is required. | |
 > | `--userinfo-url` | `USERINFO_URL` | OpenID Connect userinfo URL. Alternative to `--introspection-url` for providers (e.g. Amazon Cognito) that do not support token introspection. | |
+> | `--jwks-url` | `JWKS_URL` | OpenID Connect JWKS URI. When provided, incoming bearer tokens are verified locally using the IdP public keys (no introspection round-trip). Signing keys are cached by `kid` (up to 10 entries). | |
+> | `--jwt-algorithms` | `JWT_ALGORITHMS` | Space-separated list of accepted JWT signing algorithms. Symmetric (`HS*`) and `none` are never accepted. | `RS256 RS384 RS512 ES256 ES384 ES512 PS256` |
 
 ## MCP Server Configuration File          
 

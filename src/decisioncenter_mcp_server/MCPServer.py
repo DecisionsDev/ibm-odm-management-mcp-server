@@ -34,6 +34,9 @@ import argparse
 import os
 import sys
 import time
+import requests
+import jwt
+from jwt import PyJWKClient
 
 from .Credentials import Credentials
 from .DecisionCenterManager import DecisionCenterManager
@@ -65,10 +68,13 @@ class MCPServer:
                         }
             )
 
+    DEFAULT_JWT_ALGORITHMS = ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256"]
+
     def __init__(self, credentials: Credentials,
                  tags: list[str] = [], tools: list[str] = [], no_tools: list[str] = [],
                  trace: list[str] = [], traces_dir: str = None, traces_maxsize: int = max_trace_files,
                  transport: Optional[str] = 'stdio', host: Optional[str] = '0.0.0.0', port: Optional[int] = 3000, path: Optional[str] = '/mcp', mcp_ext_url: Optional[str] = None, issuer_url: Optional[str] = None, introspection_url: Optional[str] = None, userinfo_url: Optional[str] = None,
+                 jwks_url: Optional[str] = None, jwt_algorithms: Optional[list[str]] = None,
                 ):
         # Get logger for this class
         self.logger = logging.getLogger(__name__)
@@ -87,6 +93,9 @@ class MCPServer:
         self.introspection_url= introspection_url
         self.userinfo_url= userinfo_url
         self.mcp_ext_url = mcp_ext_url
+        self.jwks_url    = jwks_url
+        self.jwt_algorithms = jwt_algorithms if jwt_algorithms else self.DEFAULT_JWT_ALGORITHMS
+        self._jwks_cache : LRUCache = LRUCache(maxsize=10)  # key = kid, value = signing key
 
         self.repository_dc              : dict[str, DecisionCenterEndpoint] = {}
         self.repository_dc_admin        : dict[str, DecisionCenterEndpoint] = {}
@@ -106,14 +115,56 @@ class MCPServer:
 
         self.manager = DecisionCenterManager(credentials, self.trace_recorder)
 
+    def decode_token(self, token):
+        """Decode and verify a JWT token using the configured JWKS endpoint.
+
+        The signing key is cached by kid (up to 10 keys). Returns an AccessToken
+        on success, or None if jwks_url is not configured, the token is encrypted
+        (JWE), the signature is invalid, or any other decoding error occurs.
+        """
+        try:
+            # Read kid from the unverified header to check the cache first
+            header = jwt.get_unverified_header(token)
+            kid = header.get("kid")
+
+            if kid and kid in self._jwks_cache:
+                signing_key = self._jwks_cache[kid]
+            else:
+                jwks_client = PyJWKClient(self.jwks_url)
+                try:
+                    signing_key = jwks_client.get_signing_key_from_jwt(token)
+                except Exception as e:
+                    self.logger.error(f"JWKS key resolution failed ({self.jwks_url}): {e}")
+                    self.logger.debug(f"token: {token}")
+                    return None
+                if kid:
+                    self._jwks_cache[kid] = signing_key
+
+            payload = jwt.decode(token, signing_key.key, algorithms=self.jwt_algorithms, options={"verify_aud": False})
+
+        except Exception as e:
+            self.logger.error(f"Unable to decode the token: {e}")
+            self.logger.debug(f"token: {token}, alg: {self.jwt_algorithms}")
+            return None
+
+        claim_fields = ["email", "username", "name", "preferred_username"]
+        claims = {k: payload[k] for k in claim_fields if k in payload} or None
+        return AccessToken(
+            token      = token,
+            client_id  = payload.get("azp") or payload.get("client_id", self.credentials.client_id),
+            scopes     = payload.get("scope", self.credentials.scope).split(),
+            expires_at = payload.get("exp", 0),
+            resource   = payload.get("aud"),
+            subject    = payload.get("sub", "unknown"),
+            claims     = claims,
+        )
+
     def introspect_token(self, token):
         """Verify token via introspection endpoint.
 
         Follows RFC 7662 §2.1: the token is sent as an application/x-www-form-urlencoded
         body parameter, and client credentials are passed via HTTP Basic authentication header
         """
-        import requests
-
         request_body = {'token': token}
         auth = requests.auth.HTTPBasicAuth(self.credentials.client_id, self.credentials.client_secret) \
                if self.credentials.client_secret else None
@@ -149,8 +200,6 @@ class MCPServer:
 
     def validate_token_via_userinfo(self, token):
         """Verify token by calling the userinfo endpoint (GET with Bearer token)."""
-        import requests
-
         headers = {"Authorization": f"Bearer {token}"}
 
         if self.credentials.verify_ssl:
@@ -184,10 +233,11 @@ class MCPServer:
         if token in self.mcp_tokens:
             mcp_token : AccessToken | None = self.mcp_tokens.get(token)
         else:
-            if self.userinfo_url and not self.introspection_url:
-                mcp_token = self.validate_token_via_userinfo(token)
-            else:
+            mcp_token = self.decode_token(token) if self.jwks_url else None
+            if mcp_token is None and self.introspection_url:
                 mcp_token = self.introspect_token(token)
+            if mcp_token is None and self.userinfo_url:
+                mcp_token = self.validate_token_via_userinfo(token)
             if mcp_token:
                 self.mcp_tokens[token] = mcp_token
 
@@ -259,7 +309,10 @@ class MCPServer:
            and self.credentials.client_id is not None
            and self.credentials.pkjwt_key_path is None
            and self.issuer_url is not None
-           and (self.introspection_url is not None or self.userinfo_url is not None)
+           and (  self.introspection_url is not None 
+               or self.userinfo_url      is not None
+               or self.jwks_url          is not None
+               )
            and self.mcp_ext_url is not None
         )
 
@@ -572,6 +625,8 @@ def init(args):
         issuer_url      = args.issuer_url,
         introspection_url = args.introspection_url,
         userinfo_url    = args.userinfo_url,
+        jwks_url        = args.jwks_url,
+        jwt_algorithms  = args.jwt_algorithms,
     )
 
     retry = os.getenv("STARTUP_RETRY_IF_FAILURE", "False") == "True"
@@ -639,6 +694,8 @@ def parse_arguments():
     parser.add_argument("--issuer-url",        type=str, default=os.getenv("ISSUER_URL"), help="OpenID Connect issuer URL. Needed in remote mode to authenticate with users credentials.")
     parser.add_argument("--introspection-url", type=str, default=os.getenv("INTROSPECTION_URL"), help="OpenID Connect introspection URL. Needed in remote mode to authenticate with users credentials.")
     parser.add_argument("--userinfo-url",      type=str, default=os.getenv("USERINFO_URL"), help="OpenID Connect userinfo URL. Alternative to introspection URL for providers (e.g. Amazon Cognito) that do not support token introspection.")
+    parser.add_argument("--jwks-url",          type=str, default=os.getenv("JWKS_URL"), help="OpenID Connect JWKS URI. When provided, incoming bearer tokens are verified locally using the IdP public keys (no introspection round-trip). Signing keys are cached by kid (up to 10 entries).")
+    parser.add_argument("--jwt-algorithms",    type=str, default=os.getenv("JWT_ALGORITHMS"), nargs='+', help=f"Allowed JWT signing algorithms (default: {' '.join(MCPServer.DEFAULT_JWT_ALGORITHMS)}). Symmetric (HS*) and 'none' are never accepted.")
     
     # Logging-related arguments
     parser.add_argument("--log-level",         type=str, default=os.getenv("LOG_LEVEL", "INFO"),
@@ -665,7 +722,7 @@ def main():
 HOWTO_USE_USERS_CREDENTIALS_MSG = """When MCP Server runs in remote mode, it authenticates to ODM with users credentials if all the conditions below are met:
     1. OpenID is used (without PKJWT)
     2. the openID issuer URL is set
-    3. either the introspection URL or the userinfo URL is set
+    3. either the introspection URL or the userinfo URL or the JWKS URL is set
     4. the MCP server external URL is set"""
 
 class AccessTokenVerifier(TokenVerifier):

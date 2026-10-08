@@ -20,6 +20,7 @@ import logging
 import time
 import uuid
 import hashlib
+import jwt
 
 class CustomHTTPAdapter(HTTPAdapter):
     """
@@ -137,7 +138,7 @@ class Credentials:
                 raise ValueError("Both 'client_id' and 'token_url' are required for OpenId authentication.")
             self.logger.debug("Using password grant" if self.username and self.password else "Using client_credentials grant")
 
-            # Check if we're using PKJWT (certificate-based) or client_secret
+            # Check if we're using PKJWT (Private Key Json Web Token) authentication
             if self.pkjwt_cert_path:
                 if not self.pkjwt_key_data:
                     raise ValueError("Both 'pkjwt_key_path' and 'pkjwt_cert_path' are required for PKJWT authentication.")
@@ -145,17 +146,6 @@ class Credentials:
                 from cryptography import x509
                 from cryptography.hazmat.backends import default_backend
                 from cryptography.hazmat.primitives import serialization
-                
-                # PKJWT (Private Key Json Web Token) authentication
-                # Note: PyJWT package is required for PKJWT authentication
-                # If you get an error, install it with: pip install PyJWT
-                try:
-                    # Try to import PyJWT dynamically
-                    # pylint: disable=import-outside-toplevel
-                    # type: ignore
-                    import jwt  # type: ignore # noqa
-                except ImportError:
-                    raise ImportError("PyJWT package is required for PKJWT authentication. Install with 'pip install PyJWT'.")
                 
                 # Create JWT token with required claims
                 now = int(time.time())
