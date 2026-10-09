@@ -37,8 +37,10 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
         [SCOPE]="scope"
         [ISSUER_URL]="issuerIdentifier"
         # INTROSPECTION_URL is set from validationEndpointUrl with a custom logic
-         [PKJWT_KEY_PATH]="keyAliasName"
+        [PKJWT_KEY_PATH]="keyAliasName"
         [PKJWT_CERT_PATH]="keyAliasName"
+        [JWKS_URL]="jwkEndpointUrl"
+        [JWT_ALGORITHMS]="signatureAlgorithm"
     )
     declare -A PROPS_KEY=(
         [CLIENT_ID]="OPENID_CLIENT_ID"
@@ -48,8 +50,10 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
         [ISSUER_URL]=""
         [INTROSPECTION_URL]="OPENID_INTROSPECTION_URL"
         [USERINFO_URL]="OPENID_USERINFO_URL"
-         [PKJWT_KEY_PATH]="OPENID_CLIENT_ASSERTION_ALIAS_NAME"
+        [PKJWT_KEY_PATH]="OPENID_CLIENT_ASSERTION_ALIAS_NAME"
         [PKJWT_CERT_PATH]="OPENID_CLIENT_ASSERTION_ALIAS_NAME"
+        [JWKS_URL]=""
+        [JWT_ALGORITHMS]=""
     )
     # Maps: ENV_VAR_NAME -> value prefix/suffix to wrap around the extracted value
     declare -A VALUE_PREFIX=(
@@ -106,7 +110,7 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
         fi
     fi
 
-    for VAR in CLIENT_ID CLIENT_SECRET TOKEN_URL SCOPE ISSUER_URL INTROSPECTION_URL USERINFO_URL PKJWT_KEY_PATH PKJWT_CERT_PATH; do
+    for VAR in CLIENT_ID CLIENT_SECRET TOKEN_URL SCOPE ISSUER_URL INTROSPECTION_URL USERINFO_URL PKJWT_KEY_PATH PKJWT_CERT_PATH JWKS_URL JWT_ALGORITHMS; do
         # Skip if already set
         if [ -n "${!VAR}" ]; then
             echo "[startup] ${VAR}=$(safe_value "${VAR}") (defined as environment variable)."
@@ -129,6 +133,14 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
             elif [ "${VAR}" = "PKJWT_KEY_PATH" ] || [ "${VAR}" = "PKJWT_CERT_PATH" ]; then
                 # Extract keyAliasName from openidConnectClient elements where tokenEndpointAuthMethod is set to "private_key_jwt"
                 VALUE=$(xmllint --xpath "string((//*[local-name()='openidConnectClient'][@tokenEndpointAuthMethod='private_key_jwt'])[1]/@keyAliasName)" "${XML_FILE}" 2>/dev/null)
+            elif [ "${VAR}" = "JWT_ALGORITHMS" ]; then
+                # Use signatureAlgorithm; if it is "FROM_HEADER", fall back to allowedSignatureAlgorithms
+                # (normalise to space-separated to match the CLI/env convention used by --jwt-algorithms)
+                VALUE=$(xmllint --xpath "string((//*[local-name()='openidConnectClient'])[1]/@signatureAlgorithm)" "${XML_FILE}" 2>/dev/null)
+                if [ "${VALUE}" = "FROM_HEADER" ]; then
+                    RAW=$(xmllint --xpath "string((//*[local-name()='openidConnectClient'])[1]/@allowedSignatureAlgorithms)" "${XML_FILE}" 2>/dev/null)
+                    VALUE=$(echo "${RAW}" | tr ',' ' ' | tr -s ' ' | sed 's/^ //;s/ $//')
+                fi
             elif [ -n "${XML_ATTR[$VAR]:-}" ]; then
                 VALUE=$(xmllint --xpath "string((//*[local-name()='openidConnectClient'])[1]/@${XML_ATTR[$VAR]})" "${XML_FILE}" 2>/dev/null)
             fi
@@ -141,7 +153,7 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
             fi
         fi
 
-        # If TOKEN_URL, ISSUER_URL, INTROSPECTION_URL, or USERINFO_URL is missing from XML, extract from discovery JSON
+        # If TOKEN_URL, ISSUER_URL, INTROSPECTION_URL, USERINFO_URL, or JWKS_URL is missing from XML, extract from discovery JSON
         if [ -z "${VALUE}" ] && [ -n "${DISCOVERY_JSON}" ]; then
             if [ "${VAR}" = "TOKEN_URL" ]; then
                 VALUE=$(python3 -c "import sys, json; print(json.loads(sys.stdin.read()).get('token_endpoint', '') or '')" <<< "${DISCOVERY_JSON}" 2>/dev/null || true)
@@ -151,6 +163,8 @@ if [ -d "${AUTHOIDC_DIR}" ] && { [ -f "${XML_FILE}" ] || [ -f "${PROPS_FILE}" ];
                 VALUE=$(python3 -c "import sys, json; print(json.loads(sys.stdin.read()).get('introspection_endpoint', '') or '')" <<< "${DISCOVERY_JSON}" 2>/dev/null || true)
             elif [ "${VAR}" = "USERINFO_URL" ]; then
                 VALUE=$(python3 -c "import sys, json; print(json.loads(sys.stdin.read()).get('userinfo_endpoint', '') or '')" <<< "${DISCOVERY_JSON}" 2>/dev/null || true)
+            elif [ "${VAR}" = "JWKS_URL" ]; then
+                VALUE=$(python3 -c "import sys, json; print(json.loads(sys.stdin.read()).get('jwks_uri', '') or '')" <<< "${DISCOVERY_JSON}" 2>/dev/null || true)
             fi
             if [ -n "${VALUE}" ]; then
                 SOURCE="${DISCOVERY_SOURCE}"

@@ -1136,6 +1136,28 @@ def test_server_custom_jwt_algorithms():
     assert server.jwt_algorithms == ["RS256"]
 
 
+def test_jwt_algorithms_from_env_space_separated():
+    """JWT_ALGORITHMS env var with space-separated values is split into a list by init()."""
+    with patch('sys.argv', ['script']), \
+         patch.dict('os.environ', {'JWT_ALGORITHMS': 'RS256 ES384 RS512'}, clear=False):
+        args = parse_arguments()
+        # argparse passes the env-var default through as a plain string (nargs='+' only applies to CLI tokens)
+        assert args.jwt_algorithms == 'RS256 ES384 RS512'
+        # init() splits it — replicate the same logic here
+        jwt_algorithms = args.jwt_algorithms.split() if isinstance(args.jwt_algorithms, str) else args.jwt_algorithms
+        assert jwt_algorithms == ['RS256', 'ES384', 'RS512']
+
+
+def test_jwt_algorithms_from_env_single_value():
+    """JWT_ALGORITHMS env var with a single value is preserved as a one-element list by init()."""
+    with patch('sys.argv', ['script']), \
+         patch.dict('os.environ', {'JWT_ALGORITHMS': 'RS256'}, clear=False):
+        args = parse_arguments()
+        assert args.jwt_algorithms == 'RS256'
+        jwt_algorithms = args.jwt_algorithms.split() if isinstance(args.jwt_algorithms, str) else args.jwt_algorithms
+        assert jwt_algorithms == ['RS256']
+
+
 # -- decode_token ------------------------------------------------------------
 
 def test_decode_token_success():

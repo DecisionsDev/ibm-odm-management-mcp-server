@@ -46,6 +46,8 @@ def run_startup(tmp_path, env_overrides=None, xml_content=None, props_content=No
         "echo \"USERINFO_URL=${USERINFO_URL}\"\n"
         "echo \"PKJWT_KEY_PATH=${PKJWT_KEY_PATH}\"\n"
         "echo \"PKJWT_CERT_PATH=${PKJWT_CERT_PATH}\"\n"
+        "echo \"JWKS_URL=${JWKS_URL}\"\n"
+        "echo \"JWT_ALGORITHMS=${JWT_ALGORITHMS}\"\n"
         "echo \"===MOCK_SERVER_END===\"\n"
     )
     mock_server.chmod(0o755)
@@ -67,7 +69,7 @@ def run_startup(tmp_path, env_overrides=None, xml_content=None, props_content=No
 
     # Clean any current env vars that might interfere
     for var in ["CLIENT_ID", "CLIENT_SECRET", "TOKEN_URL", "SCOPE", "ISSUER_URL", "INTROSPECTION_URL",
-                "USERINFO_URL", "PKJWT_KEY_PATH", "PKJWT_CERT_PATH"]:
+                "USERINFO_URL", "PKJWT_KEY_PATH", "PKJWT_CERT_PATH", "JWKS_URL", "JWT_ALGORITHMS"]:
         env.pop(var, None)
 
     if env_overrides:
@@ -498,3 +500,165 @@ def test_startup_xml_discovery_endpoint(tmp_path):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_jwks_url_and_jwt_algorithms_from_xml(tmp_path):
+    """JWKS_URL and JWT_ALGORITHMS are read from jwkEndpointUrl and signatureAlgorithm in XML."""
+    xml = """<server>
+      <openidConnectClient id="default"
+                           clientId="test-client"
+                           clientSecret="test-secret"
+                           jwkEndpointUrl="https://idp.example.com/keys"
+                           signatureAlgorithm="RS256" />
+    </server>"""
+    parsed_vars, stdout, _ = run_startup(tmp_path, xml_content=xml)
+
+    assert parsed_vars.get("JWKS_URL") == "https://idp.example.com/keys"
+    assert parsed_vars.get("JWT_ALGORITHMS") == "RS256"
+    xml_file = str(tmp_path / "authOidc" / "openIdWebSecurity.xml")
+    assert f"JWKS_URL=https://idp.example.com/keys (set from {xml_file})" in stdout
+    assert f"JWT_ALGORITHMS=RS256 (set from {xml_file})" in stdout
+
+
+def test_jwks_url_from_discovery_json(tmp_path):
+    """JWKS_URL falls back to jwks_uri from the discovery endpoint when absent from XML."""
+    import http.server
+    import threading
+
+    discovery_data = {
+        "issuer": "https://idp.example.com",
+        "token_endpoint": "https://idp.example.com/token",
+        "jwks_uri": "https://idp.example.com/.well-known/jwks.json",
+    }
+
+    class DiscoveryHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            import json
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(discovery_data).encode("utf-8"))
+
+        def log_message(self, format, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), DiscoveryHandler)
+    port = server.server_port
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    try:
+        discovery_url = f"http://127.0.0.1:{port}/.well-known/openid-configuration"
+        xml = f"""<server>
+          <openidConnectClient id="default"
+                               clientId="disc-client"
+                               clientSecret="disc-secret"
+                               discoveryEndpointUrl="{discovery_url}" />
+        </server>"""
+        parsed_vars, stdout, _ = run_startup(tmp_path, xml_content=xml)
+
+        assert parsed_vars.get("JWKS_URL") == "https://idp.example.com/.well-known/jwks.json"
+        assert f"JWKS_URL=https://idp.example.com/.well-known/jwks.json (set from {discovery_url})" in stdout
+        # JWT_ALGORITHMS is not in discovery JSON — must remain unset
+        assert parsed_vars.get("JWT_ALGORITHMS") == ""
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_jwks_url_xml_takes_precedence_over_discovery(tmp_path):
+    """jwkEndpointUrl in XML takes precedence over jwks_uri from the discovery endpoint."""
+    import http.server
+    import threading
+
+    discovery_data = {
+        "issuer": "https://idp.example.com",
+        "token_endpoint": "https://idp.example.com/token",
+        "jwks_uri": "https://idp.example.com/discovery-keys",
+    }
+
+    class DiscoveryHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            import json
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(discovery_data).encode("utf-8"))
+
+        def log_message(self, format, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), DiscoveryHandler)
+    port = server.server_port
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    try:
+        discovery_url = f"http://127.0.0.1:{port}/.well-known/openid-configuration"
+        xml = f"""<server>
+          <openidConnectClient id="default"
+                               clientId="test-client"
+                               clientSecret="test-secret"
+                               jwkEndpointUrl="https://idp.example.com/xml-keys"
+                               discoveryEndpointUrl="{discovery_url}" />
+        </server>"""
+        parsed_vars, stdout, _ = run_startup(tmp_path, xml_content=xml)
+
+        xml_file = str(tmp_path / "authOidc" / "openIdWebSecurity.xml")
+        assert parsed_vars.get("JWKS_URL") == "https://idp.example.com/xml-keys"
+        assert f"JWKS_URL=https://idp.example.com/xml-keys (set from {xml_file})" in stdout
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_jwks_url_and_jwt_algorithms_already_set_not_overwritten(tmp_path):
+    """Pre-set JWKS_URL and JWT_ALGORITHMS env vars are not overwritten by XML values."""
+    xml = """<server>
+      <openidConnectClient id="default"
+                           clientId="test-client"
+                           clientSecret="test-secret"
+                           jwkEndpointUrl="https://idp.example.com/xml-keys"
+                           signatureAlgorithm="RS256" />
+    </server>"""
+    env_overrides = {
+        "JWKS_URL": "https://override.example.com/keys",
+        "JWT_ALGORITHMS": "ES256",
+    }
+    parsed_vars, stdout, _ = run_startup(tmp_path, env_overrides=env_overrides, xml_content=xml)
+
+    assert parsed_vars.get("JWKS_URL") == "https://override.example.com/keys"
+    assert parsed_vars.get("JWT_ALGORITHMS") == "ES256"
+    assert "[startup] JWKS_URL=https://override.example.com/keys (defined as environment variable)." in stdout
+    assert "[startup] JWT_ALGORITHMS=ES256 (defined as environment variable)." in stdout
+
+
+def test_jwt_algorithms_from_header_uses_allowed_algorithms(tmp_path):
+    """When signatureAlgorithm is FROM_HEADER, JWT_ALGORITHMS is taken from allowedSignatureAlgorithms,
+    normalised to space-separated to match the --jwt-algorithms CLI/env convention."""
+    xml = """<server>
+      <openidConnectClient id="default"
+                           clientId="test-client"
+                           clientSecret="test-secret"
+                           jwkEndpointUrl="https://idp.example.com/keys"
+                           signatureAlgorithm="FROM_HEADER"
+                           allowedSignatureAlgorithms="RS256, ES384, RS512" />
+    </server>"""
+    parsed_vars, stdout, _ = run_startup(tmp_path, xml_content=xml)
+
+    assert parsed_vars.get("JWT_ALGORITHMS") == "RS256 ES384 RS512"
+    xml_file = str(tmp_path / "authOidc" / "openIdWebSecurity.xml")
+    assert f"JWT_ALGORITHMS=RS256 ES384 RS512 (set from {xml_file})" in stdout
+
+
+def test_jwt_algorithms_from_header_no_allowed_algorithms(tmp_path):
+    """When signatureAlgorithm is FROM_HEADER and allowedSignatureAlgorithms is absent, JWT_ALGORITHMS is left unset."""
+    xml = """<server>
+      <openidConnectClient id="default"
+                           clientId="test-client"
+                           clientSecret="test-secret"
+                           jwkEndpointUrl="https://idp.example.com/keys"
+                           signatureAlgorithm="FROM_HEADER" />
+    </server>"""
+    parsed_vars, stdout, _ = run_startup(tmp_path, xml_content=xml)
+
+    assert parsed_vars.get("JWT_ALGORITHMS") == ""
+    assert "JWT_ALGORITHMS not found in config files, leaving unset." in stdout

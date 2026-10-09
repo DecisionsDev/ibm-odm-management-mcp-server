@@ -626,7 +626,7 @@ def init(args):
         introspection_url = args.introspection_url,
         userinfo_url    = args.userinfo_url,
         jwks_url        = args.jwks_url,
-        jwt_algorithms  = args.jwt_algorithms,
+        jwt_algorithms  = args.jwt_algorithms.split() if isinstance(args.jwt_algorithms, str) else args.jwt_algorithms,
     )
 
     retry = os.getenv("STARTUP_RETRY_IF_FAILURE", "False") == "True"
