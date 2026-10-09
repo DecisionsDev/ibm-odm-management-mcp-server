@@ -186,6 +186,8 @@ If you wish to authenticate yourself with different credentials, you may need to
     - close the browser and restart it
     - close the AI Assistant completely and restart it
 
+As a further reading, Anthropic’s official [MCP documentation](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/authorization) provides a detailed step by step description of MCP OAuth 2.1 Flow.
+
 ### 3.2 How to get more information
 
 The various logs you can check are:
@@ -202,20 +204,27 @@ The various logs you can check are:
 
 ### 3.3 Frequent issues
 
-#### 3.3.1 InvalidGrantError using IBM Bob
+#### 3.3.1 Invalid Grant
 - Symptoms:
-    - several login page gets displayed in the web browser
     - the credentials are accepted, but the connection to the MCP server is in error (no tools)
     - IBM Bob displays the errors:
         ```
         [2026-06-21T09:20:19.657Z][17558] Authorization error: {"name":"InvalidGrantError"}
         [2026-06-21T09:20:19.660Z][17558] Authorization error during finishAuth {"errorMessage":"Code not valid","stack":"InvalidGrantError: Code not valid\n ...
         ```
-- Cause:
-    - This error occurs when several instances of IBM Bob all try to authenticate the user at the same time
+- Possible Causes and solutions:
+    1. Several instances of IBM Bob all try to authenticate the user at the same time
+        - In that case, another symptom is that several login page gets displayed in the web browser
+        - The solution is either to keep only one IBM Bob window, or enable the MCP server in only one window by configuring the MCP server in the "Project MCPs" (rather than "Global MCPs") configuration file.
 
-- Solution:
-    - either keep only one IBM Bob window, or enable the MCP server in only one window by configuring the MCP server in the "Project MCPs" (rather than "Global MCPs") configuration file.
+    1. The OIDC Provider refused the MCP client request for a token
+        - This can happen if the resource specified in the MCP client request is not registered in the OIDC Provider as a legit resource server.
+        - The MCP client sets this resource with the value of the field `resource` found in the response to the URL `<MCP_SERVER_URL>/.well-known/oauth-protected-resource`. This field is set with the value passed to the `--mcp-ext-url` flag (or from the value of the `MCP_EXT_URL` environment variable). This is the URL of the Management MCP server (generally without the `/mcp` path).
+        - Solutions:
+            - if you use `mcp-remote`, you can either specify an alternative resource that the OIDC Provider accepts using the `--resource <legit-resource>` flag or not send the resource using the `--disable-resource-parameter` flag
+            - or configure the OIDC Provider so that it accepts to generate to token for that resource:
+                - in AWS Cognito, define a "resource server" with the URL of the Management MCP server,
+                - in Azure Entra ID, select "Expose an API", click "Add", set the URL of the Management MCP server, and click "Save". 
 
 #### 3.3.2 Invalid parameter: redirect_uri
 - Symptoms:
@@ -232,7 +241,7 @@ The various logs you can check are:
         - or in the OpenID Connect Provider log
     - add this URI to the list of the valid redirect URI for the OpenID Connect Client
 
-#### 3.3.2 The login page is not displayed
+#### 3.3.3 The login page is not displayed
 - Symptoms:
     - the login page does not get displayed in the web browser
 
@@ -247,10 +256,51 @@ The various logs you can check are:
         - or specify the MCP server certificate in `mcp-remote` command line using the `NODE_EXTRA_CA_CERTS` environment variable (see [2.3 AI Assistant configuration](#23-ai-assistant-configuration))
 
     - `mcp-remote` might be unable to determine the OpenId authorization endpoint, in which case
-        - navigate to https://<MY_MCP_SERVER>/.well-known/oauth-protected-resource after replacing `<MY_MCP_SERVER>` by the ROOT URL of your MCP server (without '/mcp')
+        - navigate to `https://<MY_MCP_SERVER>/.well-known/oauth-protected-resource` after replacing `<MY_MCP_SERVER>` by the ROOT URL of your MCP server (without `/mcp`)
             - if this page does not respond, the MCP server might not be using the users credentials
             - you can check if there is a message `MCP Server running in remote mode, using users credentials` in the MCP server log
             - check that all the required MCP server parameters are set (see [2.1 MCP server configuration](#21-mcp-server-configuration))
         - check that the response contains a field "authorization_servers"
-        - navigate to this URL followed by `.well-known/openid-configuration` eg. https://<MY_AUTHORIZATION_SERVER>/.well-known/openid-configuration
+        - navigate to this URL followed by `.well-known/openid-configuration` eg. `https://<MY_AUTHORIZATION_SERVER>/.well-known/openid-configuration`
         - check that the response contains a field "authorization_endpoint"
+
+#### 3.3.4 Invalid Scope
+- Symptoms:
+    - the OIDC provider rejects the token request with an "invalid scope" error,
+    - or the MCP server rejects the token with an error "Unable to decode the token: Signature verification failed".
+
+- Cause:
+    - the MCP client may not be using the suitable scope(s).
+    - the MCP client uses the scope(s) advertised by the MCP server in the field `scopes_supported` at the URL `<MCP_SERVER_URL>/.well-known/oauth-protected-resource`, but this scope(s) might be only suitable for the MCP server to connect using the client_credentials grant, and the MCP client may need a different scope for the Authorization Code flow.
+
+- Solution:
+    - Specify the scope to use for the Authorization Code flow using the flag `--static-oauth-client-metadata { "scope": "scope_for_authorization_code_flow"}`
+
+## 4. mcp-remote parameters
+
+Check [mcp-remote home page project](https://www.npmjs.com/package/mcp-remote) to find the full list of parameters.
+
+The main parameters are:
+
+| Parameter | Description | Documented in |
+|-----------|-------------|---------------|
+| `<url>` (positional) | URL of the MCP server (e.g. `https://my-mcp-server.com/mcp`) | [2.3 AI Assistant configuration](#23-ai-assistant-configuration) |
+| `<port>` (positional) | Local port for the OAuth callback listener (e.g. `34206`) | [2.3 AI Assistant configuration](#23-ai-assistant-configuration) |
+| `--host` | Hostname for the OAuth callback listener (e.g. `localhost`) | [2.3 AI Assistant configuration](#23-ai-assistant-configuration) |
+| `--static-oauth-client-info` | JSON object (or `@/path/to/file`) providing the `client_id` and `client_secret` used by `mcp-remote` to authenticate to the OIDC provider. Example: `{ "client_id": "32a0f2d3-...", "client_secret": "fsG8Q~..." }` | [2.3 AI Assistant configuration](#23-ai-assistant-configuration) |
+| `--static-oauth-client-metadata` | JSON object supplying additional OAuth client metadata, such as the `scope` to request. Example: `{ "scope": "32a0f2d3-.../.default" }` | [3.3.1 Invalid Grant](#334-invalid-scope) |
+| `--disable-resource-parameter` | Do not send the `resource` parameter in token requests. Useful when the OIDC provider does not accept or recognise the MCP server URL as a resource. | [3.3.1 Invalid Grant](#331-invalid-grant) |
+| `--resource` | Override the `resource` parameter sent in token requests with an alternative value accepted by the OIDC provider. | [3.3.1 Invalid Grant](#331-invalid-grant) |
+| `--allow-http` | Allow connections to MCP servers over plain HTTP (disabled by default for security). | [2.3 AI Assistant configuration](#23-ai-assistant-configuration) |
+| `--silent` | Suppress `mcp-remote` log messages forwarded to the AI assistant. | [2.3 AI Assistant configuration](#23-ai-assistant-configuration) |
+| `--debug` | Enable verbose debug logging; tokens are persisted to `~/.mcp-auth/mcp-remote-<VERSION>/` for inspection. | [2.3 AI Assistant configuration](#23-ai-assistant-configuration), [3.1 How things work](#31-how-things-work) |
+
+
+The main environment variables are:
+
+| Environment Variable | Description | Documented in |
+|----------------------|-------------|---------------|
+| `NODE_EXTRA_CA_CERTS` | Path to a PEM file containing additional CA certificates that Node.js should trust. Use this to allow `mcp-remote` to connect to an MCP server whose TLS certificate is signed by a private CA. | [2.3 AI Assistant configuration](#23-ai-assistant-configuration) |
+| `NODE_TLS_REJECT_UNAUTHORIZED` | Set to `"0"` to disable all TLS certificate verification. Use only for testing with self-signed certificates. | [2.3 AI Assistant configuration](#23-ai-assistant-configuration) |
+
+
