@@ -32,17 +32,23 @@ https://github.com/user-attachments/assets/2a7dcf8b-bc40-4290-8361-718663afe523
     |--------------|----------------------|-------------|
     | `--mcp-ext-url` | `MCP_EXT_URL` | MCP server external URL |
     | `--issuer-url` | `ISSUER_URL` | OpenID Connect issuer URL |
-    | `--introspection-url` | `INTROSPECTION_URL` | **Option 1**: OpenID Connect introspection URL. Either this or `--userinfo-url` is required. |
-    | `--userinfo-url` | `USERINFO_URL` | **Option 2**: OpenID Connect userinfo URL. Alternative to `--introspection-url` for providers (e.g. Amazon Cognito) that do not support token introspection. |
-    | `--jwks-url` | `JWKS_URL` | **Option 3**:  OpenID Connect JWKS URI. When provided, bearer tokens are verified locally against the IdP public keys instead of calling the introspection or userinfo endpoint on every request. Signing keys are cached by `kid` (up to 10 entries). |
-    | `--jwt-algorithms` | `JWT_ALGORITHMS` | **Option 3**:  Space-separated list of accepted JWT signing algorithms. Only used when `--jwks-url` is set. Symmetric (`HS*`) and `none` are never accepted. Default: `RS256 RS384 RS512 ES256 ES384 ES512 PS256`. |
+    | `--jwks-url` | `JWKS_URL` | **Option 1**:  OpenID Connect JWKS URI. When provided, bearer tokens are verified locally against the IdP public keys instead of calling the introspection or userinfo endpoint on every request. Signing keys are cached by `kid` (up to 10 entries). |
+    | `--jwt-algorithms` | `JWT_ALGORITHMS` | **Option 1**:  Optional space-separated list of accepted JWT signing algorithms. Only used when `--jwks-url` is set. Default: `RS256 RS384 RS512 ES256 ES384 ES512 PS256`. |
+    | `--introspection-url` | `INTROSPECTION_URL` | **Option 2**: OpenID Connect introspection URL. Either this or `--userinfo-url` is required. |
+    | `--userinfo-url` | `USERINFO_URL` | **Option 3**: OpenID Connect userinfo URL. Alternative to `--introspection-url` for providers (e.g. Amazon Cognito) that do not support token introspection. |
 
     - The MCP external URL is the URL that is configured in the AI assistant to access the MCP server (with or without the path `/mcp` appended, eg. `https://my-mcp-server.com`). This URL MUST match the URL configured in the AI assistant (see [2.3 AI Assistant configuration](#23-ai-assistant-configuration)).
     - The issuer URL can be found in the `issuer` field of the `.well-known/openid-configuration` document of the OpenID Connect server.
     - the other parameters are needed to validate tokens:
-        - Use `--introspection-url` if your provider exposes an introspection endpoint (`introspection_endpoint` in the discovery document),
-        - or `--userinfo-url` if it exposes a userinfo endpoint instead (`userinfo_endpoint` in the discovery document, e.g. Amazon Cognito).
-        - or use `--jwks-url` (the `jwks_uri` field in the discovery document) along with `--jwt-algorithms` to verify tokens locally (after downloading the key) without a network round-trip on every request
+        - Use `--jwks-url` (the `jwks_uri` field in the discovery document) along with `--jwt-algorithms` to verify tokens locally (after downloading the key) without a network round-trip on every request
+        - or use `--introspection-url` if your provider exposes an introspection endpoint (`introspection_endpoint` in the discovery document),
+        - or use `--userinfo-url` if it exposes a userinfo endpoint instead (`userinfo_endpoint` in the discovery document, e.g. Amazon Cognito).
+
+> [!NOTE]
+> - At least one means of validation must be configured.
+> - If several are configured, each means is used in order, until enables to validate the token.
+> - The default order is: JWKS, introspection, userinfo
+> - The order can be redefined by setting the environment variable TOKEN_VALIDATION_ORDER, to "introspection, jwks" for instance if userinfo should not be used and introspection should be used in priority.
 
 - The MCP server also needs the following parameters to validate the users tokens:
 

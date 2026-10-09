@@ -32,6 +32,7 @@ import logging
 import json
 import argparse
 import os
+import re
 import sys
 import time
 import requests
@@ -69,7 +70,8 @@ class MCPServer:
             )
 
     DEFAULT_JWT_ALGORITHMS = ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256"]
-
+    DEFAULT_TOKEN_VALIDATION_ORDER = ["jwks", "introspect", "userinfo"]
+  
     def __init__(self, credentials: Credentials,
                  tags: list[str] = [], tools: list[str] = [], no_tools: list[str] = [],
                  trace: list[str] = [], traces_dir: str = None, traces_maxsize: int = max_trace_files,
@@ -96,6 +98,12 @@ class MCPServer:
         self.jwks_url    = jwks_url
         self.jwt_algorithms = jwt_algorithms if jwt_algorithms else self.DEFAULT_JWT_ALGORITHMS
         self._jwks_cache : LRUCache = LRUCache(maxsize=10)  # key = kid, value = signing key
+        self._token_validation_order = self._parse_token_validation_order()
+        self._token_validation_map = {
+            "jwks":       lambda: (self.jwks_url,           self.decode_token),
+            "introspect": lambda: (self.introspection_url,  self.introspect_token),
+            "userinfo":   lambda: (self.userinfo_url,       self.validate_token_via_userinfo),
+        }
 
         self.repository_dc              : dict[str, DecisionCenterEndpoint] = {}
         self.repository_dc_admin        : dict[str, DecisionCenterEndpoint] = {}
@@ -114,6 +122,43 @@ class MCPServer:
                                                max_traces = self.traces_maxsize)
 
         self.manager = DecisionCenterManager(credentials, self.trace_recorder)
+
+    def _parse_token_validation_order(self) -> list[str]:
+        """Read TOKEN_VALIDATION_ORDER and return the ordered list of validation methods.
+
+        The env var accepts a subset of 'jwks', 'introspect', 'userinfo' separated by
+        any combination of commas, semicolons, pipes, or whitespace (case-insensitive).
+        Unknown tokens are ignored with a warning.
+        Falls back to DEFAULT_TOKEN_VALIDATION_ORDER when the variable is absent or empty.
+        """
+        raw = os.environ.get("TOKEN_VALIDATION_ORDER", "").strip()
+        if not raw:
+            return list(self.DEFAULT_TOKEN_VALIDATION_ORDER)
+        valid = set(self.DEFAULT_TOKEN_VALIDATION_ORDER)
+        order = []
+        for item in re.split(r"[\s,;|]+", raw):
+            name = item.strip().lower()
+            if not name:
+                continue
+            if name in valid:
+                if name not in order:
+                    order.append(name)
+            else:
+                self.logger.warning(
+                    "TOKEN_VALIDATION_ORDER: unknown method %r ignored "
+                    "(allowed: %s)", name, ", ".join(self.DEFAULT_TOKEN_VALIDATION_ORDER)
+                )
+        if not order:
+            self.logger.warning(
+                "TOKEN_VALIDATION_ORDER produced an empty list; "
+                "falling back to default order"
+            )
+            return list(self.DEFAULT_TOKEN_VALIDATION_ORDER)
+        self.logger.info(
+            "Token validation order redefined via TOKEN_VALIDATION_ORDER: %s",
+            ", ".join(order)
+        )
+        return order
 
     def decode_token(self, token):
         """Decode and verify a JWT token using the configured JWKS endpoint.
@@ -233,13 +278,13 @@ class MCPServer:
         if token in self.mcp_tokens:
             mcp_token : AccessToken | None = self.mcp_tokens.get(token)
         else:
-            mcp_token = self.decode_token(token) if self.jwks_url else None
-            if mcp_token is None and self.introspection_url:
-                mcp_token = self.introspect_token(token)
-            if mcp_token is None and self.userinfo_url:
-                mcp_token = self.validate_token_via_userinfo(token)
-            if mcp_token:
-                self.mcp_tokens[token] = mcp_token
+            mcp_token = None
+            for method in self._token_validation_order:
+                url, validate_fn = self._token_validation_map[method]()
+                if url:
+                    if mcp_token := validate_fn(token):
+                        self.mcp_tokens[token] = mcp_token
+                        break
 
         if mcp_token and self.logger.isEnabledFor(logging.DEBUG):
             validity = mcp_token.expires_at - int(time.time())
