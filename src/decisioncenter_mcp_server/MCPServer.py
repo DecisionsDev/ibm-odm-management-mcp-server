@@ -767,7 +767,7 @@ def main():
 HOWTO_USE_USERS_CREDENTIALS_MSG = """When MCP Server runs in remote mode, it authenticates to ODM with users credentials if all the conditions below are met:
     1. OpenID is used (without PKJWT)
     2. the openID issuer URL is set
-    3. either the introspection URL or the userinfo URL or the JWKS URL is set
+    3. at least the introspection URL or the userinfo URL or the JWKS URL is set
     4. the MCP server external URL is set"""
 
 class AccessTokenVerifier(TokenVerifier):
