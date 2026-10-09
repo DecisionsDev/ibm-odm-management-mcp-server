@@ -28,11 +28,12 @@ class ToolExecutionTrace:
     """
     
     def __init__(
-        self, 
-        endpoint: str, 
+        self,
+        endpoint: str,
         inputs: Dict[str, Any],
-        http_code: str, 
+        http_code: str,
         results: Any,
+        user: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize a new ToolExecutionTrace.
@@ -41,6 +42,7 @@ class ToolExecutionTrace:
         self.http_code = http_code
         self.inputs = inputs
         self.results = results
+        self.user = user
         self.timestamp = f"{int(time.time()):x}"
 
 class DiskTraceStorage:
@@ -68,6 +70,7 @@ class DiskTraceStorage:
         self.trace_executions    = trace_executions
         self.verbose             = verbose
         self.trace_configuration = trace_configuration
+        self.configuration_size_saved = 0
 
         if trace_executions or trace_configuration:
             self.logger.info("Tracing is enabled")
@@ -106,12 +109,20 @@ class DiskTraceStorage:
                 return [to_dict(el) for el in obj]
             return obj  # Default for primitive types
 
-        # Make sure the storage directory still exists
-        self._exists_storage_dir()
-
-        if self.trace_configuration:
+        if not self.trace_configuration:
+            # not configured to save configuration/list of tools
+            return
+        
+        dict_repository = to_dict(repository)
+        len_repository = len(dict_repository)
+        if len_repository <= self.configuration_size_saved:
+            # already saved
+            return
+        
+        if self._exists_storage_dir():
+            self.configuration_size_saved = len_repository
             with open(os.path.join(self.storage_dir, "parsing.json"), 'w') as f:
-                f.write(json.dumps(to_dict(repository), indent=2))
+                f.write(json.dumps(dict_repository, indent=2))
 
     def saveExecution(self, trace: ToolExecutionTrace):
         """
@@ -150,6 +161,8 @@ class DiskTraceStorage:
                     "inputs":  convert(trace.inputs),
                     "results": convert(trace.results)
                 }
+                if trace.user:
+                    traces["user"] = convert(trace.user)
                 json.dump(traces, f, indent=2)
             self.logger.debug(f"Saved traces file {file_path}")
         
@@ -209,6 +222,8 @@ class DiskTraceStorage:
                 try:
                     with open(trace_file, 'r') as f:
                         trace_data = json.load(f)
+                    if "user" in trace_data:
+                        execution_info["user"] = trace_data["user"]
                     execution_info["inputs"] = trace_data.get("inputs", {})
                     execution_info["results"] = trace_data.get("results", {})
                 except Exception as e:

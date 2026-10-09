@@ -20,6 +20,7 @@ import logging
 import time
 import uuid
 import hashlib
+import jwt
 
 class CustomHTTPAdapter(HTTPAdapter):
     """
@@ -116,7 +117,6 @@ class Credentials:
             self.mtls_key_data     = self.get_unencrypted_key_data(mtls_key_path, mtls_key_password)
 
         self.token = token
-        self.ignoreAuthErrors = False
 
     def get_auth(self):
         if self.token:
@@ -136,11 +136,9 @@ class Credentials:
         elif self.client_id or self.client_secret:
             if not self.client_id or not self.token_url:
                 raise ValueError("Both 'client_id' and 'token_url' are required for OpenId authentication.")
-            if     self.username and not self.password or \
-               not self.username and     self.password:
-                raise ValueError("Both 'username' and 'password' are required for OAuth password grant.")
+            self.logger.debug("Using password grant" if self.username and self.password else "Using client_credentials grant")
 
-            # Check if we're using PKJWT (certificate-based) or client_secret
+            # Check if we're using PKJWT (Private Key Json Web Token) authentication
             if self.pkjwt_cert_path:
                 if not self.pkjwt_key_data:
                     raise ValueError("Both 'pkjwt_key_path' and 'pkjwt_cert_path' are required for PKJWT authentication.")
@@ -148,17 +146,6 @@ class Credentials:
                 from cryptography import x509
                 from cryptography.hazmat.backends import default_backend
                 from cryptography.hazmat.primitives import serialization
-                
-                # PKJWT (Private Key Json Web Token) authentication
-                # Note: PyJWT package is required for PKJWT authentication
-                # If you get an error, install it with: pip install PyJWT
-                try:
-                    # Try to import PyJWT dynamically
-                    # pylint: disable=import-outside-toplevel
-                    # type: ignore
-                    import jwt  # type: ignore # noqa
-                except ImportError:
-                    raise ImportError("PyJWT package is required for PKJWT authentication. Install with 'pip install PyJWT'.")
                 
                 # Create JWT token with required claims
                 now = int(time.time())
@@ -228,11 +215,8 @@ class Credentials:
                         response = requests.post(self.token_url, data=data, verify=False)
                 except Exception as e:
                     raise ValueError(f"Error creating or sending JWT token: {str(e)}")
-            else:
-                # Standard OpenID client_secret authentication
-                if not self.client_secret:
-                    raise ValueError("Either 'client_secret' or 'pkjwt_key_path' is required for OpenId authentication.")
 
+            else:   # Standard OpenID authentication
                 data = {
                         'scope': self.scope,
                     } | \
@@ -243,12 +227,19 @@ class Credentials:
                     } if self.username and self.password else {
                         'grant_type': 'client_credentials'
                     })
-                auth = requests.auth.HTTPBasicAuth(self.client_id, self.client_secret)
+                auth = requests.auth.HTTPBasicAuth(self.client_id, self.client_secret) if self.client_secret else None
                 if self.verify_ssl:
                     response = requests.post(self.token_url, data=data, auth=auth, verify=self.cacert)
                 else:
                     response = requests.post(url=self.token_url, data=data, auth=auth, verify=False)
-            response.raise_for_status() # raise an HTTPError if the request failed
+
+            # raise a PermissionError if the request failed due to a bad request from the client
+            if 400 <= response.status_code < 500:
+                raise PermissionError(f"{response.status_code} Client Error: {response.text} for url: {response.url}")
+
+            # raise an HTTPError if the request failed due to the server
+            response.raise_for_status()
+
             token_data = response.json()
             access_token = token_data['access_token']
             return {
@@ -284,8 +275,8 @@ class Credentials:
             headers = self.get_auth()
             session.headers.update(headers)
         except ValueError as e:
-            if not self.ignoreAuthErrors:
-                raise e
+            self.logger.exception("Failed to create auth header")
+            raise e
 
         if self.mtls_cert_path:
             session.cert = self.mtls_cert_tuple()
