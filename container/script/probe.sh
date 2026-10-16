@@ -4,8 +4,11 @@ __dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 export CURL_OPTS="-s -o /dev/null -w %{http_code}"
 RESPONSE_HTTP_CODE=$(${__dir}/server_discover.sh)
 
-if [[ "${RESPONSE_HTTP_CODE}" == "200" ]]; then
-    exit 0
-else
-    exit 1
-fi
+case "${RESPONSE_HTTP_CODE}" in
+    200|401)
+        exit 0
+        ;;
+    *)
+        exit 1
+        ;;
+esac

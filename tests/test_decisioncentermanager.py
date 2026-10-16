@@ -546,3 +546,24 @@ class TestInvokeDecisionCenterApi:
        call_args = mock_session.get.call_args
        assert call_args[1]['params'] == {}
        assert result == {'data': 'test'}
+
+   def test_invoke_passes_user_details_to_trace(self, manager, sample_endpoint, mock_credentials):
+       """Test that user_details are passed to ToolExecutionTrace and saved by trace_recorder."""
+       mock_session = mock_credentials.get_session.return_value
+       mock_response = Mock()
+       mock_response.status_code = 200
+       mock_response.headers = {'Content-Type': 'application/json'}
+       mock_response.json.return_value = {'status': 'success'}
+       mock_session.request.return_value = mock_response
+
+       mock_trace_recorder = Mock()
+       manager.trace_recorder = mock_trace_recorder
+
+       user_details = {"subject": "user123", "username": "jdoe"}
+       arguments = {'testId': '12345'}
+       result = manager.invokeDecisionCenterApi(sample_endpoint, arguments, run_locally=True, user_details=user_details)
+
+       assert result == {'status': 'success'}
+       assert mock_trace_recorder.save.called
+       saved_trace = mock_trace_recorder.save.call_args[0][0]
+       assert saved_trace.user == user_details
