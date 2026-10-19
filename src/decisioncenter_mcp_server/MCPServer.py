@@ -18,6 +18,7 @@ from mcp_types import Tool, Resource, CallToolResult, TextContent
 from mcp.server.mcpserver.context import Context
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server import MCPServer as SDK_MCPServer
+from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.routes import build_resource_metadata_url
@@ -487,15 +488,16 @@ class MCPServer:
         self.logger.info(f"{len(resources)} resources available")
         return resources
 
-    async def read_resource(self, uri: AnyUrl) -> str:
+    async def read_resource(self, uri: AnyUrl | str, context: Context | None = None) -> list[ReadResourceContents]:
         """
         Read a resource by its URI.
         """
-        self.logger.info(f"Reading resource from URI: {uri.encoded_string()}")
+        uri = str(uri)  # the SDK passes a str; str(AnyUrl) is its encoded form
+        self.logger.info(f"Reading resource from URI: {uri}")
         try:
-            filepathname = uri.encoded_string()[len('file://'):]    # remove the 'file://' prefix to get the local file path
+            filepathname = uri[len('file://'):]    # remove the 'file://' prefix to get the local file path
             with open(filepathname, 'r') as f:
-                return f.read()
+                return [ReadResourceContents(content=f.read())]
         except FileNotFoundError:
             raise ValueError(f"resource not found")
 
