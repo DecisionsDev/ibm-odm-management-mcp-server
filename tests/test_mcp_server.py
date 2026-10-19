@@ -1148,6 +1148,86 @@ def test_jwt_algorithms_from_env_space_separated():
         assert jwt_algorithms == ['RS256', 'ES384', 'RS512']
 
 
+# -- Subscription bus and resource notification tests -------------------------
+
+from mcp.server.subscriptions import InMemorySubscriptionBus, ResourcesListChanged
+from unittest.mock import AsyncMock
+
+def test_mcpserver_subscriptions_default():
+    """MCPServer initializes an InMemorySubscriptionBus by default."""
+    credentials = Credentials(odm_url="http://test:9060/decisioncenter-api", username="test", password="test")
+    server = MCPServer(credentials=credentials)
+    assert isinstance(server.subscriptions, InMemorySubscriptionBus)
+    assert server.subscription_bus is server.subscriptions
+
+
+def test_mcpserver_subscriptions_custom():
+    """MCPServer uses the provided SubscriptionBus."""
+    credentials = Credentials(odm_url="http://test:9060/decisioncenter-api", username="test", password="test")
+    bus = InMemorySubscriptionBus()
+    server = MCPServer(credentials=credentials, subscriptions=bus)
+    assert server.subscriptions is bus
+    assert server.subscription_bus is bus
+
+
+def test_init_passes_inmemory_subscription_bus():
+    """init() creates an InMemorySubscriptionBus and passes it to MCPServer."""
+    with patch('sys.argv', ['script', '--url', 'http://test:9060/decisioncenter-api']), \
+         patch('decisioncenter_mcp_server.MCPServer.MCPServer.update_repository'):
+        args = parse_arguments()
+        server = init(args)
+        assert isinstance(server.subscriptions, InMemorySubscriptionBus)
+
+
+def test_server_start_passes_subscriptions_to_sdk():
+    """server.start() passes the subscription bus to SDK_MCPServer."""
+    credentials = Credentials(odm_url="http://test:9060/decisioncenter-api", username="test", password="test")
+    bus = InMemorySubscriptionBus()
+    server = MCPServer(credentials=credentials, subscriptions=bus)
+
+    with patch('decisioncenter_mcp_server.MCPServer.SDK_MCPServer') as mock_cls, \
+         patch('decisioncenter_mcp_server.MCPServer.DecisionCenterManager'):
+        mock_fastmcp = mock_cls.return_value
+        mock_fastmcp.run = Mock()
+        server.start()
+
+        mock_cls.assert_called_once()
+        _, kwargs = mock_cls.call_args
+        assert kwargs.get("subscriptions") is bus
+
+
+@pytest.mark.asyncio
+async def test_call_tool_notifies_resources_changed_when_trace_executions_enabled(server, mock_manager):
+    """call_tool invokes context.notify_resources_changed() when trace_executions is True."""
+    server.trace_recorder.trace_executions = True
+    mock_manager.invokeDecisionCenterApi.return_value = {"result": "ok"}
+    tool_name = "endpoint1"
+    server.repository_dc[tool_name] = Mock(name="endpoint1")
+
+    mock_context = Mock()
+    mock_context.notify_resources_changed = AsyncMock()
+
+    result = await server.call_tool(tool_name, {"param": "val"}, mock_context)
+    assert not result.is_error
+    mock_context.notify_resources_changed.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_call_tool_does_not_notify_resources_changed_when_trace_executions_disabled(server, mock_manager):
+    """call_tool does not invoke context.notify_resources_changed() when trace_executions is False."""
+    server.trace_recorder.trace_executions = False
+    mock_manager.invokeDecisionCenterApi.return_value = {"result": "ok"}
+    tool_name = "endpoint1"
+    server.repository_dc[tool_name] = Mock(name="endpoint1")
+
+    mock_context = Mock()
+    mock_context.notify_resources_changed = AsyncMock()
+
+    result = await server.call_tool(tool_name, {"param": "val"}, mock_context)
+    assert not result.is_error
+    mock_context.notify_resources_changed.assert_not_called()
+
+
 def test_jwt_algorithms_from_env_single_value():
     """JWT_ALGORITHMS env var with a single value is preserved as a one-element list by init()."""
     with patch('sys.argv', ['script']), \

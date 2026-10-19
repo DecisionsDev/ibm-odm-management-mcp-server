@@ -20,6 +20,7 @@ from unittest.mock import Mock, patch
 import pytest
 from mcp.client import Client
 from mcp.server import MCPServer as SDK_MCPServer
+from mcp.server.subscriptions import ResourcesListChanged
 from mcp_types import Tool
 
 from decisioncenter_mcp_server.Credentials import Credentials
@@ -123,3 +124,32 @@ async def test_list_and_read_resources_through_protocol(started_server, tmp_path
         content = await client.read_resource(str(resources[0].uri))
 
     assert json.loads(content.contents[0].text) == {"hello": "world"}
+
+
+@pytest.mark.asyncio
+async def test_call_tool_notifies_resource_list_changed_when_tracing_enabled(started_server):
+    started_server.trace_recorder.trace_executions = True
+    events = []
+    started_server.subscriptions.subscribe(lambda e: events.append(e))
+
+    async with Client(started_server.server) as client:
+        await client.list_tools()
+        result = await client.call_tool("endpoint1", {"param": "value"})
+
+    assert not result.is_error
+    assert len(events) == 1
+    assert isinstance(events[0], ResourcesListChanged)
+
+
+@pytest.mark.asyncio
+async def test_call_tool_does_not_notify_when_tracing_disabled(started_server):
+    started_server.trace_recorder.trace_executions = False
+    events = []
+    started_server.subscriptions.subscribe(lambda e: events.append(e))
+
+    async with Client(started_server.server) as client:
+        await client.list_tools()
+        result = await client.call_tool("endpoint1", {"param": "value"})
+
+    assert not result.is_error
+    assert len(events) == 0

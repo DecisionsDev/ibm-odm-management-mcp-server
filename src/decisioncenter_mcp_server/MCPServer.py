@@ -14,10 +14,12 @@
 
 from typing import Optional, Any
 import socket
+import inspect
 from mcp_types import Tool, Resource, CallToolResult, TextContent
 from mcp.server.mcpserver.context import Context
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server import MCPServer as SDK_MCPServer
+from mcp.server.subscriptions import InMemorySubscriptionBus, SubscriptionBus
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.auth.provider import AccessToken, TokenVerifier
@@ -78,6 +80,8 @@ class MCPServer:
                  trace: list[str] = [], traces_dir: str = None, traces_maxsize: int = max_trace_files,
                  transport: Optional[str] = 'stdio', host: Optional[str] = '0.0.0.0', port: Optional[int] = 3000, path: Optional[str] = '/mcp', mcp_ext_url: Optional[str] = None, issuer_url: Optional[str] = None, introspection_url: Optional[str] = None, userinfo_url: Optional[str] = None,
                  jwks_url: Optional[str] = None, jwt_algorithms: Optional[list[str]] = None,
+                 subscriptions: Optional[SubscriptionBus] = None,
+                 subscription_bus: Optional[SubscriptionBus] = None,
                 ):
         # Get logger for this class
         self.logger = logging.getLogger(__name__)
@@ -113,6 +117,9 @@ class MCPServer:
 
         self.user_credentials           : LRUCache = LRUCache(maxsize=512) # key = token, value: Credentials = user_credentials
         self.mcp_tokens                 : LRUCache = LRUCache(maxsize=512) # key = token, value: AccessToken = mcp token
+
+        self.subscriptions: SubscriptionBus = subscriptions if subscriptions is not None else (subscription_bus if subscription_bus is not None else InMemorySubscriptionBus())
+        self.subscription_bus: SubscriptionBus = self.subscriptions
 
         # Set up trace storage with configured parameters if tracing is enabled
         # If traces_dir is None, DiskTraceStorage will use the default path in user's home directory
@@ -463,6 +470,15 @@ class MCPServer:
                 result = str(e)
                 is_error = True
 
+        # Notify that resources changed after tool execution if execution traces are enabled
+        if self.trace_recorder.trace_executions and context and hasattr(context, "notify_resources_changed"):
+            try:
+                res = context.notify_resources_changed()
+                if inspect.isawaitable(res):
+                    await res
+            except Exception as e:
+                self.logger.warning(f"Failed to notify resources changed: {e}")
+
         # Handle dictionary response
         if isinstance(result, dict):
             response_text = json.dumps(result, indent=2, ensure_ascii=False)
@@ -521,6 +537,7 @@ class MCPServer:
                               token_verifier=token_verifier,
                               auth=auth,
                               debug=self.logger.isEnabledFor(logging.DEBUG),
+                              subscriptions=self.subscriptions,
                              )
 
         # Register handlers
@@ -656,13 +673,14 @@ def create_credentials(args):
 def init(args):
     init_logging(args.log_level, args.transport)
     credentials = create_credentials(args)
+    subscription_bus = InMemorySubscriptionBus()
     server = MCPServer(
         credentials     = credentials,
         tags            = [tag.lower()  for tag  in args.tags]     if args.tags else [],
         tools           = [tool.lower() for tool in args.tools]    if args.tools else [],
         no_tools        = [tool.lower() for tool in args.no_tools] if args.no_tools else [],
         trace           = args.trace if args.trace is not None else [],
-        traces_dir      = args.traces_dir, 
+        traces_dir      = args.traces_dir,
         traces_maxsize  = args.traces_maxsize,
         transport       = args.transport,
         host            = args.host,
@@ -674,6 +692,7 @@ def init(args):
         userinfo_url    = args.userinfo_url,
         jwks_url        = args.jwks_url,
         jwt_algorithms  = args.jwt_algorithms.split() if isinstance(args.jwt_algorithms, str) else args.jwt_algorithms,
+        subscriptions   = subscription_bus,
     )
 
     retry = os.getenv("STARTUP_RETRY_IF_FAILURE", "False") == "True"
