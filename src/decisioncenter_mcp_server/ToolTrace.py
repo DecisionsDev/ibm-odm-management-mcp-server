@@ -18,7 +18,7 @@ import os
 import glob
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from .DecisionCenterEndpoint import DecisionCenterEndpoint
             
 class ToolExecutionTrace:
@@ -43,7 +43,9 @@ class ToolExecutionTrace:
         self.inputs = inputs
         self.results = results
         self.user = user
-        self.timestamp = f"{int(time.time()):x}"
+        now = datetime.now(timezone.utc)
+        self.timestamp = f"{int(now.timestamp()):x}"
+        self.iso_timestamp = now.isoformat()
 
 class DiskTraceStorage:
     """
@@ -158,6 +160,7 @@ class DiskTraceStorage:
         with open(file_path, 'w') as f:
             if self.verbose:
                 traces = {
+                    "timestamp": getattr(trace, "iso_timestamp", datetime.now(timezone.utc).isoformat()),
                     "inputs":  convert(trace.inputs),
                     "results": convert(trace.results)
                 }
