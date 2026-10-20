@@ -761,7 +761,7 @@ def parse_arguments():
     parser.add_argument("--introspection-url", type=str, default=os.getenv("INTROSPECTION_URL"), help="OpenID Connect introspection URL. Needed in remote mode to authenticate with users credentials.")
     parser.add_argument("--userinfo-url",      type=str, default=os.getenv("USERINFO_URL"), help="OpenID Connect userinfo URL. Alternative to introspection URL for providers (e.g. Amazon Cognito) that do not support token introspection.")
     parser.add_argument("--jwks-url",          type=str, default=os.getenv("JWKS_URL"), help="OpenID Connect JWKS URI. When provided, incoming bearer tokens are verified locally using the IdP public keys (no introspection round-trip). Signing keys are cached by kid (up to 10 entries).")
-    parser.add_argument("--jwt-algorithms",    type=str, default=os.getenv("JWT_ALGORITHMS"), nargs='+', help=f"Allowed JWT signing algorithms (default: {' '.join(MCPServer.DEFAULT_JWT_ALGORITHMS)}). Symmetric (HS*) and 'none' are never accepted.")
+    parser.add_argument("--jwt-algorithms",    type=str, default=os.getenv("JWT_ALGORITHMS"), nargs='+', help=f"Allowed JWT signing algorithms (default: {' '.join(MCPServer.DEFAULT_JWT_ALGORITHMS)}).")
     
     # Logging-related arguments
     parser.add_argument("--log-level",         type=str, default=os.getenv("LOG_LEVEL", "INFO"),
