@@ -230,7 +230,7 @@ def test_tags_verification(tags, expected_tags, tools, expected_tools, notools, 
         console_auth_type=None,
         runtime_auth_type=None,
         log_level="INFO",
-        trace = None, traces_dir = None, traces_maxsize = 200,
+        trace = [], traces_dir = None, traces_maxsize = 200,
         tags=tags,
         tools=tools,
         no_tools=notools,
@@ -246,6 +246,53 @@ def test_tags_verification(tags, expected_tags, tools, expected_tools, notools, 
     assert server.tags == expected_tags
     assert server.tools == expected_tools
     assert server.no_tools == expected_notools
+
+
+# Test that string values (as coming from env variables) accept whitespace, comma and semicolon separators
+def _make_init_args(**overrides):
+    values = dict(
+        url="http://test:9060/decisioncenter-api", res_url=None,
+        username="test_user", password="test_pass", zenapikey=None,
+        client_id=None, client_secret=None, issuer_url=None,
+        introspection_url=None, userinfo_url=None, token_url=None, mcp_ext_url=None,
+        scope="openid", verifyssl="True", verifyssl_hostname="True", ssl_cert_path=None,
+        pkjwt_cert_path=None, pkjwt_key_path=None, pkjwt_key_password=None,
+        mtls_cert_path=None, mtls_key_path=None, mtls_key_password=None,
+        console_auth_type=None, runtime_auth_type=None, log_level="INFO",
+        trace="", traces_dir=None, traces_maxsize=200,
+        tags="", tools="", no_tools="",
+        transport=None, host=None, port=None, mount_path=None,
+        jwks_url=None, jwt_algorithms=None,
+    )
+    values.update(overrides)
+    return argparse.Namespace(**values)
+
+@pytest.mark.parametrize("raw", [
+    "Admin Build DBAdmin",
+    "Admin,Build,DBAdmin",
+    "Admin;Build;DBAdmin",
+    "Admin, Build;  DBAdmin",
+    " Admin,Build;DBAdmin; ",
+])
+def test_tags_tools_no_tools_string_separators(raw):
+    expected = ["admin", "build", "dbadmin"]
+    MCPServer.update_repository = Mock(return_value = {})
+    server = init(_make_init_args(tags=raw, tools=raw, no_tools=raw))
+    assert server.tags == expected
+    assert server.tools == expected
+    assert server.no_tools == expected
+
+@pytest.mark.parametrize("raw, expected", [
+    ("EXECUTIONS CONFIGURATION",    ["EXECUTIONS", "CONFIGURATION"]),
+    ("EXECUTIONS,CONFIGURATION",    ["EXECUTIONS", "CONFIGURATION"]),
+    ("EXECUTIONS;CONFIGURATION",    ["EXECUTIONS", "CONFIGURATION"]),
+    ("EXECUTIONS, CONFIGURATION; ", ["EXECUTIONS", "CONFIGURATION"]),
+    ("",                            []),
+])
+def test_trace_string_separators(raw, expected):
+    MCPServer.update_repository = Mock(return_value = {})
+    server = init(_make_init_args(trace=raw))
+    assert server.trace == expected
 
 # Test environment variables
 def test_environment_variables():

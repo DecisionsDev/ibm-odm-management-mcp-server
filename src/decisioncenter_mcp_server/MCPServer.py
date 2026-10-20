@@ -676,10 +676,10 @@ def init(args):
     subscription_bus = InMemorySubscriptionBus()
     server = MCPServer(
         credentials     = credentials,
-        tags            = [tag.lower()  for tag  in args.tags]     if args.tags else [],
-        tools           = [tool.lower() for tool in args.tools]    if args.tools else [],
-        no_tools        = [tool.lower() for tool in args.no_tools] if args.no_tools else [],
-        trace           = args.trace if args.trace is not None else [],
+        tags            = [t for t in re.split(r"[\s,;]+", args.tags.lower())     if t] if isinstance(args.tags, str)     else [tag.lower()  for tag  in args.tags],
+        tools           = [t for t in re.split(r"[\s,;]+", args.tools.lower())    if t] if isinstance(args.tools, str)    else [tool.lower() for tool in args.tools],
+        no_tools        = [t for t in re.split(r"[\s,;]+", args.no_tools.lower()) if t] if isinstance(args.no_tools, str) else [tool.lower() for tool in args.no_tools],
+        trace           = [t for t in re.split(r"[\s,;]+", args.trace)            if t] if isinstance(args.trace, str)    else args.trace,
         traces_dir      = args.traces_dir,
         traces_maxsize  = args.traces_maxsize,
         transport       = args.transport,
@@ -769,12 +769,12 @@ def parse_arguments():
                         help="Set the logging level (default: INFO)")
 
     # Decision Center REST API specific arguments
-    parser.add_argument("--tags",              type=str, default=os.getenv("TAGS"),     nargs='+', help="List of Tags (eg. About Explore Build). Useful to keep only the tools whose tag is in the list. If this option is not specified, all the tools are published by the MCP server.")
-    parser.add_argument("--tools",             type=str, default=os.getenv("TOOLS"),    nargs='+', help="Explicit list of tools to publish. All the other tools are filtered out. If this option is not specified, all the tools are published by the MCP server.")
-    parser.add_argument("--no-tools",          type=str, default=os.getenv("NO_TOOLS"), nargs='+', help="Explicit list of tools to discard. All the other tools are published. Option ignored if the option --tools is provided. If this option is not specified, all the tools are published by the MCP server.")
+    parser.add_argument("--tags",              type=str, default=os.getenv("TAGS", ""),     nargs='+', help="List of Tags (eg. About Explore Build). Useful to keep only the tools whose tag is in the list. If this option is not specified, all the tools are published by the MCP server.")
+    parser.add_argument("--tools",             type=str, default=os.getenv("TOOLS", ""),    nargs='+', help="Explicit list of tools to publish. All the other tools are filtered out. If this option is not specified, all the tools are published by the MCP server.")
+    parser.add_argument("--no-tools",          type=str, default=os.getenv("NO_TOOLS", ""), nargs='+', help="Explicit list of tools to discard. All the other tools are published. Option ignored if the option --tools is provided. If this option is not specified, all the tools are published by the MCP server.")
 
     # Trace-related arguments
-    parser.add_argument("--trace",             type=str, default=os.getenv("TRACE"),    nargs='+', choices=["EXECUTIONS", "EXECUTIONS_WITH_CONTENT", "CONFIGURATION"], help="Specifies what to trace.")
+    parser.add_argument("--trace",             type=str, default=os.getenv("TRACE", ""),    nargs='+', choices=["EXECUTIONS", "EXECUTIONS_WITH_CONTENT", "CONFIGURATION"], help="Specifies what to trace.")
     parser.add_argument("--traces-dir",        type=str, default=os.getenv("TRACES_DIR"), help="Directory to store traces files (optional). If not provided, traces will be stored in the directory '~/.ibm-odm-management-mcp-server/traces'")
     parser.add_argument("--traces-maxsize",    type=int, default=int(os.getenv("TRACES_MAXSIZE", f"{MCPServer.max_trace_files}")), help=f"Maximum number of traces to store (default: {MCPServer.max_trace_files}). When the limit is reached, the oldest trace file will be deleted when a new trace is saved.  ")
 
