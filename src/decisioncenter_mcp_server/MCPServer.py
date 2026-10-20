@@ -14,6 +14,7 @@
 
 from typing import Optional
 import mcp.types as types
+import uvicorn
 from mcp.server.fastmcp import FastMCP
 from pydantic import AnyUrl
 import logging
@@ -40,6 +41,7 @@ class MCPServer:
                  tags: list[str] = [], tools: list[str] = [], no_tools: list[str] = [],
                  trace: list[str] = [], traces_dir: str = None, traces_maxsize: int = 200,
                  transport: Optional[str] = 'stdio', host: Optional[str] = '0.0.0.0', port: Optional[int] = 3000, path: Optional[str] = '/mcp',
+                 https_cert_path: Optional[str] = None, https_key_path: Optional[str] = None, https_key_password: Optional[str] = None,
                 ):
         # Get logger for this class
         self.logger = logging.getLogger(__name__)
@@ -54,6 +56,11 @@ class MCPServer:
         self.host      = host
         self.port      = port
         self.path      = path
+        self.https_cert_path    = https_cert_path
+        self.https_key_path     = https_key_path
+        self.https_key_password = https_key_password
+        if bool(self.https_cert_path) != bool(self.https_key_path):
+            raise ValueError("HTTPS requires both a certificate (--https-cert-path) and a private key (--https-key-path)")
         self.repository: dict[str, DecisionCenterEndpoint] = {}
 
         # Set up trace storage with configured parameters if tracing is enabled
@@ -145,7 +152,24 @@ class MCPServer:
         self.server._mcp_server.list_tools()(self.list_tools)
         self.server._mcp_server.call_tool()(self.call_tool)
 
-        self.server.run(transport=self.transport)
+        if self.https_cert_path and self.transport == 'stdio':
+            self.logger.warning("HTTPS options are ignored with the stdio transport")
+        if self.https_cert_path and self.transport != 'stdio':
+            self.run_https()
+        else:
+            self.server.run(transport=self.transport)
+
+    def run_https(self):
+        # FastMCP.run() does not support TLS: serve its ASGI app with uvicorn directly
+        app = self.server.streamable_http_app() if self.transport == 'streamable-http' else self.server.sse_app()
+        self.logger.info(f"Serving MCP server over HTTPS on https://{self.host}:{self.port}{self.path}")
+        uvicorn.run(app,
+                    host=self.host,
+                    port=self.port,
+                    log_level=self.server.settings.log_level.lower(),
+                    ssl_certfile=self.https_cert_path,
+                    ssl_keyfile=self.https_key_path,
+                    ssl_keyfile_password=self.https_key_password)
 
 def init_logging(level_name):
     level=getattr(logging, level_name, logging.INFO)
@@ -221,6 +245,9 @@ def init(args):
         host            = args.host,
         port            = args.port,
         path            = args.mount_path,
+        https_cert_path    = args.https_cert_path,
+        https_key_path     = args.https_key_path,
+        https_key_password = args.https_key_password,
     )
     server.update_repository()
     return server
@@ -250,7 +277,10 @@ def parse_arguments():
     parser.add_argument("--host",              type=str, default=os.getenv("HOST", "0.0.0.0"), help="IP or hostname that the MCP server listens to in remote mode.")
     parser.add_argument("--port",              type=int, default=os.getenv("PORT", 3000), help="Port that the MCP server listens to in remote mode.")
     parser.add_argument("--mount-path",        type=str, default=os.getenv("MOUNT_PATH", "/mcp"), help="Path that the MCP server listens to in remote mode.")
-    
+    parser.add_argument("--https-cert-path",   type=str, default=os.getenv("HTTPS_CERT_PATH"), help="Path to the certificate (PEM) of the MCP server to serve HTTPS in remote mode. If not provided, the MCP server serves plain HTTP.")
+    parser.add_argument("--https-key-path",    type=str, default=os.getenv("HTTPS_KEY_PATH"),  help="Path to the private key (PEM) of the MCP server certificate (mandatory for HTTPS).")
+    parser.add_argument("--https-key-password",type=str, default=os.getenv("HTTPS_KEY_PASSWORD"), help="Password to decrypt the private key of the MCP server certificate. Only needed if the key is password-protected.")
+
     # Logging-related arguments
     parser.add_argument("--log-level",         type=str, default=os.getenv("LOG_LEVEL", "INFO"),
                         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],

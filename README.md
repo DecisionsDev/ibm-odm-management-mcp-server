@@ -170,6 +170,27 @@ The parameters below can be specified:
   - **CLI:** `--mtls-key-path <PRIVATE_KEY_PATH> --mtls-cert-path <CERT_PATH>` and optionally `--mtls-key-password <PASSWORD>` if the private key is password-protected.
   - **Env:** `MTLS_KEY_PATH=<private_key_path> MTLS_CERT_PATH=<cert_path>` and optionally `MTLS_KEY_PASSWORD=<password>` if the private key is password-protected.
 
+#### 3.3. HTTPS for remote MCP clients
+
+The sections above secure the connection from the Management MCP server to ODM. When the Management MCP server runs in remote mode (`--transport streamable-http` or `sse`), it can also serve its own endpoint over HTTPS, so that remote MCP clients connect to it securely.
+
+Provide the certificate and the private key (PEM format) of the Management MCP server:
+  - **CLI:** `--https-cert-path <CERT_PATH> --https-key-path <PRIVATE_KEY_PATH>` and optionally `--https-key-password <PASSWORD>` if the private key is password-protected.
+  - **Env:** `HTTPS_CERT_PATH=<cert_path> HTTPS_KEY_PATH=<private_key_path>` and optionally `HTTPS_KEY_PASSWORD=<password>` if the private key is password-protected.
+
+If the certificate is signed by an intermediate CA, the certificate file should contain the full chain (server certificate first). When these options are not specified, the Management MCP server serves plain HTTP. They are ignored with the `stdio` transport.
+
+For example, to test locally with a self-signed certificate:
+```bash
+openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 365 -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+uvx --from git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server ibm-odm-management-mcp-server --url http://localhost:9060/decisioncenter-api \
+    --transport streamable-http --https-cert-path cert.pem --https-key-path key.pem
+```
+MCP clients then connect to `https://localhost:3000/mcp`. With a self-signed certificate, the MCP client must be configured to trust it.
+
+> [!TIP]
+> On Kubernetes or OpenShift, TLS can instead be terminated by an Ingress or a Route in front of the Management MCP server, which then keeps serving plain HTTP inside the cluster.
+
 
 ## Configuration Parameters Table
 
@@ -215,6 +236,9 @@ The parameters below can be specified:
 >| `--host`     | `HOST`               | IP or hostname that the MCP server listens to in remote mode. | `0.0.0.0` |
 >| `--port`     | `PORT`               | Port that the MCP server listens to in remote mode. | `3000` |
 >| `--mount-path`| `MOUNT_PATH`        | Path that the MCP server listens to in remote mode. | `/mcp` |
+>| `--https-cert-path`| `HTTPS_CERT_PATH` | Path to the certificate (PEM) of the MCP server to serve HTTPS in remote mode. If not provided, the MCP server serves plain HTTP. See [HTTPS for remote MCP clients](#33-https-for-remote-mcp-clients) | |
+>| `--https-key-path` | `HTTPS_KEY_PATH`  | Path to the private key (PEM) of the MCP server certificate (mandatory for HTTPS) | |
+>| `--https-key-password` | `HTTPS_KEY_PASSWORD` | Password to decrypt the private key of the MCP server certificate. Only needed if the key is password-protected. | |
 
 ## MCP Server Configuration File          
 
