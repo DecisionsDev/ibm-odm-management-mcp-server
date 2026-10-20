@@ -47,7 +47,7 @@ class DecisionCenterEndpoint:
             name=tool_name,
             title=summary,
             description=description,
-            inputSchema=input_schema,
+            input_schema=input_schema,
         )
 
    

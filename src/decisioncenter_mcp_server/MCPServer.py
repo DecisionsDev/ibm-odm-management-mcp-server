@@ -64,7 +64,7 @@ class MCPServer:
             name=get_tools_executions_toolname,
             title="Get tool executions",
             description=f"Get the tool executions with or without content. Useful to keep track of the tools that have been executed, their arguments and results. Only the most recent executions are kept. The number of executions that are kept is defined by the MCP server option --traces-maxsize ({max_trace_files} by default).",
-            inputSchema={'type': 'object', 'required': [], 
+            input_schema={'type': 'object', 'required': [], 
                          'properties': {
                             'filter': {'type': 'string', 'description': 'Filter to apply on the tool executions. Only the executions of tools whose name matches the filter will be included in the result. The filter supports partial match.'},
                             'with_content': {'type': 'boolean', 'description': 'Whether to include the content of the tool execution (arguments and results) in the trace. If false, only metadata such as timestamps, tool name and execution status will be included.'}

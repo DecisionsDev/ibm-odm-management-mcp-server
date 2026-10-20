@@ -369,7 +369,7 @@ def mock_manager():
                 name="endpoint1",
                 title="summary1",
                 description="summary1",
-                inputSchema={
+                input_schema={
                     "type": "object",
                     "properties": {
                         "param1.1": {
@@ -395,7 +395,7 @@ def mock_manager():
                 name="endpoint2",
                 title="summary2",
                 description="description2",
-                inputSchema={
+                input_schema={
                     "type": "object",
                     "properties": {
                         "param2.1": {
