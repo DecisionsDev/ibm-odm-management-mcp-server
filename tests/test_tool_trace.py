@@ -69,6 +69,22 @@ def test_save_execution_with_content_writes_timestamp(tmp_path):
     assert data["user"] == {"username": "odmadmin"}
 
 
+def test_save_execution_disabled_writes_nothing(tmp_path):
+    storage = DiskTraceStorage(
+        trace_executions=False,
+        verbose=False,
+        trace_configuration=False,
+        storage_dir=str(tmp_path),
+    )
+    endpoint = Mock()
+    endpoint.tool.name = "testTool"
+
+    storage.save(ToolExecutionTrace(endpoint=endpoint, inputs={}, http_code="200", results={}))
+
+    assert storage.trace_files == []
+    assert list(tmp_path.glob("*.json")) == []
+
+
 def test_save_execution_without_content_does_not_write_timestamp(tmp_path):
     storage = DiskTraceStorage(
         trace_executions=True,

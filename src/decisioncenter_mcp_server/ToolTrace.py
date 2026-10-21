@@ -152,6 +152,10 @@ class DiskTraceStorage:
                 except json.JSONDecodeError:
                     return data
         
+        if not self.trace_executions:
+            # not configured to save executions
+            return
+
         # Make sure the storage directory still exists
         self._exists_storage_dir()
 
