@@ -32,6 +32,7 @@ from starlette.responses import Response
 from pydantic import AnyUrl
 from cachetools import LRUCache
 import logging
+import ssl
 import json
 import argparse
 import os
@@ -168,6 +169,18 @@ class MCPServer:
         )
         return order
 
+    def _build_jwks_ssl_context(self) -> ssl.SSLContext:
+        """Build the SSL context used to fetch the JWKS, consistent with the
+        verifyssl / verifyssl-hostname / ssl-cert-path options used elsewhere."""
+        if not self.credentials.verify_ssl:
+            context = ssl._create_unverified_context()
+            context.check_hostname = False
+            return context
+        context = ssl.create_default_context(cafile=self.credentials.ssl_cert_path)
+        if not self.credentials.verify_ssl_hostname:
+            context.check_hostname = False
+        return context
+
     def decode_token(self, token):
         """Decode and verify a JWT token using the configured JWKS endpoint.
 
@@ -183,7 +196,7 @@ class MCPServer:
             if kid and kid in self._jwks_cache:
                 signing_key = self._jwks_cache[kid]
             else:
-                jwks_client = PyJWKClient(self.jwks_url)
+                jwks_client = PyJWKClient(self.jwks_url, ssl_context=self._build_jwks_ssl_context())
                 try:
                     signing_key = jwks_client.get_signing_key_from_jwt(token)
                 except Exception as e:
