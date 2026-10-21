@@ -162,6 +162,8 @@ class DecisionCenterManager:
         return False
             
     def publish_tool(self, tool_name, tool_tags : list, tools_to_publish, tools_to_ignore, tags_to_publish):
+        tool_tags = ["model" if tag == "Model (Experimental)" else tag for tag in tool_tags]
+
         if len(tools_to_publish) > 0 and tool_name.lower() in tools_to_publish:
             return True # publish as this tool is explicitly specified
 
