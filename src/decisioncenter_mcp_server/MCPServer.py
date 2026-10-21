@@ -348,7 +348,8 @@ class MCPServer:
             self.user_credentials[token] = credentials
 
             # check if the user credentials grant the rtsAdministrator/rtsInstaller role
-            credentials.isDcAdmin = self.manager.isDcAdmin(credentials.odm_url, credentials.get_session())
+            with credentials.get_session() as session:
+                credentials.isDcAdmin = self.manager.isDcAdmin(credentials.odm_url, session)
 
             # check if the user credentials grant the resMonitor and resDeployer roles
             self.manager.check_res_roles(credentials)

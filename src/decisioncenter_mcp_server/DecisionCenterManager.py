@@ -244,6 +244,7 @@ class DecisionCenterManager:
         Returns:
             dict: A dictionary containing the endpoints, or raise an exception is an error occurred.
         """
+        session = None
         try:
             if uri.startswith('http') == False:
                 # file
@@ -308,6 +309,8 @@ class DecisionCenterManager:
             self.logger.error("Could not retrieve the Decision Center REST API openapi description. Exception: %s", e)
             raise(e)
         finally:
+            if session is not None:
+                session.close()
             credentials.cleanup()
 
     # returns the openapi
@@ -462,6 +465,7 @@ class DecisionCenterManager:
                 content = file.read()
                 return content
 
+        session = None
         try:
             session = credentials.get_session()
 
@@ -509,6 +513,8 @@ class DecisionCenterManager:
             raise(e)
 
         finally:
+            if session is not None:
+                session.close()
             credentials.cleanup()
 
     # returns the WADL description of the RES console REST API
@@ -933,6 +939,7 @@ class DecisionCenterManager:
             dict: The response from the decision center
         """
 
+        session = None
         try:
             if user_credentials:
                 session = user_credentials.get_session()
@@ -957,6 +964,11 @@ class DecisionCenterManager:
                                         json  =params_body if params_body else None,
                                         files =params_file)
         finally:
+            if session is not None:
+                session.close()
+            for f in params_file.values():
+                if hasattr(f, 'close'):
+                    f.close()
             self.credentials.cleanup()
 
         # check response
