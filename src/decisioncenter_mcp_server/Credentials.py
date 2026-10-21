@@ -286,9 +286,14 @@ class Credentials:
 
     # remove the temporary file that might have been created
     def cleanup(self):
-        if self.mtls_key_password:
+        path = getattr(self, 'mtls_unencrypted_key_path', None)
+        if self.mtls_key_password and path:
             import os
-            os.remove(self.mtls_unencrypted_key_path)
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
+            self.mtls_unencrypted_key_path = None
 
     # return the mTLS keys tuple (private, cert)
     # optionally create temporary certificate file if the private key is encrypted

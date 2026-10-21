@@ -940,11 +940,9 @@ class DecisionCenterManager:
         """
 
         session = None
+        session_credentials = user_credentials if user_credentials else self.credentials
         try:
-            if user_credentials:
-                session = user_credentials.get_session()
-            else:
-                session = self.credentials.get_session()
+            session = session_credentials.get_session()
 
             if raw_data_type:
                 session.headers.update({'Content-Type': raw_data_type})
@@ -969,7 +967,7 @@ class DecisionCenterManager:
             for f in params_file.values():
                 if hasattr(f, 'close'):
                     f.close()
-            self.credentials.cleanup()
+            session_credentials.cleanup()
 
         # check response
         if response.status_code in [200, 201, 204]:
