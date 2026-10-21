@@ -396,7 +396,7 @@ mTLS must be complemented with another means of authentication/authorization for
   "--username",      "USERNAME_OR_SERVICE_ACCOUNT"
 ],
 "env": {
-  "PASSWORD":       "USERNAME_OR_SERVICE_ACCOUNT_PASSWORD",
+  "ODM_PASSWORD":   "USERNAME_OR_SERVICE_ACCOUNT_PASSWORD",
   "MTLS_KEY_PATH":  "MTLS_PRIVATE_KEY_FILENAME",
   "MTLS_CERT_PATH": "MTLS_CERTIFICATE_FILENAME"
 }

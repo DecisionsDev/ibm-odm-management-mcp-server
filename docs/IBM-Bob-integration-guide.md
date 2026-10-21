@@ -143,7 +143,7 @@ This step is optional and only needed if you choose to run ODM as a container on
            "--trace",    "EXECUTIONS_WITH_CONTENT"
          ],
          "env": {
-           "PASSWORD": "odmAdmin"
+           "ODM_PASSWORD": "odmAdmin"
          }
        }
      }
@@ -266,7 +266,7 @@ With the configuration above, the Management MCP Server :
                     "--username", "odmAdmin"
                 ],
                 "env": {
-                    "PASSWORD": "odmAdmin"
+                    "ODM_PASSWORD": "odmAdmin"
                 }
             },
             "ibm-odm-decision-mcp-server": {
@@ -277,7 +277,7 @@ With the configuration above, the Management MCP Server :
                     "--username", "odmAdmin"
                 ],
                 "env": {
-                    "PASSWORD": "odmAdmin"
+                    "ODM_PASSWORD": "odmAdmin"
                 }
             }
         }
