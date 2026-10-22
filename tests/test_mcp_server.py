@@ -229,6 +229,16 @@ def test_tags_verification(tags, expected_tags, tools, expected_tools, notools, 
     assert server.tools == expected_tools
     assert server.no_tools == expected_notools
 
+def test_init_passes_https_arguments():
+    with patch('sys.argv', ['script', '--url', 'http://test:9060/decisioncenter-api', '--transport', 'streamable-http',
+                            '--https-cert-path', 'cert.pem', '--https-key-path', 'key.pem', '--https-key-password', 'secret']):
+        args = parse_arguments()
+    MCPServer.update_repository = Mock(return_value = {})
+    server = init(args)
+    assert server.https_cert_path == 'cert.pem'
+    assert server.https_key_path == 'key.pem'
+    assert server.https_key_password == 'secret'
+
 # Test environment variables
 def test_environment_variables():
     with patch.dict(os.environ, {

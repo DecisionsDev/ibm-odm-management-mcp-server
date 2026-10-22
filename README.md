@@ -183,7 +183,8 @@ If the certificate is signed by an intermediate CA, the certificate file should 
 For example, to test locally with a self-signed certificate:
 ```bash
 openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 365 -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
-uvx --from git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server ibm-odm-management-mcp-server --url http://localhost:9060/decisioncenter-api \
+uvx --from git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server ibm-odm-management-mcp-server \
+    --url http://localhost:9060/decisioncenter-api --username odmAdmin --password odmAdmin \
     --transport streamable-http --https-cert-path cert.pem --https-key-path key.pem
 ```
 MCP clients then connect to `https://localhost:3000/mcp`. With a self-signed certificate, the MCP client must be configured to trust it.

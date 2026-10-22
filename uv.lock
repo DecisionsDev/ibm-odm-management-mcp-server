@@ -291,7 +291,6 @@ dependencies = [
     { name = "requests" },
     { name = "responses" },
     { name = "urllib3" },
-    { name = "uvicorn" },
     { name = "validator-collection" },
 ]
 
@@ -308,7 +307,6 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.5" },
     { name = "responses", specifier = ">=0.25.8" },
     { name = "urllib3", specifier = ">=2.6.3" },
-    { name = "uvicorn", specifier = ">=0.31.1" },
     { name = "validator-collection", specifier = ">=1.5.0" },
 ]
 
