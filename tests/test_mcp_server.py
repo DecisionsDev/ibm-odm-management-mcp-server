@@ -240,6 +240,9 @@ def test_tags_verification(tags, expected_tags, tools, expected_tools, notools, 
         mount_path=None,
         jwks_url=None,
         jwt_algorithms=None,
+        https_cert_path=None,
+        https_key_path=None,
+        https_key_password=None,
     )
     MCPServer.update_repository = Mock(return_value = {})
     server = init(args)
@@ -263,6 +266,7 @@ def _make_init_args(**overrides):
         tags="", tools="", no_tools="",
         transport=None, host=None, port=None, mount_path=None,
         jwks_url=None, jwt_algorithms=None,
+        https_cert_path=None, https_key_path=None, https_key_password=None,
     )
     values.update(overrides)
     return argparse.Namespace(**values)
@@ -293,6 +297,15 @@ def test_trace_string_separators(raw, expected):
     MCPServer.update_repository = Mock(return_value = {})
     server = init(_make_init_args(trace=raw))
     assert server.trace == expected
+def test_init_passes_https_arguments():
+    with patch('sys.argv', ['script', '--url', 'http://test:9060/decisioncenter-api', '--transport', 'streamable-http',
+                            '--https-cert-path', 'cert.pem', '--https-key-path', 'key.pem', '--https-key-password', 'secret']):
+        args = parse_arguments()
+    MCPServer.update_repository = Mock(return_value = {})
+    server = init(args)
+    assert server.https_cert_path == 'cert.pem'
+    assert server.https_key_path == 'key.pem'
+    assert server.https_key_password == 'secret'
 
 # Test environment variables
 def test_environment_variables():
@@ -540,25 +553,6 @@ def test_server_initialization_with_streamable_http_transport():
     assert server.port == 3001
     assert server.path == "/decision-mcp"
 
-def test_server_initialization_with_default_transport():
-    """Test MCPServer initialization with default stdio transport."""
-    credentials = Credentials(
-        odm_url="http://test:9060/decisioncenter-api",
-        username="test",
-        password="test"
-    )
-    
-    # Create server with default transport
-    server = MCPServer(
-        credentials=credentials,
-    )
-    
-    # Verify default transport configuration
-    assert server.transport == "stdio"
-    assert server.host == "0.0.0.0"
-    assert server.port == 3000
-    assert server.path == "/mcp"
-
 def test_server_start_with_streamable_http_transport():
     """Test that server.start() correctly configures SDK_MCPServer with streamable-http transport."""
     credentials = Credentials(
@@ -601,6 +595,58 @@ def test_server_start_with_streamable_http_transport():
         
         # Verify manager was initialized
         assert server.manager is not None
+
+@pytest.mark.parametrize("transport, app_factory", [
+    ("streamable-http", "streamable_http_app"),
+    ("sse",             "sse_app"),
+])
+def test_server_start_with_https(transport, app_factory):
+    """Test that server.start() serves the FastMCP app over HTTPS with uvicorn when a certificate is provided."""
+    credentials = Credentials(
+        odm_url="http://test:9060/decisioncenter-api",
+        username="test",
+        password="test"
+    )
+    server = MCPServer(
+        credentials=credentials,
+        transport=transport,
+        host="127.0.0.1",
+        port=3443,
+        https_cert_path="cert.pem",
+        https_key_path="key.pem",
+        https_key_password="secret",
+    )
+
+    with patch('decisioncenter_mcp_server.MCPServer.SDK_MCPServer') as mock_fastmcp_class, \
+         patch('decisioncenter_mcp_server.MCPServer.uvicorn') as mock_uvicorn:
+        mock_fastmcp = mock_fastmcp_class.return_value
+        mock_fastmcp.settings.log_level = "INFO"
+
+        server.start()
+
+        app = getattr(mock_fastmcp, app_factory).return_value
+        mock_uvicorn.run.assert_called_once_with(app,
+                                                 host="127.0.0.1",
+                                                 port=3443,
+                                                 log_level="info",
+                                                 ssl_certfile="cert.pem",
+                                                 ssl_keyfile="key.pem",
+                                                 ssl_keyfile_password="secret")
+        mock_fastmcp.run.assert_not_called()
+
+@pytest.mark.parametrize("cert, key", [
+    ("cert.pem", None),
+    (None,       "key.pem"),
+])
+def test_server_https_requires_cert_and_key(cert, key):
+    """Test that a certificate without a private key (or the reverse) is rejected."""
+    credentials = Credentials(
+        odm_url="http://test:9060/decisioncenter-api",
+        username="test",
+        password="test"
+    )
+    with pytest.raises(ValueError):
+        MCPServer(credentials=credentials, transport="streamable-http", https_cert_path=cert, https_key_path=key)
 
 def test_server_initialization_with_default_transport():
     """Test MCPServer initialization with default stdio transport."""

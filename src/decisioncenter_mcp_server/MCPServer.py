@@ -29,6 +29,7 @@ import mcp.server.auth.middleware.bearer_auth as bearer_auth
 from starlette.authentication import AuthCredentials
 from starlette.requests import HTTPConnection, Request
 from starlette.responses import Response
+import uvicorn
 from pydantic import AnyUrl
 from cachetools import LRUCache
 import logging
@@ -83,6 +84,7 @@ class MCPServer:
                  jwks_url: Optional[str] = None, jwt_algorithms: Optional[list[str]] = None,
                  subscriptions: Optional[SubscriptionBus] = None,
                  subscription_bus: Optional[SubscriptionBus] = None,
+                 https_cert_path: Optional[str] = None, https_key_path: Optional[str] = None, https_key_password: Optional[str] = None,
                 ):
         # Get logger for this class
         self.logger = logging.getLogger(__name__)
@@ -121,6 +123,12 @@ class MCPServer:
 
         self.subscriptions: SubscriptionBus = subscriptions if subscriptions is not None else (subscription_bus if subscription_bus is not None else InMemorySubscriptionBus())
         self.subscription_bus: SubscriptionBus = self.subscriptions
+
+        self.https_cert_path    = https_cert_path
+        self.https_key_path     = https_key_path
+        self.https_key_password = https_key_password
+        if bool(self.https_cert_path) != bool(self.https_key_path):
+            raise ValueError("HTTPS requires both a certificate (--https-cert-path) and a private key (--https-key-path)")
 
         # Set up trace storage with configured parameters if tracing is enabled
         # If traces_dir is None, DiskTraceStorage will use the default path in user's home directory
@@ -563,12 +571,30 @@ class MCPServer:
         self.server.list_tools = self.list_tools
         self.server.call_tool  = self.call_tool
 
-        self.server.run(transport=self.transport,
-                        host=self.host,
-                        port=self.port,
-                        streamable_http_path=self.path,
-                        stateless_http=True,
-        )
+        if self.https_cert_path and self.transport == 'stdio':
+            self.logger.warning("HTTPS options are ignored with the stdio transport")
+        if self.https_cert_path and self.transport != 'stdio':
+            self.run_https()
+        else:
+            self.server.run(transport=self.transport,
+                            host=self.host,
+                            port=self.port,
+                            streamable_http_path=self.path,
+                            stateless_http=True,
+            )
+
+    def run_https(self):
+        # FastMCP.run() does not support TLS: serve its ASGI app with uvicorn directly
+        app = self.server.streamable_http_app() if self.transport == 'streamable-http' else self.server.sse_app()
+        self.logger.info(f"Serving MCP server over HTTPS on https://{self.host}:{self.port}{self.path}")
+        uvicorn.run(app,
+                    host=self.host,
+                    port=self.port,
+                    log_level=self.server.settings.log_level.lower(),
+                    ssl_certfile=self.https_cert_path,
+                    ssl_keyfile=self.https_key_path,
+                    ssl_keyfile_password=self.https_key_password)
+
 
 class _SuppressAccessLogForProbes(logging.Filter):
     """Drop uvicorn access-log entries from health-check probes.
@@ -710,6 +736,9 @@ def init(args):
         jwks_url        = args.jwks_url,
         jwt_algorithms  = args.jwt_algorithms.split() if isinstance(args.jwt_algorithms, str) else args.jwt_algorithms,
         subscriptions   = subscription_bus,
+        https_cert_path    = args.https_cert_path,
+        https_key_path     = args.https_key_path,
+        https_key_password = args.https_key_password,
     )
 
     retry = os.getenv("STARTUP_RETRY_IF_FAILURE", "False") == "True"
@@ -771,6 +800,9 @@ def parse_arguments():
     parser.add_argument("--host",              type=str, default=os.getenv("HOST", "0.0.0.0"), help="IP or hostname that the MCP server listens to in remote mode.")
     parser.add_argument("--port",              type=int, default=os.getenv("PORT", 3000), help="Port that the MCP server listens to in remote mode.")
     parser.add_argument("--mount-path",        type=str, default=os.getenv("MOUNT_PATH", "/mcp"), help="Path that the MCP server listens to in remote mode.")
+    parser.add_argument("--https-cert-path",   type=str, default=os.getenv("HTTPS_CERT_PATH"), help="Path to the certificate (PEM) of the MCP server to serve HTTPS in remote mode. If not provided, the MCP server serves plain HTTP.")
+    parser.add_argument("--https-key-path",    type=str, default=os.getenv("HTTPS_KEY_PATH"),  help="Path to the private key (PEM) of the MCP server certificate (mandatory for HTTPS).")
+    parser.add_argument("--https-key-password",type=str, default=os.getenv("HTTPS_KEY_PASSWORD"), help="Password to decrypt the private key of the MCP server certificate. Only needed if the key is password-protected.")
 
     # additional arguments useful when running the MCP server in remote mode using users credentials
     parser.add_argument("--mcp-ext-url",       type=str, default=os.getenv("MCP_EXT_URL"), help="MCP server external URL. Needed in remote mode to authenticate with users credentials.")
