@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Any
+from typing import Optional, Any, Literal
 import socket
 import inspect
 from mcp_types import Tool, Resource, CallToolResult, TextContent
@@ -80,7 +80,7 @@ class MCPServer:
     def __init__(self, credentials: Credentials,
                  tags: list[str] = [], tools: list[str] = [], no_tools: list[str] = [],
                  trace: list[str] = [], traces_dir: str = None, traces_maxsize: int = max_trace_files,
-                 transport: Optional[str] = 'stdio', host: Optional[str] = '0.0.0.0', port: Optional[int] = 3000, path: Optional[str] = '/mcp', mcp_ext_url: Optional[str] = None, issuer_url: Optional[str] = None, introspection_url: Optional[str] = None, userinfo_url: Optional[str] = None,
+                 transport: Literal['stdio', 'sse', 'streamable-http'] = 'stdio', host: str = '0.0.0.0', port: int = 3000, path: str = '/mcp', mcp_ext_url: Optional[str] = None, issuer_url: Optional[str] = None, introspection_url: Optional[str] = None, userinfo_url: Optional[str] = None,
                  jwks_url: Optional[str] = None, jwt_algorithms: Optional[list[str]] = None,
                  subscriptions: Optional[SubscriptionBus] = None,
                  subscription_bus: Optional[SubscriptionBus] = None,
@@ -587,7 +587,17 @@ class MCPServer:
 
     def run_https(self):
         # FastMCP.run() does not support TLS: serve its ASGI app with uvicorn directly
-        app = self.server.streamable_http_app() if self.transport == 'streamable-http' else self.server.sse_app()
+        if self.transport == 'streamable-http':
+            app = self.server.streamable_http_app(
+                host=self.host,
+                streamable_http_path=self.path,
+                stateless_http=True,
+            )
+        else:
+            app = self.server.sse_app(
+                host=self.host,
+                sse_path=self.path,
+            )
         self.logger.info(f"Serving MCP server over HTTPS on https://{self.host}:{self.port}{self.path}")
         uvicorn.run(app,
                     host=self.host,

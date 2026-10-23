@@ -30,7 +30,8 @@ RUN set -ex; \
     openssl pkcs12 -in /tmp/keystore.p12 -passin pass:"${KEYSTORE_PWD}" -noenc \
         -out /mcp-certs/tls/tls.key; \
     openssl pkcs12 -in /tmp/keystore.p12 -passin pass:"${KEYSTORE_PWD}" -noenc -nokeys | openssl x509 \
-        -out /mcp-certs/tls/tls.crt
+        -out /mcp-certs/tls/tls.crt; \
+    chmod a+r /mcp-certs/tls/tls.*
 
 WORKDIR /app
 RUN --mount=type=cache,target=/root/.cache/uv \

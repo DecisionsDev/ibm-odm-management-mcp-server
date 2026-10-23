@@ -624,6 +624,18 @@ def test_server_start_with_https(transport, app_factory):
 
         server.start()
 
+        if transport == "streamable-http":
+            mock_fastmcp.streamable_http_app.assert_called_once_with(
+                host="127.0.0.1",
+                streamable_http_path="/mcp",
+                stateless_http=True,
+            )
+        else:
+            mock_fastmcp.sse_app.assert_called_once_with(
+                host="127.0.0.1",
+                sse_path="/mcp",
+            )
+
         app = getattr(mock_fastmcp, app_factory).return_value
         mock_uvicorn.run.assert_called_once_with(app,
                                                  host="127.0.0.1",
