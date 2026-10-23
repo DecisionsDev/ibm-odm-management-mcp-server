@@ -713,7 +713,7 @@ Please refer to the 'role' column in the table above to see the role required by
 
 In the example below (suitable for ODM for Developer), two MCP servers are defined, each using different credentials.
 - the first MCP server publishes the subset of Decision Center tools accessible to users with the `rtsUser` role
-- the second MCP server publishes the subset of Decision Server console tools accessible to users with the `rtsMonitor` role
+- the second MCP server publishes the subset of Decision Server console tools accessible to users with the `resMonitor` role
 
 ```json
 {
