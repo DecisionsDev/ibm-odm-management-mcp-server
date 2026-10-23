@@ -832,7 +832,7 @@ def test_probes_enabled_filter_on_root_handler_passes_non_uvicorn_records():
 
 
 def test_probes_enabled_configure_logging_is_patched_on_start():
-    """When STARTUP_RETRY_IF_FAILURE=True and transport is streamable-http, start() must
+    """When RUNNING_IN_POD=True and transport is streamable-http, start() must
     patch uvicorn.Config.configure_logging so the access-log filter survives dictConfig."""
     import uvicorn.config as _uvicorn_config
 
@@ -853,7 +853,7 @@ def test_probes_enabled_configure_logging_is_patched_on_start():
 
     with patch('decisioncenter_mcp_server.MCPServer.SDK_MCPServer') as mock_cls, \
          patch('decisioncenter_mcp_server.MCPServer.DecisionCenterManager'), \
-         patch.dict(os.environ, {"STARTUP_RETRY_IF_FAILURE": "True"}), \
+         patch.dict(os.environ, {"RUNNING_IN_POD": "True"}), \
          patch('socket.gethostbyname', return_value="10.0.0.1"):
 
         mock_fastmcp = mock_cls.return_value
@@ -870,7 +870,7 @@ def test_probes_enabled_configure_logging_is_patched_on_start():
 
 
 def test_probes_not_enabled_configure_logging_is_not_patched():
-    """When STARTUP_RETRY_IF_FAILURE is not set, configure_logging must not be touched."""
+    """When RUNNING_IN_POD is not set, configure_logging must not be touched."""
     import uvicorn.config as _uvicorn_config
 
     credentials = Credentials(
@@ -892,7 +892,7 @@ def test_probes_not_enabled_configure_logging_is_not_patched():
          patch('decisioncenter_mcp_server.MCPServer.DecisionCenterManager'), \
          patch.dict(os.environ, {}, clear=False):
 
-        os.environ.pop("STARTUP_RETRY_IF_FAILURE", None)
+        os.environ.pop("RUNNING_IN_POD", None)
         mock_fastmcp = mock_cls.return_value
         mock_fastmcp.run = Mock()
 

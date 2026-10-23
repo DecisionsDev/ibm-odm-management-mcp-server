@@ -635,8 +635,7 @@ def init_logging(level_name, transport):
     logging.info(f"Running Python {sys.version_info}. Logging level set to: {logging.getLevelName(level)}")
 
     # suppress access logs originating from probes when running in a k8s pod
-    running_in_pod = os.getenv("STARTUP_RETRY_IF_FAILURE", "False") != "False"
-    if running_in_pod and transport == "streamable-http":
+    if is_running_in_pod() and transport == "streamable-http":
         import uvicorn.config as _uvicorn_config
         probe_filter = _SuppressAccessLogForProbes(local_ip=socket.gethostbyname(socket.gethostname()))
         _original_configure_logging = _uvicorn_config.Config.configure_logging
@@ -647,6 +646,8 @@ def init_logging(level_name, transport):
 
         _uvicorn_config.Config.configure_logging = _configure_logging_with_filter
 
+def is_running_in_pod() -> bool:
+    return os.getenv("RUNNING_IN_POD", "False") == "True"
 
 def create_credentials(args):
     verifyssl = args.verifyssl != "False"
@@ -741,7 +742,7 @@ def init(args):
         https_key_password = args.https_key_password,
     )
 
-    retry = os.getenv("STARTUP_RETRY_IF_FAILURE", "False") == "True"
+    retry = is_running_in_pod()
     retries_count  = int(os.getenv("STARTUP_RETRIES_COUNT",  10))
     retries_period = int(os.getenv("STARTUP_RETRIES_PERIOD", 30))
 
