@@ -548,7 +548,9 @@ class MCPServer:
             token_verifier: AccessTokenVerifier | None = AccessTokenVerifier(mcpserver = self)
             auth: AuthSettings | None = AuthSettings(issuer_url          = self.issuer_url,
                                                      required_scopes     = self.credentials.scope.split(),
-                                                     resource_server_url = self.mcp_ext_url)
+                                                     resource_server_url = self.mcp_ext_url,
+                                                     validate_token_resource = False,
+                                                    )
 
             self.logger.info       (f"MCP Server running in remote mode, using users credentials. Resource metadata URL: {build_resource_metadata_url(resource_server_url = self.mcp_ext_url)}")
         else: 
