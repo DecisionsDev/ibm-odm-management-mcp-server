@@ -113,6 +113,22 @@ def test_tools_filtering(tags, tools, no_tools, expected_tools_total, openapi950
     # verify tools were filtered by explicit list of tools to publish or discard
     assert len(repository_dc_admin) == expected_tools_total
 
+def test_essential_tools_filtering(openapi9501_filepath):
+    manager = DecisionCenterManager(credentials=Credentials(odm_url='http://localhost:8885/decisioncenter-api', username='mock_user', password='mock_password'))
+    endpoints  = manager._fetch_endpoints(openapi9501_filepath, manager.credentials)
+
+    _, essential = manager.generate_tools_format(endpoints, essential_tools_only=True)
+    names = {k.lower() for k in essential}
+    assert 0 < len(names) < 133
+    assert not names & set(DecisionCenterManager.non_essential_tools)
+    assert {"decisionservices", "run", "deploy"} <= names
+
+    # --tools adds tools to the essential set, --no-tools removes tools from it
+    _, with_tools = manager.generate_tools_format(endpoints, tools_to_publish=["addserver"], essential_tools_only=True)
+    assert {k.lower() for k in with_tools} == names | {"addserver"}
+    _, without = manager.generate_tools_format(endpoints, tools_to_ignore=["decisionservices"], essential_tools_only=True)
+    assert "decisionservices" not in {k.lower() for k in without}
+
 @pytest.mark.parametrize("openapi_file, expected_tools_total", [
     (os.path.join(base_dir, 'openapi-9501.json'),  133),
     (os.path.join(base_dir, 'openapi-9001.json'),  128),

@@ -101,6 +101,90 @@ class DecisionCenterManager:
         'resetRulesetStatistics'
     ]
 
+    # Tools filtered out when the option --essential-tools is set (names are lowercase), grouped by tag/category.
+    # For each category, the comment 'essential' lists the tools that remain published.
+    non_essential_tools = [
+        # ----- Decision Center -----
+        # About
+        # essential: about
+
+        # Admin
+        # essential: decisionServiceExport, decisionServicesImport
+        'addgroup', 'adduser', 'branch_1', 'branchgroups', 'branchimport', 'branchsecurity', 'branchsecurity_1', 'deletedecisionservice',
+        'deletegroup', 'deleteuser', 'effectivepermissions', 'eraseallgroups', 'eraseallusers', 'exportcommandpermissions', 'exportpermissions',
+        'exporttabpermissions', 'getusersrolesregistry', 'group', 'groups', 'importcommandpermissions', 'importpermissions', 'importtabpermissions',
+        'ldapsync', 'listdynamicdomains', 'metrics', 'setusersrolesregistry', 'unlockalluserartifacts', 'updatedynamicdomains', 'user', 'users',
+
+        # Build
+        # essential: deploy, run
+        'build', 'deletetestreport', 'download', 'snapshot_1',
+
+        # DBAdmin
+        'cleanupoldreports', 'cleanupreport', 'executesqlscript', 'generate', 'generateextensionmodelscript', 'generatemigrationrole',
+        'generatemigrationscript', 'getexecutionstatus', 'getmodelextensionfiles', 'iscleanuprunning', 'launchcleanup', 'results',
+        'setpersistencelocale', 'stopcleanup', 'uploadextensionmodelfiles', 'uploadmessagesfile', 'wipe',
+
+        # Explore
+        # essential: branch, branches, decisionService, decisionServices, deploymentConfiguration, deploymentConfigurations, folders, functions,
+        #   operations, project, projects, queries, queryRun, release, releases, ruleflows, rules, snapshots, technicalrules, testReport,
+        #   testReports, testSuite, testSuites, variablesets
+        'activities', 'activity', 'deploymentreport', 'deploymentreports', 'generatereport', 'queryreport', 'server', 'servers', 'snapshot_2',
+
+        # Govern
+        'addactivityapprover', 'addactivityauthor', 'addreleaseapprover', 'allowactivityapproval', 'allowreleaseapproval',
+        'approvechangesinactivity', 'approverelease', 'cancelactivity', 'cancelrelease', 'changeactivityowner', 'changereleaseowner',
+        'createchangeactivity', 'createrelease', 'createvalidationactivity', 'deleteactivity', 'deleterelease', 'finishworkinactivity',
+        'rejectchangesinactivity', 'rejectrelease', 'removeactivityapprover', 'removeactivityauthor', 'removereleaseapprover', 'reopenactivity',
+        'reopenrelease', 'resumeworkinactivity', 'updateactivity', 'updaterelease',
+
+        # Interchange
+        'applyasset',
+
+        # Manage
+        # essential: createDSBranch, deleteBranch, exportDT, importDT, renameBranch
+        'addserver', 'copybranch', 'deleteserver', 'deletesnapshot', 'deletewebhook', 'discardbuildstate', 'registerwebhook', 'registerwebhook_1',
+        'renamesnapshot', 'snapshot', 'updateserver', 'webhooks',
+
+        # Model
+        # essential: createActionRule, createDecisionTable, createFolder, createRuleflow, createRuleTask, createTransition, moveActionRule,
+        #   moveDecisionTable, moveFolder, moveRuleflow, renameFolder, updateActionRule, updateDecisionTable, updateRuleflow, updateRuleTask,
+        #   updateTransition
+
+        # ----- Decision Server console -----
+        # Ruleapps
+        # essential: addRulesetProperty, deleteRuleApp, deleteRulesetProperty, deployRuleAppArchive, getRuleApp, getRuleApps, getRuleset,
+        #   getRulesetProperties, getRulesets, getRulesetSignature, updateRulesetProperty
+        'addruleapp', 'addruleappproperty', 'addruleset', 'deleteruleappproperty', 'deleteruleset', 'deployrulesetarchive',
+        'getcountofruleappproperties', 'getcountofruleapps', 'getcountofruleappsbyname', 'getcountofrulesetproperties', 'getcountofrulesets',
+        'getcountofrulesetsbyname', 'getruleapparchive', 'getruleappproperties', 'getruleappsbyname', 'getruleappwithhighestnumber',
+        'getruleappwithhighestnumberarchive', 'getrulesetarchive', 'getrulesetsbyname', 'getrulesetwithhighestnumber',
+        'getrulesetwithhighestnumberarchive', 'getrulesetwithhighestnumberarchive2', 'getrulesetxoms', 'notifyruleappchanges',
+        'notifyrulesetchanges', 'updateruleapp', 'updateruleappproperty', 'updateruleset', 'updaterulesetarchive',
+
+        # Rulesets
+        'getallrulesets', 'getcountofallrulesets',
+
+        # Libraries
+        'addlibrary', 'deletelibrary', 'deleteunusedlibraries', 'getcountoflibraries', 'getcountoflibrariesbyname', 'getlibraries',
+        'getlibrariesbyname', 'getlibrary', 'getlibrarywithhighestnumber', 'updatelibrary',
+
+        # Xoms
+        'deleteresource', 'deleteunusedxomresources', 'deployresource', 'getbytecodeofhighestresource', 'getbytecodeofresource',
+        'getcountofresources', 'getcountofresourcesbyname', 'getresource', 'getresources', 'getresourcesbyname', 'getresourcewithhighestnumber',
+
+        # Decisiontraces
+        # essential: getDecisionTrace, getDecisionTraces
+        'deletedecisiontrace', 'deletedecisiontraces', 'deletedecisiontracesbyids', 'getcountofdecisiontraces',
+
+        # Executionunits
+        # essential: getExecutionUnits, getRulesetStatistics
+        'getcountofexecutionunits', 'getrulesetstatisticsforexecutionunit', 'resetrulesetstatistics',
+
+        # Utilities
+        # essential: getConsoleInfo, getDiagnostics, getVersion
+        'getdiagnosticbyid',
+    ]
+
     def __init__(self, credentials, trace_recorder : DiskTraceStorage = None):
         """
         :no-index:
@@ -161,7 +245,7 @@ class DecisionCenterManager:
         self.logger.info("Assuming connected without the resDeployer role")
         return False
             
-    def publish_tool(self, tool_name, tool_tags : list, tools_to_publish, tools_to_ignore, tags_to_publish):
+    def publish_tool(self, tool_name, tool_tags : list, tools_to_publish, tools_to_ignore, tags_to_publish, essential_tools_only: bool = False):
         tool_tags = ["model" if tag == "Model (Experimental)" else tag for tag in tool_tags]
 
         if len(tools_to_publish) > 0 and tool_name.lower() in tools_to_publish:
@@ -170,10 +254,13 @@ class DecisionCenterManager:
         if len(tools_to_ignore) > 0 and tool_name.lower() in tools_to_ignore:
             return False # do not publish this tool as it is in the list of tools to be discarded/not published
 
+        if essential_tools_only and tool_name.lower() in self.non_essential_tools:
+            return False # do not publish this tool as it is not one of the essential tools
+
         if len(tags_to_publish) > 0 and len( [tag for tag in tool_tags if tag.lower() in tags_to_publish] ) == 0:
             return False # do not publish this tool as it does not belong to a category to publish
 
-        if len(tags_to_publish) == 0 and len(tools_to_publish) > 0:
+        if len(tags_to_publish) == 0 and not essential_tools_only and len(tools_to_publish) > 0:
             return False # only the tools explicitly listed are published
 
         return True
@@ -323,7 +410,7 @@ class DecisionCenterManager:
         return self._fetch_endpoints(self.credentials.odm_url, credentials)
 
 
-    def generate_tools_format(self, endpoints, tags_to_publish: list[str] = [], tools_to_publish: list[str] = [], tools_to_ignore: list[str] = []):
+    def generate_tools_format(self, endpoints, tags_to_publish: list[str] = [], tools_to_publish: list[str] = [], tools_to_ignore: list[str] = [], essential_tools_only: bool = False):
         """
         :no-index:
         Convert the endpoints to the tools format
@@ -397,7 +484,7 @@ class DecisionCenterManager:
                     operation_id = info.operation_id
                     tool_name    = operation_id
 
-                    if not self.publish_tool(tool_name, info.tags, tools_to_publish, tools_to_ignore, tags_to_publish):
+                    if not self.publish_tool(tool_name, info.tags, tools_to_publish, tools_to_ignore, tags_to_publish, essential_tools_only):
                         continue
 
                     if tool_name == 'applyAsset' and summary is None and description is None:
@@ -532,7 +619,7 @@ class DecisionCenterManager:
         if self.credentials.odm_res_url:
             self._fetch_res_api_endpoints(self.credentials.odm_res_url, credentials, only_check_roles = True)
 
-    def generate_res_tools(self, wadl : str, tags_to_publish: list[str] = [], tools_to_publish: list[str] = [], tools_to_ignore: list[str] = []):
+    def generate_res_tools(self, wadl : str, tags_to_publish: list[str] = [], tools_to_publish: list[str] = [], tools_to_ignore: list[str] = [], essential_tools_only: bool = False):
         """
         :no-index:
             Converts the WADL description into a list of MCP tools
@@ -779,7 +866,7 @@ class DecisionCenterManager:
                     xmlRequestRepresentationList  = xmlRequest.findall('{http://wadl.dev.java.net/2009/02}representation')
                     xmlResponseRepresentationList = xmlResponse.findall('{http://wadl.dev.java.net/2009/02}representation')
 
-                    if not self.publish_tool(tool_name, [tool_tag], tools_to_publish, tools_to_ignore, tags_to_publish):
+                    if not self.publish_tool(tool_name, [tool_tag], tools_to_publish, tools_to_ignore, tags_to_publish, essential_tools_only):
                         continue
 
                     # always ignore this endpoint (not displayed in the UI and identical to /utilities/consoleinfo)

@@ -105,6 +105,10 @@ def test_server_initialization(mcp_server):
           {"tags": ["Manage"],  "tools": ["Tool1"],  "no_tools": ["Tool2"]}
     ),
     (
+        ["--essential-tools"],
+          {"essential_tools": True}
+    ),
+    (
         [],  # No arguments
         {"scope": "openid", "verifyssl": "True", "log_level": "INFO", "transport":"stdio"}  # Default values
     ),
@@ -234,6 +238,7 @@ def test_tags_verification(tags, expected_tags, tools, expected_tools, notools, 
         tags=tags,
         tools=tools,
         no_tools=notools,
+        essential_tools=False,
         transport=None,
         host=None,
         port=None,
@@ -263,7 +268,7 @@ def _make_init_args(**overrides):
         mtls_cert_path=None, mtls_key_path=None, mtls_key_password=None,
         console_auth_type=None, runtime_auth_type=None, log_level="INFO",
         trace="", traces_dir=None, traces_maxsize=200,
-        tags="", tools="", no_tools="",
+        tags="", tools="", no_tools="", essential_tools=False,
         transport=None, host=None, port=None, mount_path=None,
         jwks_url=None, jwt_algorithms=None,
         https_cert_path=None, https_key_path=None, https_key_password=None,
@@ -297,6 +302,11 @@ def test_trace_string_separators(raw, expected):
     MCPServer.update_repository = Mock(return_value = {})
     server = init(_make_init_args(trace=raw))
     assert server.trace == expected
+def test_essential_tools_passed_to_server():
+    MCPServer.update_repository = Mock(return_value = {})
+    assert init(_make_init_args(essential_tools=True)).essential_tools is True
+    assert init(_make_init_args()).essential_tools is False
+
 def test_init_passes_https_arguments():
     with patch('sys.argv', ['script', '--url', 'http://test:9060/decisioncenter-api', '--transport', 'streamable-http',
                             '--https-cert-path', 'cert.pem', '--https-key-path', 'key.pem', '--https-key-password', 'secret']):

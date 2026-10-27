@@ -238,8 +238,9 @@ MCP clients then connect to `https://localhost:3000/mcp`. With a self-signed cer
 > Parameters to filter out the tools published
 >| CLI Argument | Environment Variable | Description | Default |
 >|--------------|----------------------|-------------|---------|
->| `--tools`    | `TOOLS`              | List of tools to publish (eg. decisionServices releases createRelease). This option takes precedence over the options --no-tools and --tags | |
->| `--no-tools` | `NO_TOOLS`           | List of tools to ignore  (eg. launchCleanup wipe executeSqlScript). This option takes precedence over the option --tags | |
+>| `--tools`    | `TOOLS`              | List of tools to publish (eg. decisionServices releases createRelease). This option takes precedence over the options --no-tools, --essential-tools and --tags | |
+>| `--no-tools` | `NO_TOOLS`           | List of tools to ignore  (eg. launchCleanup wipe executeSqlScript). This option takes precedence over the options --essential-tools and --tags | |
+>| `--essential-tools` | `ESSENTIAL_TOOLS` | Publish only the most useful tools (a curated subset of the Decision Center and Decision Server console tools), see [Essential tools](./docs/Essential-tools.md). Recommended in most cases. Can be combined with --tools (to add tools to this subset), --no-tools (to remove tools from it) and --tags (to restrict it further) | `False` |
 >| `--tags`     | `TAGS`               | List of tags (eg. About Explore Build). Publish only the tools that belong to the tags listed. | |
 
 > Parameters to start the MCP server in remote mode (allowing connections from remote MCP clients) 
@@ -273,6 +274,7 @@ You can configure the MCP server for clients like Claude Desktop using a JSON co
 - Use CLI arguments for quick overrides or non-sensitive parameters.
 - Use environment variables for secrets.
 - You can mix both methods if needed. CLI arguments override environment variables.
+- Add the `--essential-tools` argument to publish only the most useful tools. Most of the tools are not needed most of the time, and a smaller number of tools helps the AI agent to pick the right one. See [Essential tools](./docs/Essential-tools.md) for the list of the tools published.
 
 Here are some examples for different types of deployment (dev/test or production), environments (CloudPak, ...) and use cases:
 - [Example 1: Basic Auth](#example-1-basic-auth)
@@ -300,7 +302,8 @@ The example below shows a typical use-case where the sensitive information (here
         "--res-url", "https://res-console-url",
         "--verifyssl-hostname", "True",
         "--ssl-cert-path", "odm-certificate-file;openid-provider-certificate-file",
-        "--username", "username"
+        "--username", "username",
+        "--essential-tools"
       ],
       "env": {
         "ODM_PASSWORD": "password"
@@ -320,7 +323,8 @@ For local development and testing, use the Basic Auth.
   "ibm-odm-management-mcp-server",
   "--url",      "http://localhost:9060/decisioncenter-api",
   "--res-url",  "http://localhost:9060/res",
-  "--username", "odmAdmin"
+  "--username", "odmAdmin",
+  "--essential-tools"
 ],
 "env": {
   "ODM_PASSWORD": "odmAdmin"
@@ -339,7 +343,8 @@ For production deployments on the Cloud Pak, use the Zen API Key.
   "--res-url",       "https://res-console-url",
   "--verifyssl-hostname", "True",
   "--ssl-cert-path", "odm-certificate-file;openid-provider-certificate-file",
-  "--username",      "USERNAME"
+  "--username",      "USERNAME",
+  "--essential-tools"
 ],
 "env": {
   "ZENAPIKEY": "ZEN_API_KEY"
@@ -430,7 +435,10 @@ mTLS must be complemented with another means of authentication/authorization for
 ### Example 6: Tool filtering
 
 You may want to have only a subset of tools published.
-The three options below enable to achieve this.
+The most common use case is to publish only the most useful tools with the option `--essential-tools`: most of the tools are not needed most of the time, and having fewer tools helps the AI agent to pick the right one.
+See [Essential tools](./docs/Essential-tools.md) for the list of the essential and non-essential tools.
+
+The four options below enable to achieve this.
 They can be used separately or together and in the latter case, are processed in the following order of precedence:
 
 1. First, you can specify the tools to publish explicitly
@@ -451,7 +459,30 @@ They can be used separately or together and in the latter case, are processed in
       "--no-tools", "wipe", "executeSQLScript", "launchCleanup"
     ]
     ```
-    This option takes precedence over the next option: if a tool is specified with the `--no-tools` option, it is not published no matter the value of the `--tags` option.
+    This option takes precedence over the next options: if a tool is specified with the `--no-tools` option, it is not published no matter the value of the `--essential-tools` and `--tags` options.
+
+1. You can also publish only the most useful tools
+
+    The `--essential-tools` option is a flag (no value) that restricts the published tools to a curated subset of the most commonly used tools (see [Essential tools](./docs/Essential-tools.md) for the list).
+    ```json
+    "args": [
+      "--essential-tools"
+    ]
+    ```
+
+    It can be combined with the other options to adjust that subset:
+    - `--tools` adds tools to it: the tools listed are published even if they are not essential.
+    - `--no-tools` removes tools from it: the tools listed are not published even if they are essential.
+    - `--tags` restricts it further to the tools that belong to the tags/categories listed.
+
+    For instance, with the configuration below, the essential tools are published, plus `addServer` and `updateServer`, but not `deploy`:
+    ```json
+    "args": [
+      "--essential-tools",
+      "--tools",    "addServer", "updateServer",
+      "--no-tools", "deploy"
+    ]
+    ```
 
 1. Last, you can specify the tag(s) of the tools that should be published
 
