@@ -284,7 +284,8 @@ Here are some examples for different types of deployment (dev/test or production
 - [Example 5: mTLS (Mutual TLS) Authentication](#example-5-mtls-mutual-tls-authentication)
 - [Example 6: Tool filtering](#example-6-tool-filtering)
 - [Example 7: Role-based tool filtering](#example-7-role-based-tool-filtering)
-- [Example 8: Monitoring enabled](#example-8-monitoring-enabled)
+- [Example 8: Remote tool filtering](#example-8-remote-tool-filtering)
+- [Example 9: Monitoring enabled](#example-9-monitoring-enabled)
 
 ### Example 1: Basic Auth
 
@@ -777,7 +778,13 @@ In the example below (suitable for ODM for Developer), two MCP servers are defin
 }
 ```
 
-### Example 8: Monitoring enabled
+### Example 8: Remote tool filtering
+
+When the MCP server runs remotely, each user can configure the MCP client to retrieve their own list of tools.
+
+See [Remote Tool Filtering](/docs/remote-tool-filtering.md).
+
+### Example 9: Monitoring enabled
 
 With the configuration below, the MCP server records a file named `<tool_name>-<HTTP-response-code>-<timestamp>.json` in the `~/.mcp-server-traces` directory each time a tool is ran. This file is empty. Alternatively it can store the input and output of the tool execution by replacing `EXECUTIONS` with `EXECUTIONS_WITH_CONTENT`.
 

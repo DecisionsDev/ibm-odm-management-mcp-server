@@ -15,8 +15,10 @@
 from typing import Optional, Any, Literal
 import socket
 import inspect
+import contextvars
 from mcp_types import Tool, Resource, CallToolResult, TextContent
 from mcp.server.mcpserver.context import Context
+from mcp.server.context import ServerRequestContext
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server import MCPServer as SDK_MCPServer
 from mcp.server.subscriptions import InMemorySubscriptionBus, SubscriptionBus
@@ -93,6 +95,7 @@ class MCPServer:
         self.tools: list[str] = tools       # explicit list of tools to publish
         self.no_tools: list[str] = no_tools # explicit list of tools to discard
         self.essential_tools: bool = essential_tools # publish only the most useful tools
+        self._current_request: contextvars.ContextVar[Optional[Request]] = contextvars.ContextVar("current_request", default=None)
         self.trace          = trace
         self.traces_dir     = traces_dir
         self.traces_maxsize = traces_maxsize
@@ -325,6 +328,67 @@ class MCPServer:
     def token_overview(self, token):
         return token[:5] + '...' + token[-5:]
 
+    def get_current_request(self, context: Optional[Context] = None) -> Optional[Request]:
+        req = self._current_request.get()
+        if req is not None:
+            return req
+        if context is not None and hasattr(context, "request_context") and context.request_context:
+            return getattr(context.request_context, "request", None)
+        return None
+
+    def get_effective_tool_options(self, context: Optional[Context] = None) -> tuple[list[str], list[str], list[str], bool]:
+        """Compute the effective tool filtering options for the current request.
+
+        Falls back to server-level configuration if not overridden by request headers or query parameters.
+        Supported request overrides:
+        - Header X-Tool-Profile: 'essentials' | 'all'
+        - Query parameter 'tools': 'essentials' | 'all'
+        - Header X-Tools: list similar to --tools
+        - Header X-No-Tools: list similar to --no-tools
+        - Header X-Tags: list similar to --tags
+        """
+        tags = [t.lower() for t in self.tags]
+        tools = [t.lower() for t in self.tools]
+        no_tools = [t.lower() for t in self.no_tools]
+        essential_tools = self.essential_tools
+
+        request = self.get_current_request(context)
+        if request is not None and hasattr(request, "headers") and hasattr(request, "query_params"):
+            # Header: X-Tool-Profile: essentials | all
+            tool_profile = request.headers.get("x-tool-profile")
+            if isinstance(tool_profile, str):
+                p_val = tool_profile.strip().lower()
+                if p_val in ("essentials", "essential"):
+                    essential_tools = True
+                elif p_val == "all":
+                    essential_tools = False
+
+            # Query parameter: tools = essentials | all
+            query_tools = request.query_params.get("tools") or request.query_params.get("Tools")
+            if isinstance(query_tools, str):
+                q_val = query_tools.strip().lower()
+                if q_val in ("essentials", "essential"):
+                    essential_tools = True
+                elif q_val == "all":
+                    essential_tools = False
+
+            # Header: X-Tools: list similar to --tools
+            header_tools = request.headers.get("x-tools")
+            if isinstance(header_tools, str):
+                tools = [t for t in re.split(r"[\s,;]+", header_tools.lower()) if t]
+
+            # Header: X-No-Tools: list similar to --no-tools
+            header_no_tools = request.headers.get("x-no-tools")
+            if isinstance(header_no_tools, str):
+                no_tools = [t for t in re.split(r"[\s,;]+", header_no_tools.lower()) if t]
+
+            # Header: X-Tags: list similar to --tags
+            header_tags = request.headers.get("x-tags")
+            if isinstance(header_tags, str):
+                tags = [t for t in re.split(r"[\s,;]+", header_tags.lower()) if t]
+
+        return tags, tools, no_tools, essential_tools
+
     def get_current_token(self) -> str:
         """Return the bearer token for the current request via the SDK contextvar.
 
@@ -403,7 +467,7 @@ class MCPServer:
         res_tools_error = None
         if len(self.repository_res_monitor) == 0 and credentials.odm_res_url:
             try:
-                self.repository_res_monitor, self.repository_res_deployer = self.manager.generate_res_tools(self.manager.fetch_res_api_endpoints(credentials), self.tags, self.tools, self.no_tools, self.essential_tools)
+                self.repository_res_monitor, self.repository_res_deployer = self.manager.generate_res_tools(self.manager.fetch_res_api_endpoints(credentials))
             except Exception as e:
                 res_tools_error = e
 
@@ -411,7 +475,7 @@ class MCPServer:
         dc_tools_error = None
         if len(self.repository_dc) == 0 and credentials.odm_url:
             try:
-                self.repository_dc, self.repository_dc_admin = self.manager.generate_tools_format(self.manager.fetch_endpoints(credentials), self.tags, self.tools, self.no_tools, self.essential_tools)
+                self.repository_dc, self.repository_dc_admin = self.manager.generate_tools_format(self.manager.fetch_endpoints(credentials))
             except Exception as e:
                 dc_tools_error = e
 
@@ -447,13 +511,21 @@ class MCPServer:
         elif credentials.isResMonitor:  res_repository = self.repository_res_monitor
         else:                           res_repository = {}
 
+        tags, tools_to_publish, no_tools, essential_tools = self.get_effective_tool_options()
+
         tools = [MCPServer.tools_executions_tool] if self.trace_recorder.trace_executions else []
         for tool_name, endpoint in dc_repository.items():
-            tools.append(endpoint.tool)
+            name = getattr(endpoint, "tool_name", getattr(getattr(endpoint, "tool", None), "name", tool_name))
+            endpoint_tags = getattr(endpoint, "tags", [])
+            if self.manager.publish_tool(name, endpoint_tags, tools_to_publish, no_tools, tags, essential_tools):
+                tools.append(endpoint.tool)
         for tool_name, endpoint in res_repository.items():
-            tools.append(endpoint.tool)
+            name = getattr(endpoint, "tool_name", getattr(getattr(endpoint, "tool", None), "name", tool_name))
+            endpoint_tags = getattr(endpoint, "tags", [])
+            if self.manager.publish_tool(name, endpoint_tags, tools_to_publish, no_tools, tags, essential_tools):
+                tools.append(endpoint.tool)
 
-        self.logger.info(f"list_tools returned {len(dc_repository)} DC tools + {len(res_repository)} RES tools" + " + 1 tool to query tool executions" if self.trace_recorder.trace_executions else "")
+        self.logger.info(f"list_tools returned {len(tools)} tools (filtered from {len(dc_repository)} DC + {len(res_repository)} RES)" + " + 1 tool to query tool executions" if self.trace_recorder.trace_executions else "")
         return tools
 
     async def call_tool(self, name: str, arguments: dict | None, context: Context) -> CallToolResult:
@@ -478,6 +550,8 @@ class MCPServer:
         # update the list of tools (skipped if it was already generated during startup or by list_tools)
         self.update_repository(credentials)
 
+        tags, tools_to_publish, no_tools, essential_tools = self.get_effective_tool_options(context)
+
         if name == MCPServer.get_tools_executions_toolname:
             executions = get_tools_executions(arguments)
             result = { "executions": executions }
@@ -487,6 +561,11 @@ class MCPServer:
             if endpoint is None:
                 endpoint = self.repository_res_deployer.get(name)
             if endpoint is None:
+                raise ToolError(f"Unknown tool: {name}")
+
+            tool_name = getattr(endpoint, "tool_name", getattr(getattr(endpoint, "tool", None), "name", name))
+            tool_tags = getattr(endpoint, "tags", [])
+            if not self.manager.publish_tool(tool_name, tool_tags, tools_to_publish, no_tools, tags, essential_tools):
                 raise ToolError(f"Unknown tool: {name}")
 
             try:
@@ -567,6 +646,15 @@ class MCPServer:
                               debug=self.logger.isEnabledFor(logging.DEBUG),
                               subscriptions=self.subscriptions,
                              )
+
+        async def request_context_middleware(ctx: ServerRequestContext, call_next):
+            token = self._current_request.set(ctx.request)
+            try:
+                return await call_next(ctx)
+            finally:
+                self._current_request.reset(token)
+
+        self.server.middleware.append(request_context_middleware)
 
         # Register handlers
         self.server.list_resources = self.list_resources
