@@ -16,6 +16,7 @@ import pytest
 from unittest.mock import Mock, patch
 import os
 import argparse
+import logging
 from mcp_types import Tool, TextContent
 from mcp.server import MCPServer as SDK_MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -105,8 +106,12 @@ def test_server_initialization(mcp_server):
           {"tags": ["Manage"],  "tools": ["Tool1"],  "no_tools": ["Tool2"]}
     ),
     (
-        ["--essential-tools"],
-          {"essential_tools": True}
+        ["--tool-profile", "ALL"],
+          {"tool_profile": "ALL"}
+    ),
+    (
+        ["--tool-profile", "essential"],  # case-insensitive
+          {"tool_profile": "ESSENTIAL"}
     ),
     (
         [],  # No arguments
@@ -238,7 +243,7 @@ def test_tags_verification(tags, expected_tags, tools, expected_tools, notools, 
         tags=tags,
         tools=tools,
         no_tools=notools,
-        essential_tools=False,
+        tool_profile="ALL",
         transport=None,
         host=None,
         port=None,
@@ -268,7 +273,7 @@ def _make_init_args(**overrides):
         mtls_cert_path=None, mtls_key_path=None, mtls_key_password=None,
         console_auth_type=None, runtime_auth_type=None, log_level="INFO",
         trace="", traces_dir=None, traces_maxsize=200,
-        tags="", tools="", no_tools="", essential_tools=False,
+        tags="", tools="", no_tools="", tool_profile="ALL",
         transport=None, host=None, port=None, mount_path=None,
         jwks_url=None, jwt_algorithms=None,
         https_cert_path=None, https_key_path=None, https_key_password=None,
@@ -302,10 +307,37 @@ def test_trace_string_separators(raw, expected):
     MCPServer.update_repository = Mock(return_value = {})
     server = init(_make_init_args(trace=raw))
     assert server.trace == expected
-def test_essential_tools_passed_to_server():
+def test_tool_profile_passed_to_server():
     MCPServer.update_repository = Mock(return_value = {})
-    assert init(_make_init_args(essential_tools=True)).essential_tools is True
-    assert init(_make_init_args()).essential_tools is False
+    assert init(_make_init_args(tool_profile="ESSENTIAL")).essential_tools is True
+    assert init(_make_init_args(tool_profile="essential")).essential_tools is True
+    assert init(_make_init_args(tool_profile="ALL")).essential_tools is False
+
+def test_tool_profile_default_is_essential():
+    with patch('sys.argv', ['script']), patch.dict('os.environ', {}, clear=False) as env:
+        env.pop('TOOL_PROFILE', None)
+        assert parse_arguments().tool_profile == "ESSENTIAL"
+
+def test_tool_profile_from_env():
+    with patch('sys.argv', ['script']), patch.dict('os.environ', {'TOOL_PROFILE': 'all'}):
+        assert parse_arguments().tool_profile == "ALL"
+
+def test_tool_profile_invalid_value_exits():
+    with patch('sys.argv', ['script', '--tool-profile', 'SOME']), pytest.raises(SystemExit):
+        parse_arguments()
+
+def test_essential_tools_flag_removed():
+    with patch('sys.argv', ['script', '--essential-tools']), pytest.raises(SystemExit):
+        parse_arguments()
+
+def test_start_logs_tool_profile(caplog):
+    MCPServer.update_repository = Mock(return_value = {})
+    for profile, label in (("ESSENTIAL", "Tool profile: ESSENTIAL"), ("ALL", "Tool profile: ALL")):
+        server = init(_make_init_args(tool_profile=profile, transport="stdio"))
+        with patch("decisioncenter_mcp_server.MCPServer.SDK_MCPServer") as sdk, caplog.at_level(logging.INFO):
+            caplog.clear()
+            server.start()
+        assert any(label in r.getMessage() for r in caplog.records)
 
 def test_init_passes_https_arguments():
     with patch('sys.argv', ['script', '--url', 'http://test:9060/decisioncenter-api', '--transport', 'streamable-http',

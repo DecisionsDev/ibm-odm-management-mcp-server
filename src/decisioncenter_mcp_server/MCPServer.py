@@ -341,8 +341,8 @@ class MCPServer:
 
         Falls back to server-level configuration if not overridden by request headers or query parameters.
         Supported request overrides:
-        - Header X-Tool-Profile: 'essentials' | 'all'
-        - Query parameter 'tools': 'essentials' | 'all'
+        - Header X-Tool-Profile: 'essential' | 'essentials' | 'all' (case-insensitive)
+        - Query parameter 'tools': 'essential' | 'essentials' | 'all' (case-insensitive)
         - Header X-Tools: list similar to --tools
         - Header X-No-Tools: list similar to --no-tools
         - Header X-Tags: list similar to --tags
@@ -662,6 +662,13 @@ class MCPServer:
         self.server.list_tools = self.list_tools
         self.server.call_tool  = self.call_tool
 
+        if self.essential_tools:
+            self.logger.info("Tool profile: ESSENTIAL. Only the essential tools are published (see --tool-profile).")
+        else:
+            self.logger.info("Tool profile: ALL. All the tools are published (see --tool-profile).")
+        if self.transport != "stdio":
+            self.logger.info("Each MCP client can adjust which tools are published by sending filtering options in the HTTP request — either as a query parameter or as custom headers.")
+
         if self.https_cert_path and self.transport == 'stdio':
             self.logger.warning("HTTPS options are ignored with the stdio transport")
         if self.https_cert_path and self.transport != 'stdio':
@@ -824,7 +831,7 @@ def init(args):
         tags            = [t for t in re.split(r"[\s,;]+", args.tags.lower())     if t] if isinstance(args.tags, str)     else [tag.lower()  for tag  in args.tags],
         tools           = [t for t in re.split(r"[\s,;]+", args.tools.lower())    if t] if isinstance(args.tools, str)    else [tool.lower() for tool in args.tools],
         no_tools        = [t for t in re.split(r"[\s,;]+", args.no_tools.lower()) if t] if isinstance(args.no_tools, str) else [tool.lower() for tool in args.no_tools],
-        essential_tools = args.essential_tools,
+        essential_tools = args.tool_profile.upper() == "ESSENTIAL",
         trace           = [t for t in re.split(r"[\s,;]+", args.trace)            if t] if isinstance(args.trace, str)    else args.trace,
         traces_dir      = args.traces_dir,
         traces_maxsize  = args.traces_maxsize,
@@ -924,7 +931,7 @@ def parse_arguments():
     parser.add_argument("--tags",              type=str, default=os.getenv("TAGS", ""),     nargs='+', help="List of Tags (eg. About Explore Build). Useful to keep only the tools whose tag is in the list. If this option is not specified, all the tools are published by the MCP server.")
     parser.add_argument("--tools",             type=str, default=os.getenv("TOOLS", ""),    nargs='+', help="Explicit list of tools to publish. All the other tools are filtered out. If this option is not specified, all the tools are published by the MCP server.")
     parser.add_argument("--no-tools",          type=str, default=os.getenv("NO_TOOLS", ""), nargs='+', help="Explicit list of tools to discard. All the other tools are published. Option ignored if the option --tools is provided. If this option is not specified, all the tools are published by the MCP server.")
-    parser.add_argument("--essential-tools",   action="store_true", default=os.getenv("ESSENTIAL_TOOLS", "False").lower() in ("true", "1", "yes"), help="Publish only the most useful tools. The tools listed with --tools are still published. The options --no-tools and --tags further restrict the tools published.")
+    parser.add_argument("--tool-profile",      type=str.upper, default=os.getenv("TOOL_PROFILE", "ESSENTIAL").upper(), choices=["ESSENTIAL", "ALL"], help="Set of tools published: ESSENTIAL (default) publishes only the most useful tools, ALL publishes all the tools. The tools listed with --tools are always published. The options --no-tools and --tags further restrict the tools published.")
 
     # Trace-related arguments
     parser.add_argument("--trace",             type=str, default=os.getenv("TRACE", ""),    nargs='+', choices=["EXECUTIONS", "EXECUTIONS_WITH_CONTENT", "CONFIGURATION"], help="Specifies what to trace.")

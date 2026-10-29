@@ -1,53 +1,58 @@
-# Publishing only the essential tools (`--essential-tools`)
+# Essential and non-essential tools
 
 The IBM ODM Management MCP server publishes 228 tools in total (150 for Decision Center and 78 for the Decision Server console).
-Many MCP clients and LLMs work better with a smaller number of tools. The `--essential-tools` option publishes only a curated subset of the most useful ones: **68 essential tools** instead of 228.
+Many MCP clients and LLMs work better with a smaller number of tools. By default, the server publishes only a curated subset of the most useful ones: **68 essential tools** instead of 228.
 
-## The argument
+## Choosing the set of tools published (`--tool-profile`)
 
 | CLI Argument | Environment Variable | Description | Default |
 |--------------|----------------------|-------------|---------|
-| `--essential-tools` | `ESSENTIAL_TOOLS` | Publish only the essential tools. | `False` |
+| `--tool-profile` | `TOOL_PROFILE` | Set of tools published: `ESSENTIAL` (only the essential tools) or `ALL` (all the tools). | `ESSENTIAL` |
 
-`--essential-tools` is a flag: it does not take any value.
-The environment variable accepts `true`, `1` or `yes` (case-insensitive).
+The value is case-insensitive. Any other value is rejected at startup.
+At startup, the server logs the profile in use, for instance `Tool profile: ESSENTIAL. By default, only the essential tools are published`.
 
 ```json
 "args": [
-  "--essential-tools"
+  "--tool-profile", "ALL"
 ]
 ```
 
 Tools are identified by their `operationId`, as in the `--tools` and `--no-tools` options. The comparison is not case-sensitive.
 
-## Using it with `--tools`, `--no-tools` and `--tags`
+## Tuning the list using it with `--tools`, `--no-tools` and `--tags`
 
 The four options can be combined. They are applied in the following order of precedence:
 
 1. `--tools`: a tool listed is always published, even if it is not essential.
 1. `--no-tools`: a tool listed is never published, even if it is essential (unless it is also listed in `--tools`).
-1. `--essential-tools`: a tool that is not essential is not published.
+1. `--tool-profile ESSENTIAL`: a tool that is not essential is not published.
 1. `--tags`: a tool that does not belong to one of the tags/categories listed is not published.
 
-| Option combined with `--essential-tools` | Effect |
-|------------------------------------------|--------|
-| `--tools t1 t2`   | **Adds** `t1` and `t2` to the essential tools. Without `--essential-tools`, `--tools` publishes *only* the tools listed. |
+| Option combined with `--tool-profile ESSENTIAL` | Effect |
+|-------------------------------------------------|--------|
+| `--tools t1 t2`   | **Adds** `t1` and `t2` to the essential tools. With `--tool-profile ALL`, `--tools` publishes *only* the tools listed. |
 | `--no-tools t1 t2`| **Removes** `t1` and `t2` from the essential tools. |
 | `--tags c1 c2`    | **Restricts** the essential tools to those whose tag/category is `c1` or `c2`. |
 
 ### Examples
 
-Publish the essential tools only:
+Publish the essential tools only (default, no argument needed):
 
 ```json
-"args": ["--essential-tools"]
+"args": ["--tool-profile", "ESSENTIAL"]
+```
+
+Publish all the tools:
+
+```json
+"args": ["--tool-profile", "ALL"]
 ```
 
 Publish the essential tools, plus `addServer` and `updateServer`, but not `deploy`:
 
 ```json
 "args": [
-  "--essential-tools",
   "--tools",    "addServer", "updateServer",
   "--no-tools", "deploy"
 ]
@@ -57,7 +62,6 @@ Publish only the essential tools of the `Explore` and `Build` categories:
 
 ```json
 "args": [
-  "--essential-tools",
   "--tags", "Explore", "Build"
 ]
 ```
@@ -67,7 +71,7 @@ Publish only the essential tools of the `Explore` and `Build` categories:
 
 ## Essential tools
 
-These tools are published when `--essential-tools` is set.
+These tools are published when `--tool-profile` is `ESSENTIAL` (default).
 
 ### Decision Center tools (50)
 
@@ -149,7 +153,7 @@ These tools are published when `--essential-tools` is set.
 
 ## Non-essential tools
 
-These tools are *not* published when `--essential-tools` is set. Use `--tools` to add some of them back.
+These tools are *not* published when `--tool-profile` is `ESSENTIAL` (default). Use `--tool-profile ALL` to publish them all, or `--tools` to add some of them back.
 
 ### Decision Center tools (100)
 

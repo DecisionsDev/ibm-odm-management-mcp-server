@@ -9,7 +9,7 @@ This page shows two examples:
 Each example shows the configuration for **mcp-remote**, **IBM Bob**, and **Claude Desktop**.
 
 > [!NOTE]
-> IBM Bob and Claude Desktop can also connect to the server directly **without** `mcp-remote`, by running the server locally via `uvx`. In that case filtering is configured through the CLI arguments `--essential-tools`, `--tools`, `--no-tools`, and `--tags` — see [Essential tools](Essential-tools.md). The HTTP-level filtering described on this page applies only when the server runs remotely and the client connects through `mcp-remote`.
+> IBM Bob and Claude Desktop can also connect to the server directly **without** `mcp-remote`, by running the server locally via `uvx`. In that case filtering is configured through the CLI arguments `--tool-profile`, `--tools`, `--no-tools`, and `--tags` — see [Essential tools](Essential-tools.md). The HTTP-level filtering described on this page applies only when the server runs remotely and the client connects through `mcp-remote`.
 
 ---
 
@@ -21,14 +21,16 @@ The server reads these overrides from every incoming HTTP request. They take pre
 
 | Query parameter | Value | Effect |
 |-----------------|-------|--------|
-| `tools=essentials` | `essentials` or `essential` | Publish only the [essential tools](Essential-tools.md) |
-| `tools=all` | `all` | Publish all tools (override server-level `--essential-tools`) |
+| `tools=essential` | `essential` (`essentials` is also accepted) | Publish only the [essential tools](Essential-tools.md) (override server-level `--tool-profile ALL`) |
+| `tools=all` | `all` | Publish all tools (override server-level `--tool-profile ESSENTIAL`) |
+
+Values are case-insensitive.
 
 ### Headers
 
 | Header | Value | Effect |
 |--------|-------|--------|
-| `X-Tool-Profile` | `essentials` / `all` | Same as the `tools` query parameter |
+| `X-Tool-Profile` | `essential` (or `essentials`) / `all` | Same as the `tools` query parameter |
 | `X-Tools` | Comma/space-separated tool names | Publish only the listed tools (equivalent to `--tools`) |
 | `X-No-Tools` | Comma/space-separated tool names | Remove the listed tools (equivalent to `--no-tools`) |
 | `X-Tags` | Comma/space-separated category names | Publish only tools whose category is listed (equivalent to `--tags`) |
@@ -39,7 +41,7 @@ The options combine in the same way as the command-line flags; see [Essential to
 
 ## 1. Basic: select a profile with a query parameter
 
-The simplest way to switch between *all tools* and *essential tools* is to append `?tools=essentials` (or `?tools=all`) to the MCP server URL. No extra headers are required.
+The simplest way to switch between *all tools* and *essential tools* is to append `?tools=essential` (or `?tools=all`) to the MCP server URL. No extra headers are required. Without it, the server-level `--tool-profile` applies (`ESSENTIAL` by default).
 
 > **Use case:** a developer workstation that always wants the full tool set vs. a team-shared assistant that should only see the curated subset.
 
@@ -52,7 +54,7 @@ Append the query parameter directly to the URL:
       "command": "npx",
       "args": [
         "mcp-remote",
-        "https://my-mcp-server.com/mcp?tools=essentials"
+        "https://my-mcp-server.com/mcp?tools=essential"
       ]
     }
   }

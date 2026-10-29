@@ -101,7 +101,7 @@ class DecisionCenterManager:
         'resetRulesetStatistics'
     ]
 
-    # Tools filtered out when the option --essential-tools is set (names are lowercase), grouped by tag/category.
+    # Tools filtered out when the option --tool-profile is ESSENTIAL (names are lowercase), grouped by tag/category.
     # For each category, the comment 'essential' lists the tools that remain published.
     non_essential_tools = [
         # ----- Decision Center -----

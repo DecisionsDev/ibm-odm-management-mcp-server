@@ -238,9 +238,9 @@ MCP clients then connect to `https://localhost:3000/mcp`. With a self-signed cer
 > Parameters to filter out the tools published
 >| CLI Argument | Environment Variable | Description | Default |
 >|--------------|----------------------|-------------|---------|
->| `--tools`    | `TOOLS`              | List of tools to publish (eg. decisionServices releases createRelease). This option takes precedence over the options --no-tools, --essential-tools and --tags | |
->| `--no-tools` | `NO_TOOLS`           | List of tools to ignore  (eg. launchCleanup wipe executeSqlScript). This option takes precedence over the options --essential-tools and --tags | |
->| `--essential-tools` | `ESSENTIAL_TOOLS` | Publish only the most useful tools (a curated subset of the Decision Center and Decision Server console tools), see [Essential tools](./docs/Essential-tools.md). Recommended in most cases. Can be combined with --tools (to add tools to this subset), --no-tools (to remove tools from it) and --tags (to restrict it further) | `False` |
+>| `--tools`    | `TOOLS`              | List of tools to publish (eg. decisionServices releases createRelease). This option takes precedence over the options --no-tools, --tool-profile and --tags. With `--tool-profile ESSENTIAL`, these tools are added to the essential tools; with `--tool-profile ALL`, only these tools are published | |
+>| `--no-tools` | `NO_TOOLS`           | List of tools to ignore  (eg. launchCleanup wipe executeSqlScript). This option takes precedence over the options --tool-profile and --tags | |
+>| `--tool-profile` | `TOOL_PROFILE`   | Set of tools published: `ESSENTIAL` (a curated subset of the most useful Decision Center and Decision Server console tools, see [Essential tools](./docs/Essential-tools.md)) or `ALL` (all the tools). Case-insensitive. Can be combined with --tools, --no-tools and --tags | `ESSENTIAL` |
 >| `--tags`     | `TAGS`               | List of tags (eg. About Explore Build). Publish only the tools that belong to the tags listed. | |
 
 > Parameters to start the MCP server in remote mode (allowing connections from remote MCP clients) 
@@ -274,7 +274,7 @@ You can configure the MCP server for clients like Claude Desktop using a JSON co
 - Use CLI arguments for quick overrides or non-sensitive parameters.
 - Use environment variables for secrets.
 - You can mix both methods if needed. CLI arguments override environment variables.
-- Add the `--essential-tools` argument to publish only the most useful tools. Most of the tools are not needed most of the time, and a smaller number of tools helps the AI agent to pick the right one. See [Essential tools](./docs/Essential-tools.md) for the list of the tools published.
+- By default only the most useful tools are published as not all tools are needed most of the time, and a smaller number of tools helps the AI agent to pick the right one. See [Essential tools](./docs/Essential-tools.md) for the list of the tools published. Add `--tool-profile ALL` to publish all the tools.
 
 Here are some examples for different types of deployment (dev/test or production), environments (CloudPak, ...) and use cases:
 - [Example 1: Basic Auth](#example-1-basic-auth)
@@ -303,8 +303,7 @@ The example below shows a typical use-case where the sensitive information (here
         "--res-url", "https://res-console-url",
         "--verifyssl-hostname", "True",
         "--ssl-cert-path", "odm-certificate-file;openid-provider-certificate-file",
-        "--username", "username",
-        "--essential-tools"
+        "--username", "username"
       ],
       "env": {
         "ODM_PASSWORD": "password"
@@ -324,8 +323,7 @@ For local development and testing, use the Basic Auth.
   "ibm-odm-management-mcp-server",
   "--url",      "http://localhost:9060/decisioncenter-api",
   "--res-url",  "http://localhost:9060/res",
-  "--username", "odmAdmin",
-  "--essential-tools"
+  "--username", "odmAdmin"
 ],
 "env": {
   "ODM_PASSWORD": "odmAdmin"
@@ -344,8 +342,7 @@ For production deployments on the Cloud Pak, use the Zen API Key.
   "--res-url",       "https://res-console-url",
   "--verifyssl-hostname", "True",
   "--ssl-cert-path", "odm-certificate-file;openid-provider-certificate-file",
-  "--username",      "USERNAME",
-  "--essential-tools"
+  "--username",      "USERNAME"
 ],
 "env": {
   "ZENAPIKEY": "ZEN_API_KEY"
@@ -435,21 +432,24 @@ mTLS must be complemented with another means of authentication/authorization for
 
 ### Example 6: Tool filtering
 
-You may want to have only a subset of tools published.
-The most common use case is to publish only the most useful tools with the option `--essential-tools`: most of the tools are not needed most of the time, and having fewer tools helps the AI agent to pick the right one.
+By default only the essential tools are published as not all tools are needed most of the time, and a smaller number of tools helps the AI agent to pick the right one.
 See [Essential tools](./docs/Essential-tools.md) for the list of the essential and non-essential tools.
 
-The four options below enable to achieve this.
+You may want to add more tools, or have a different set of tools published.
+
+The four options below enable to adjust the list of tools published.
 They can be used separately or together and in the latter case, are processed in the following order of precedence:
 
 1. First, you can specify the tools to publish explicitly
 
-    For instance, you can specify to publish only the tools `decisionServices` (to list decision services), `decisionService` (to get a decision service by its ID), `testSuites` (list of test suites), `run` (to run a test suite), `testreports` and `decisionServicesImport`: 
+    For instance, you can specify to publish only the tools `decisionServices` (to list decision services), `decisionService` (to get a decision service by its ID), `testSuites` (list of test suites), `run` (to run a test suite), `testreports` and `decisionServicesImport`:
     ```json
     "args": [
+      "--tool-profile", "ALL",
       "--tools", "decisionServices", "decisionService", "testSuites", "run", "testreports", "decisionServicesImport"
     ]
     ```
+    Without `--tool-profile ALL`, these tools are added to the essential tools.
     This option takes precedence over the other two below: if a tool is specified with the `--tools` option, it is published no matter the values of the other options.
     
 1. You can also specify the tools that should not be published 
@@ -457,21 +457,22 @@ They can be used separately or together and in the latter case, are processed in
     For instance, you can have all the tools published but `wipe`, `executeSQLScript` and `launchCleanup`
     ```json
     "args": [
+      "--tool-profile", "ALL",
       "--no-tools", "wipe", "executeSQLScript", "launchCleanup"
     ]
     ```
-    This option takes precedence over the next options: if a tool is specified with the `--no-tools` option, it is not published no matter the value of the `--essential-tools` and `--tags` options.
+    This option takes precedence over the next options: if a tool is specified with the `--no-tools` option, it is not published no matter the value of the `--tool-profile` and `--tags` options.
 
-1. You can also publish only the most useful tools
+1. You can also choose the set of tools published
 
-    The `--essential-tools` option is a flag (no value) that restricts the published tools to a curated subset of the most commonly used tools (see [Essential tools](./docs/Essential-tools.md) for the list).
+    The `--tool-profile` option takes the value `ESSENTIAL` (default) or `ALL` (case-insensitive). `ESSENTIAL` restricts the published tools to a curated subset of the most commonly used tools (see [Essential tools](./docs/Essential-tools.md) for the list), while `ALL` publishes all the tools.
     ```json
     "args": [
-      "--essential-tools"
+      "--tool-profile", "ALL"
     ]
     ```
 
-    It can be combined with the other options to adjust that subset:
+    With `ESSENTIAL`, it can be combined with the other options to adjust that subset:
     - `--tools` adds tools to it: the tools listed are published even if they are not essential.
     - `--no-tools` removes tools from it: the tools listed are not published even if they are essential.
     - `--tags` restricts it further to the tools that belong to the tags/categories listed.
@@ -479,7 +480,7 @@ They can be used separately or together and in the latter case, are processed in
     For instance, with the configuration below, the essential tools are published, plus `addServer` and `updateServer`, but not `deploy`:
     ```json
     "args": [
-      "--essential-tools",
+      "--tool-profile", "ESSENTIAL",
       "--tools",    "addServer", "updateServer",
       "--no-tools", "deploy"
     ]
@@ -498,245 +499,8 @@ They can be used separately or together and in the latter case, are processed in
 
 In the `--tools` and `--no-tools` options, tools are identified by their `operationId`.
 
-Here is the list of the tools with their `operationId` and tag in ODM 9.6.0.0:
-
-1. Decision Center tools:
-
-    | `operationId`                 | tool                                                                                                                            | tag         | role             |
-    |-------------------------------|---------------------------------------------------------------------------------------------------------------------------------|-------------|------------------|
-    | about                         | Get system, product, and database information                                                                                   | About       |                  |
-    | unlockAllUserArtifacts        | Unlock all artifacts owned by a user                                                                                            | Admin       |                  |
-    | addUser                       | Add or update a user                                                                                                            | Admin       | rtsAdministrator |
-    | getUsersRolesRegistry         | Retrieve the last configuration file that was uploaded                                                                          | Admin       | rtsAdministrator |
-    | setUsersRolesRegistry         | Set the configuration for users, groups and roles                                                                               | Admin       | rtsAdministrator |
-    | ldapSync                      | Synchronize the repository with any associated LDAP server                                                                      | Admin       | rtsAdministrator |
-    | importTabPermissions          | Import tab permissions                                                                                                          | Admin       | rtsAdministrator |
-    | importPermissions             | Import permissions                                                                                                              | Admin       |                  |
-    | importCommandPermissions      | Import command permissions                                                                                                      | Admin       | rtsAdministrator |
-    | addGroup                      | Add or update a group.                                                                                                          | Admin       | rtsAdministrator |
-    | updateDynamicDomains          | Update dynamic domains                                                                                                          | Admin       |                  |
-    | branchImport                  | Import a decision service on top of an existing branch                                                                          | Admin       |                  |
-    | decisionServicesImport        | Import a decision service into the repository                                                                                   | Admin       |                  |
-    | branchSecurity                | Security configuration of a branch                                                                                              | Admin       | rtsAdministrator |
-    | branchSecurity_1              | Enforce the security on a branch                                                                                                | Admin       | rtsAdministrator |
-    | users                         | List of the users that are defined in Decision Center                                                                           | Admin       | rtsAdministrator |
-    | eraseAllUsers                 | Remove all users                                                                                                                | Admin       | rtsAdministrator |
-    | user                          | Details of the user                                                                                                             | Admin       | rtsAdministrator |
-    | deleteUser                    | Remove a user                                                                                                                   | Admin       | rtsAdministrator |
-    | metrics                       | Get repository metrics                                                                                                          | Admin       | rtsAdministrator |
-    | exportTabPermissions          | Export the tab permissions to JSON                                                                                              | Admin       | rtsAdministrator |
-    | exportPermissions             | Export the permissions that are defined for a group to JSON                                                                     | Admin       | rtsAdministrator |
-    | effectivePermissions          | Retrieve the effective permissions for one or more groups to JSON                                                               | Admin       |                  |
-    | exportCommandPermissions      | Export the command permissions to JSON                                                                                          | Admin       | rtsAdministrator |
-    | groups                        | List of the groups that are defined in Decision Center                                                                          | Admin       | rtsAdministrator |
-    | eraseAllGroups                | Remove all groups                                                                                                               | Admin       | rtsAdministrator |
-    | group                         | Details of the group                                                                                                            | Admin       | rtsAdministrator |
-    | deleteGroup                   | Remove a group                                                                                                                  | Admin       | rtsAdministrator |
-    | listDynamicDomains            | Get the list of dynamic domains                                                                                                 | Admin       |                  |
-    | deleteDecisionService         | Delete a decision service                                                                                                       | Admin       | rtsAdministrator |
-    | decisionServiceExport         | Export a decision service to a compressed file                                                                                  | Admin       |                  |
-    | branch_1                      | Details of the branch from which the security configuration is inherited from                                                   | Admin       | rtsAdministrator |
-    | branchGroups                  | Comma-separated list of the groups that are set on a branch                                                                     | Admin       | rtsAdministrator |
-    | run                           | Run a test suite                                                                                                                | Build       |                  |
-    | deploy                        | Deploy a RuleApp to an execution server (Rule Execution Server)                                                                 | Build       |                  |
-    | build                         | Build a RuleApp for the deployment configuration                                                                                | Build       |                  |
-    | snapshot_1                    | Create a snapshot of a branch in the decision service                                                                           | Build       |                  |
-    | deleteTestReport              | Delete a test report                                                                                                            | Build       |                  |
-    | download                      | Download the RuleApp archive for the deployment configuration                                                                   | Build       |                  |
-    | setPersistenceLocale          | Set persistence locale                                                                                                          | DBAdmin     | rtsAdministrator |
-    | wipe                          | Wipe element version content                                                                                                    | DBAdmin     |                  |
-    | uploadMessagesFile            | Persist localized messages file                                                                                                 | DBAdmin     | rtsAdministrator |
-    | uploadExtensionModelFiles     | Persist model extension files .brmx and .brdx                                                                                   | DBAdmin     | rtsAdministrator |
-    | executeSQLScript              | Run SQL script                                                                                                                  | DBAdmin     | rtsAdministrator |
-    | generate                      | Launch DC database diagnostics generation                                                                                       | DBAdmin     | rtsAdministrator |
-    | generateExtensionModelScript  | Generate an SQL script for model extensions                                                                                     | DBAdmin     | rtsAdministrator |
-    | stopCleanup                   | Stop cleanup operation                                                                                                          | DBAdmin     | rtsAdministrator |
-    | launchCleanup                 | Launch cleanup of the repository                                                                                                | DBAdmin     | rtsAdministrator |
-    | getExecutionStatus            | Get the run status of the SQL script                                                                                            | DBAdmin     |                  |
-    | getModelExtensionFiles        | Retrieve model extension files as file archive                                                                                  | DBAdmin     | rtsAdministrator |
-    | generateMigrationRole         | Generate a migration role                                                                                                       | DBAdmin     | rtsAdministrator |
-    | generateMigrationScript       | Generate migration script                                                                                                       | DBAdmin     | rtsAdministrator |
-    | results                       | Get DC database diagnostics results                                                                                             | DBAdmin     | rtsAdministrator |
-    | isCleanupRunning              | Check cleanup execution                                                                                                         | DBAdmin     |                  |
-    | cleanupReport                 | Export report for last cleanup operation to JSON                                                                                | DBAdmin     |                  |
-    | cleanupOldReports             | Export old cleanup reports to JSON                                                                                              | DBAdmin     |                  |
-    | snapshots                     | List of the snapshots that are associated with the decision service                                                             | Explore     |                  |
-    | releases                      | List of the releases in the decision service                                                                                    | Explore     |                  |
-    | branches                      | List of the branches in the decision service                                                                                    | Explore     |                  |
-    | server                        | Details of the server                                                                                                           | Explore     |                  |
-    | release                       | Details of the release                                                                                                          | Explore     |                  |
-    | ruleflows                     | List of ruleflows in a project                                                                                                  | Explore     |                  |
-    | folders                       | List of folders of a project                                                                                                    | Explore     |                  |
-    | activity                      | Details of the activity                                                                                                         | Explore     |                  |
-    | testSuite                     | Details of the test suite                                                                                                       | Explore     |                  |
-    | testReport                    | Details of the test report                                                                                                      | Explore     |                  |
-    | snapshot_2                    | Details of the snapshot                                                                                                         | Explore     |                  |
-    | servers                       | List of the servers that are defined in Decision Center                                                                         | Explore     |                  |
-    | project                       | Get the project with the ID                                                                                                     | Explore     |                  |
-    | variablesets                  | List of variableSet in a project                                                                                                | Explore     |                  |
-    | technicalrules                | List of technical rules in a project                                                                                            | Explore     |                  |
-    | rules                         | List of rules in a project                                                                                                      | Explore     |                  |
-    | generateReport                | Generate a report for the project                                                                                               | Explore     |                  |
-    | queries                       | List of queries in a project                                                                                                    | Explore     |                  |
-    | queryRun                      | List of elements returned by a query                                                                                            | Explore     |                  |
-    | queryReport                   | Generate a report with the elements returned by a query                                                                         | Explore     |                  |
-    | operations                    | List of operations in a project                                                                                                 | Explore     |                  |
-    | functions                     | List of functions in a project                                                                                                  | Explore     |                  |
-    | deploymentConfiguration       | Details of the deployment configuration                                                                                         | Explore     |                  |
-    | DeploymentReport              | Details of the deployment report                                                                                                | Explore     |                  |
-    | decisionServices              | Get the list of decision services                                                                                               | Explore     |                  |
-    | decisionService               | Get a decision service by its ID                                                                                                | Explore     |                  |
-    | testSuites                    | List of the test suites for the decision service                                                                                | Explore     |                  |
-    | testReports                   | List of the test reports for the decision service                                                                               | Explore     |                  |
-    | projects                      | List of the projects that form the decision service, and the decision service itself                                            | Explore     |                  |
-    | deploymentConfigurations      | List of the deployment configurations for the decision service                                                                  | Explore     |                  |
-    | DeploymentReports             | List of the deployment reports for the decision service                                                                         | Explore     |                  |
-    | activities                    | List of the activities in the decision service                                                                                  | Explore     |                  |
-    | branch                        | Details of the branch                                                                                                           | Explore     |                  |
-    | createValidationActivity      | Create a validation activity in an open release                                                                                 | Govern      |                  |
-    | createChangeActivity          | Create a change activity in an open release                                                                                     | Govern      |                  |
-    | createRelease                 | Create a new release in a decision service                                                                                      | Govern      |                  |
-    | updateRelease                 | Update an open release of a decision service                                                                                    | Govern      |                  |
-    | deleteRelease                 | Delete an open release in a decision service                                                                                    | Govern      |                  |
-    | reopenRelease                 | Reopen a release that is canceled or rejected in a decision service                                                             | Govern      |                  |
-    | removeReleaseApprover         | Remove an approver from an open release of a decision service                                                                   | Govern      |                  |
-    | rejectRelease                 | Reject the open release of a decision service                                                                                   | Govern      |                  |
-    | changeReleaseOwner            | Change the owner of an open release of a decision service                                                                       | Govern      |                  |
-    | cancelRelease                 | Cancel an open release in a decision service                                                                                    | Govern      |                  |
-    | approveRelease                | Approve an open release of a decision service                                                                                   | Govern      |                  |
-    | allowReleaseApproval          | Allow the approval of an open release of a decision service                                                                     | Govern      |                  |
-    | addReleaseApprover            | Add an approver to an open release of a decision service                                                                        | Govern      |                  |
-    | updateActivity                | Update an activity in an open release                                                                                           | Govern      |                  |
-    | deleteActivity                | Delete an activity in an open release                                                                                           | Govern      |                  |
-    | resumeWorkInActivity          | Resume work in an activity in an open release                                                                                   | Govern      |                  |
-    | reopenActivity                | Reopen an activity in an open release                                                                                           | Govern      |                  |
-    | removeActivityAuthor          | Remove an author from an activity in an open release                                                                            | Govern      |                  |
-    | removeActivityApprover        | Remove an approver from an activity in an open release                                                                          | Govern      |                  |
-    | rejectChangesInActivity       | Reject changes of an activity in an open release                                                                                | Govern      |                  |
-    | finishWorkInActivity          | Finish work on an activity in an open release                                                                                   | Govern      |                  |
-    | changeActivityOwner           | Change the owner of an activity in an open release                                                                              | Govern      |                  |
-    | cancelActivity                | Cancel an activity in an open release                                                                                           | Govern      |                  |
-    | approveChangesInActivity      | Approve changes of an activity in an open release                                                                               | Govern      |                  |
-    | allowActivityApproval         | Allow approval for an activity in an open release                                                                               | Govern      |                  |
-    | addActivityAuthor             | Add an author to an activity in an open release                                                                                 | Govern      |                  |
-    | addActivityApprover           | Add an approver to an activity in an open release                                                                               | Govern      |                  |
-    | applyAsset                    | Import a decision service defined from a JSON description                                                                       | Interchange |                  |
-    | registerWebhook               | Register a webhook to notify other applications of events that are coming from Decision Center                                  | Manage      | rtsAdministrator |
-    | renameSnapshot                | Rename a snapshot from a decision service                                                                                       | Manage      |                  |
-    | addServer                     | Add a target server to use for deployments, simulations, and tests                                                              | Manage      | rtsAdministrator |
-    | snapshot                      | Create a snapshot of a branch in the decision service                                                                           | Manage      |                  |
-    | createDSBranch                | Create a new branch in a decision service                                                                                       | Manage      |                  |
-    | renameBranch                  | Rename a branch from a decision service                                                                                         | Manage      |                  |
-    | copyBranch                    | Create a new branch from an existing one, and set its parent to the main branch, or the initial release in the case of releases | Manage      |                  |
-    | registerWebhook_1             | Update a webhook to notify other applications of events that are coming from Decision Center                                    | Manage      | rtsAdministrator |
-    | deleteWebhook                 | Unregister a webhook                                                                                                            | Manage      | rtsAdministrator |
-    | updateServer                  | Update a target server to use for deployments, simulations, and tests                                                           | Manage      | rtsAdministrator |
-    | deleteServer                  | Remove a target server to use for deployments, simulations, and tests                                                           | Manage      | rtsAdministrator |
-    | importDT                      | Import an Excel file into an existing decision table                                                                            | Manage      |                  |
-    | webhooks                      | Get a list of the webhooks that are bound to this instance of Decision Center                                                   | Manage      | rtsAdministrator |
-    | deleteSnapshot                | Delete a snapshot from a decision service                                                                                       | Manage      |                  |
-    | exportDT                      | Export an Excel file from an existing decision table                                                                            | Manage      |                  |
-    | deleteBranch                  | Delete a branch from a decision service                                                                                         | Manage      |                  |
-    | discardBuildState             | Discard all the built states of branches, releases, activities, and snapshots                                                   | Manage      | rtsAdministrator |
-    | updateRuleflow                | Update an existing ruleflow                                                                                                     | Model       |                  |
-    | moveRuleflow                  | Move a ruleflow                                                                                                                 | Model       |                  |
-    | updateTransition              | Update an existing transition                                                                                                   | Model       |                  |
-    | updateRuleTask                | Update an existing rule task                                                                                                    | Model       |                  |
-    | renameFolder                  | Rename a folder                                                                                                                 | Model       |                  |
-    | moveFolder                    | Move a folder                                                                                                                   | Model       |                  |
-    | updateDecisionTable           | Update an existing decision table                                                                                               | Model       |                  |
-    | moveDecisionTable             | Move a decision table                                                                                                           | Model       |                  |
-    | updateActionRule              | Update an existing action rule                                                                                                  | Model       |                  |
-    | moveActionRule                | Move an action rule                                                                                                             | Model       |                  |
-    | createTransition              | Create a new transition                                                                                                         | Model       |                  |
-    | createRuleTask                | Create a new rule task                                                                                                          | Model       |                  |
-    | createRuleflow                | Create a new ruleflow                                                                                                           | Model       |                  |
-    | createFolder                  | Create a new folder                                                                                                             | Model       |                  |
-    | createDecisionTable           | Create a new decision table                                                                                                     | Model       |                  |
-    | createActionRule              | Create a new action rule                                                                                                        | Model       |                  |
-
-1. Decision Server / RES console tools:
-
-    | OperationId                          | Tool                                                                                 | tag            | role        |
-    |--------------------------------------|--------------------------------------------------------------------------------------|----------------|-------------|
-    | getRuleApps                          | Returns all the RuleApps contained in the repository.                                | Ruleapps       | resMonitor  |
-    | getCountOfRuleApps                   | Get count of ruleapps                                                                | Ruleapps       | resMonitor  |
-    | getRuleAppsByName                    | Returns all the RuleApps with the specified name                                     | Ruleapps       | resMonitor  |
-    | getCountOfRuleAppsByName             | Get count of ruleapps by name                                                        | Ruleapps       | resMonitor  |
-    | getRuleAppWithHighestNumber          | Returns the highest version of a RuleApp, identified by its name                     | Ruleapps       | resMonitor  |
-    | getRuleAppWithHighestNumberArchive   | Returns the archive of the highest version of the RuleApp                            | Ruleapps       | resMonitor  |
-    | getRuleApp                           | Returns the RuleApp identified by its name and version number                        | Ruleapps       | resMonitor  |
-    | getRulesets                          | Returns all the rulesets contained in the RuleApp                                    | Ruleapps       | resMonitor  |
-    | getCountOfRulesets                   | Get count of rulesets                                                                | Ruleapps       | resMonitor  |
-    | addRuleset                           | Adds a new ruleset in a RuleApp, identified by its name and version number, in the repository| Ruleapps       | resDeployer |
-    | getRuleAppArchive                    | Returns the archive of the RuleApp                                                   | Ruleapps       | resMonitor  |
-    | notifyRuleAppChanges                 | Notifies to reload all the rulesets contained in the RuleApp                         | Ruleapps       | resMonitor  |
-    | getRuleAppProperties                 | Returns all the properties associated with a RuleApp                                 | Ruleapps       | resMonitor  |
-    | getCountOfRuleAppProperties          | Get count of ruleapp properties                                                      | Ruleapps       | resMonitor  |
-    | addRuleAppProperty                   | Adds a new, named property to a RuleApp, identified by its name and version number   | Ruleapps       | resDeployer |
-    | updateRuleAppProperty                | Updates an existing property of a RuleApp identified by its name and version number  | Ruleapps       | resDeployer |
-    | deleteRuleAppProperty                | Removes a named property of a RuleApp identified by its name and version number      | Ruleapps       | resDeployer |
-    | getRulesetsByName                    | Returns all the rulesets with that name contained in a RuleApp                       | Ruleapps       | resMonitor  |
-    | getCountOfRulesetsByName             | Get count of rulesets by name                                                        | Ruleapps       | resMonitor  |
-    | getRulesetWithHighestNumber          | Returns the highest version of the ruleset, identified by its name, contained in a RuleApp identified by its name and version number| Ruleapps       | resMonitor  |
-    | getRulesetWithHighestNumberArchive   | Returns the archive of the highest version of a ruleset identified by its name and by the name and the highest version of its RuleApp| Ruleapps       | resMonitor  |
-    | getRulesetWithHighestNumberArchive2  | Returns the archive of the highest version of a ruleset identified by its name and by the name and version number of its RuleApp| Ruleapps       | resMonitor  |
-    | getRuleset                           | Returns the ruleset, identified by its name and version number, contained in a RuleApp| Ruleapps       | resMonitor  |
-    | getRulesetXOMs                       | Returns the XOMs referenced by a ruleset contained in a RuleApp                      | Ruleapps       | resMonitor  |
-    | getRulesetSignature                  | Returns the signature of a ruleset, identified by its name and version number and by the name and version number of its RuleApp| Ruleapps       | resMonitor  |
-    | getRulesetArchive                    | Returns the archive of a ruleset identified by its name and version number and by the name and version number of its RuleApp| Ruleapps       | resMonitor  |
-    | notifyRulesetChanges                 | Notifies to reload the ruleset, identified by its name and version number and by the name and version number of its RuleApp| Ruleapps       | resMonitor  |
-    | getRulesetProperties                 | Returns all the properties associated with a ruleset, identified by its name and version number and by the name and version number of its RuleApp| Ruleapps       | resMonitor  |
-    | getCountOfRulesetProperties          | Get count of ruleset properties                                                      | Ruleapps       | resMonitor  |
-    | addRulesetProperty                   | Adds a new, named property to a ruleset, identified by its name and version number, contained in a RuleApp identified by its name and version number| Ruleapps       | resDeployer |
-    | updateRulesetArchive                 | Replaces an existing ruleset archive by another ruleset archive                      | Ruleapps       | resDeployer |
-    | updateRulesetProperty                | Updates an existing property of a ruleset, identified by its name and version number and by the name and version number of the RuleApp| Ruleapps       | resDeployer |
-    | deleteRulesetProperty                | Removes a named property of a ruleset identified by its name and version number, contained in a RuleApp identified by its name and version number| Ruleapps       | resDeployer |
-    | deployRulesetArchive                 | Deploys a ruleset archive at the specified location in the repository                | Ruleapps       | resDeployer |
-    | updateRuleset                        | Updates an existing ruleset in a RuleApp, identified by their names and version numbers, in the repository| Ruleapps       | resDeployer |
-    | deleteRuleset                        | Removes a ruleset, identified by its name and version number, contained in a RuleApp, identified by its name and version number| Ruleapps       | resDeployer |
-    | updateRuleApp                        | Updates an existing RuleApp in the repository                                        | Ruleapps       | resDeployer |
-    | deleteRuleApp                        | Removes a RuleApp, identified by its name and version number, from the repository    | Ruleapps       | resDeployer |
-    | deployRuleAppArchive                 | Deploys a RuleApp archive in the repository, based on the merging and versioning policies passed as parameters| Ruleapps       | resDeployer |
-    | addRuleApp                           | Adds a new RuleApp in the repository                                                 | Ruleapps       | resDeployer |
-    | getAllRulesets                       | Returns all the rulesets of the repository.                                          | Rulesets       | resMonitor  |
-    | getCountOfAllRulesets                | Get count of all rulesets                                                            | Rulesets       | resMonitor  |
-    | getLibraries                         | Returns all the managed XOM libraries contained in the repository.                   | Libraries      | resMonitor  |
-    | getCountOfLibraries                  | Get count of libraries                                                               | Libraries      | resMonitor  |
-    | getLibrariesByName                   | Returns all the managed XOM libraries, identified by their name                      | Libraries      | resMonitor  |
-    | getCountOfLibrariesByName            | Get count of libraries by name                                                       | Libraries      | resMonitor  |
-    | getLibraryWithHighestNumber          | Returns the highest version of a managed XOM library, identified by its name         | Libraries      | resMonitor  |
-    | getLibrary                           | Returns the description of a managed XOM library                                     | Libraries      | resMonitor  |
-    | addLibrary                           | Adds a new managed XOM library in the repository.                                    | Libraries      | resDeployer |
-    | updateLibrary                        | Updates the resources and libraries referenced by an existing managed XOM library    | Libraries      | resDeployer |
-    | deleteLibrary                        | Removes a named library from the repository                                          | Libraries      | resDeployer |
-    | deleteUnusedLibraries                | Removes libraries that are unused and/or in error from the repository                | Libraries      | resDeployer |
-    | getResources                         | Returns all the managed XOMs contained in the repository.                            | Xoms           | resMonitor  |
-    | getCountOfResources                  | Get count of resources                                                               | Xoms           | resMonitor  |
-    | getResourcesByName                   | Returns all the managed XOMs with the specified name                                 | Xoms           | resMonitor  |
-    | getCountOfResourcesByName            | Get count of resources by name                                                       | Xoms           | resMonitor  |
-    | getByteCodeOfHighestResource         | Returns the byte code of the highest version of the managed XOM                      | Xoms           | resMonitor  |
-    | getResourceWithHighestNumber         | Returns the highest version of a managed XOM identified by its name                  | Xoms           | resMonitor  |
-    | getResource                          | Returns the description of a managed XOM                                             | Xoms           | resMonitor  |
-    | getByteCodeOfResource                | Returns the byte code of a managed XOM identified by its name and version number     | Xoms           | resMonitor  |
-    | deleteResource                       | Removes a managed XOM from the repository                                            | Xoms           | resDeployer |
-    | deployResource                       | Deploys a managed XOM in the repository                                              | Xoms           | resDeployer |
-    | deleteUnusedXomResources             | Removes XOM resources that are unused and/or in error from the repository            | Xoms           | resDeployer |
-    | getDecisionTraces                    | Returns all the Decision Warehouse traces that match the optional selection filters from the repository.| Decisiontraces | resMonitor  |
-    | getCountOfDecisionTraces             | Get count of decision traces                                                         | Decisiontraces | resMonitor  |
-    | getDecisionTrace                     | Returns the Decision Warehouse trace with the specified execution identifier         | Decisiontraces | resMonitor  |
-    | deleteDecisionTrace                  | Removes the trace with the specified execution identifier from the repository        | Decisiontraces | resDeployer |
-    | deleteDecisionTracesByIds            | Removes all the Decision Warehouse traces when their execution identifier is included in the request body| Decisiontraces | resDeployer |
-    | deleteDecisionTraces                 | Removes all the Decision Warehouse traces that match the optional selection filters. | Decisiontraces | resDeployer |
-    | getExecutionUnits                    | Returns information about all execution units.                                       | Executionunits | resMonitor  |
-    | getCountOfExecutionUnits             | Get count of execution units                                                         | Executionunits | resMonitor  |
-    | getRulesetStatistics                 | Returns execution statistics about a ruleset                                         | Executionunits | resMonitor  |
-    | resetRulesetStatistics               | Resets the execution statistics about a ruleset.                                     | Executionunits | resDeployer |
-    | getRulesetStatisticsForExecutionUnit | Returns execution statistics about a ruleset                                         | Executionunits | resMonitor  |
-    | getConsoleInfo                       | Returns the Rule Execution Server console initialization information.                | Utilities      | resMonitor  |
-    | getDiagnostics                       | Returns the Rule Execution Server diagnostic information.                            | Utilities      | resMonitor  |
-    | getDiagnosticById                    | Returns the diagnostics for a specified element ID.                                  | Utilities      | resMonitor  |
-    | getVersion                           | Returns the Rule Execution Server version information.                               | Utilities      | resMonitor  |
+You can check the list of the tools with their `operationId` and tag/category in [Remote Tool Filtering](/docs/remote-tool-filtering.md).
+This list is based on ODM 9.6.0.0 and some tools may be missing in earlier releases.
 
 ### Example 7: Role-based tool filtering
 

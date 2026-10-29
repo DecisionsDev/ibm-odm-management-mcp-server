@@ -140,8 +140,7 @@ This step is optional and only needed if you choose to run ODM as a container on
            "--url",      "http://localhost:9060/decisioncenter-api",
            "--res-url",  "http://localhost:9060/res",
            "--username", "odmAdmin",
-           "--trace",    "EXECUTIONS_WITH_CONTENT",
-           "--essential-tools"
+           "--trace",    "EXECUTIONS_WITH_CONTENT"
          ],
          "env": {
            "ODM_PASSWORD": "odmAdmin"
@@ -151,10 +150,10 @@ This step is optional and only needed if you choose to run ODM as a container on
    }
    ```
 
-   The `--essential-tools` argument publishes only the most useful tools (see [Essential tools](Essential-tools.md)): most of the tools are not needed most of the time, and having fewer tools helps Bob to pick the right one.
+   By default, the server publishes only the most useful tools (`--tool-profile ESSENTIAL`, see [Essential tools](Essential-tools.md)): most of the tools are not needed most of the time, and having fewer tools helps Bob to pick the right one.
 
    > [!NOTE]
-   > The scenario of Example 1 of the demo walkthrough below runs the tool `addGroup`, which is not an essential tool. To run this scenario, remove the `--essential-tools` argument from the configuration (or keep it and add `"--tools", "addGroup"`).
+   > The scenario of Example 1 of the demo walkthrough below runs the tool `addGroup`, which is not an essential tool. To run this scenario, add `"--tool-profile", "ALL"` to the configuration (or add `"--tools", "addGroup"`).
 
 1. Save the file and then click the `Refresh all servers` icon. After some time, the `ibm-odm-management-mcp-server` MCP server will get displayed.
 
@@ -172,7 +171,7 @@ With the configuration above, the Management MCP Server :
 ### Example 1: Decision Center REST API
 
 > [!IMPORTANT]
-> This example requires the tool `addGroup`, which is not published when the argument `--essential-tools` is set. Remove this argument from the configuration (or add `"--tools", "addGroup"`) and click the `Refresh all servers` icon before running it.
+> This example requires the tool `addGroup`, which is not published by default. Add `"--tools", "addGroup"` to the configuration (or let all the tools be published: `"--tool-profile", "ALL"`) and click the `Refresh all servers` icon before running it.
 
 - Enter the following text and press ENTER:
     ```
@@ -272,8 +271,7 @@ With the configuration above, the Management MCP Server :
                     "--from", "git+https://github.com/DecisionsDev/ibm-odm-management-mcp-server", "ibm-odm-management-mcp-server",
                     "--url",      "http://localhost:9060/decisioncenter-api",
                     "--res-url",  "http://localhost:9060/res",
-                    "--username", "odmAdmin",
-                    "--essential-tools"
+                    "--username", "odmAdmin"
                 ],
                 "env": {
                     "ODM_PASSWORD": "odmAdmin"
