@@ -238,9 +238,9 @@ MCP clients then connect to `https://localhost:3000/mcp`. With a self-signed cer
 > Parameters to filter out the tools published
 >| CLI Argument | Environment Variable | Description | Default |
 >|--------------|----------------------|-------------|---------|
+>| `--tool-profile` | `TOOL_PROFILE`   | Set of tools published: `ESSENTIAL` (a curated subset of the most useful Decision Center and Decision Server console tools, see [Essential tools](./docs/Essential-tools.md)) or `ALL` (all the tools). Case-insensitive. Can be combined with --tools, --no-tools and --tags | `ESSENTIAL` |
 >| `--tools`    | `TOOLS`              | List of tools to publish (eg. decisionServices releases createRelease). This option takes precedence over the options --no-tools, --tool-profile and --tags. With `--tool-profile ESSENTIAL`, these tools are added to the essential tools; with `--tool-profile ALL`, only these tools are published | |
 >| `--no-tools` | `NO_TOOLS`           | List of tools to ignore  (eg. launchCleanup wipe executeSqlScript). This option takes precedence over the options --tool-profile and --tags | |
->| `--tool-profile` | `TOOL_PROFILE`   | Set of tools published: `ESSENTIAL` (a curated subset of the most useful Decision Center and Decision Server console tools, see [Essential tools](./docs/Essential-tools.md)) or `ALL` (all the tools). Case-insensitive. Can be combined with --tools, --no-tools and --tags | `ESSENTIAL` |
 >| `--tags`     | `TAGS`               | List of tags (eg. About Explore Build). Publish only the tools that belong to the tags listed. | |
 
 > Parameters to start the MCP server in remote mode (allowing connections from remote MCP clients) 
@@ -432,8 +432,10 @@ mTLS must be complemented with another means of authentication/authorization for
 
 ### Example 6: Tool filtering
 
-By default only the essential tools are published as not all tools are needed most of the time, and a smaller number of tools helps the AI agent to pick the right one.
-See [Essential tools](./docs/Essential-tools.md) for the list of the essential and non-essential tools.
+> [!NOTE]:
+> - Only essential tools are now published by default!
+>   - because not all tools are needed most of the time, and a smaller number of tools helps the AI agent to pick the right one and reduce their context.
+>   - See [Essential tools](./docs/Essential-tools.md) for the list of the essential and non-essential tools.
 
 You may want to add more tools, or have a different set of tools published.
 
@@ -544,7 +546,7 @@ In the example below (suitable for ODM for Developer), two MCP servers are defin
 
 ### Example 8: Remote tool filtering
 
-When the MCP server runs remotely, each user can configure the MCP client to retrieve their own list of tools.
+When the MCP server runs remotely, users can also configure the MCP client to retrieve their own list of tools.
 
 See [Remote Tool Filtering](/docs/remote-tool-filtering.md).
 
