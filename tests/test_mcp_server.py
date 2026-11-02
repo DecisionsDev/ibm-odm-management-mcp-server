@@ -1567,7 +1567,7 @@ def _make_dummy_request(headers: dict = None, query_params: dict = None) -> Requ
 
 def test_get_effective_tool_options_defaults(server):
     """When no request context is present, options match server defaults."""
-    tags, tools, no_tools, essential = server.get_effective_tool_options()
+    tags, tools, no_tools, essential, _ = server.get_effective_tool_options()
     assert tags == []
     assert tools == []
     assert no_tools == []
@@ -1586,7 +1586,7 @@ def test_get_effective_tool_options_headers(server):
     )
     token = server._current_request.set(req)
     try:
-        tags, tools, no_tools, essential = server.get_effective_tool_options()
+        tags, tools, no_tools, essential, _ = server.get_effective_tool_options()
         assert essential is True
         assert tools == ["toola", "toolb", "toolc"]
         assert no_tools == ["toold", "toole"]
@@ -1601,7 +1601,7 @@ def test_get_effective_tool_options_tool_profile_all_overrides_server_default(se
     req = _make_dummy_request(headers={"X-Tool-Profile": "all"})
     token = server._current_request.set(req)
     try:
-        _, _, _, essential = server.get_effective_tool_options()
+        _, _, _, essential, _ = server.get_effective_tool_options()
         assert essential is False
     finally:
         server._current_request.reset(token)
@@ -1612,7 +1612,7 @@ def test_get_effective_tool_options_query_param_tools(server):
     req_essentials = _make_dummy_request(query_params={"tools": "essentials"})
     token = server._current_request.set(req_essentials)
     try:
-        _, _, _, essential = server.get_effective_tool_options()
+        _, _, _, essential, _ = server.get_effective_tool_options()
         assert essential is True
     finally:
         server._current_request.reset(token)
@@ -1621,7 +1621,7 @@ def test_get_effective_tool_options_query_param_tools(server):
     req_all = _make_dummy_request(query_params={"tools": "all"})
     token = server._current_request.set(req_all)
     try:
-        _, _, _, essential = server.get_effective_tool_options()
+        _, _, _, essential, _ = server.get_effective_tool_options()
         assert essential is False
     finally:
         server._current_request.reset(token)
@@ -1791,7 +1791,7 @@ def test_query_param_precedence_over_header(server):
     req = _make_dummy_request(headers={"X-Tool-Profile": "all"}, query_params={"tools": "essentials"})
     token = server._current_request.set(req)
     try:
-        _, _, _, essential = server.get_effective_tool_options()
+        _, _, _, essential, _ = server.get_effective_tool_options()
         assert essential is True
     finally:
         server._current_request.reset(token)
@@ -1800,7 +1800,7 @@ def test_query_param_precedence_over_header(server):
     req2 = _make_dummy_request(headers={"X-Tool-Profile": "essentials"}, query_params={"tools": "all"})
     token2 = server._current_request.set(req2)
     try:
-        _, _, _, essential = server.get_effective_tool_options()
+        _, _, _, essential, _ = server.get_effective_tool_options()
         assert essential is False
     finally:
         server._current_request.reset(token2)
@@ -1818,7 +1818,7 @@ def test_headers_case_insensitivity(server):
     )
     token = server._current_request.set(req)
     try:
-        tags, tools, no_tools, essential = server.get_effective_tool_options()
+        tags, tools, no_tools, essential, _ = server.get_effective_tool_options()
         assert essential is True
         assert tools == ["toola", "toolb"]
         assert no_tools == ["toolc"]
