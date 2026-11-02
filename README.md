@@ -477,12 +477,12 @@ They can be used separately or together and in the latter case, are processed in
     - `--no-tools` removes tools from it: the tools listed are not published even if they are essential.
     - `--tags` restricts it further to the tools that belong to the tags/categories listed.
 
-    For instance, with the configuration below, the essential tools are published, plus `addServer` and `updateServer`, but not `deploy`:
+    For instance, with the configuration below, the essential tools are published, plus `servers`, `addServer`, `updateServer` and `deleteServer` but not `deploy`:
     ```json
     "args": [
       "--tool-profile", "ESSENTIAL",
-      "--tools",    "addServer", "updateServer",
-      "--no-tools", "deploy"
+      "--tools",        "servers", "addServer", "updateServer", "deleteServer",
+      "--no-tools",     "deploy"
     ]
     ```
 

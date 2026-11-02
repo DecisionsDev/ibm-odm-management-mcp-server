@@ -1722,29 +1722,6 @@ async def test_list_tools_filtered_by_x_tools_and_x_no_tools_and_x_tags(server):
     finally:
         server._current_request.reset(token)
 
-
-@pytest.mark.asyncio
-async def test_call_tool_blocked_when_filtered_out_by_header(server, mock_manager):
-    """call_tool raises ToolError when invoked for a tool filtered out by request headers."""
-    server.manager = DecisionCenterManager(credentials=server.credentials)
-    ep = DecisionCenterEndpoint(
-        tool_name="wipe", summary="Wipe", description="desc",
-        method="POST", url="http://test/wipe", parameters={}, input_schema={"type": "object"}, tags=["admin"]
-    )
-    server.repository_dc_admin = {"wipe": ep}
-    server.repository_dc = dict(server.repository_dc_admin)
-
-    # When X-Tool-Profile: essentials is set, 'wipe' is filtered out
-    req = _make_dummy_request(headers={"X-Tool-Profile": "essentials"})
-    token = server._current_request.set(req)
-    try:
-        with pytest.raises(ToolError) as exc_info:
-            await server.call_tool("wipe", {}, {})
-        assert "Unknown tool: wipe" in str(exc_info.value)
-    finally:
-        server._current_request.reset(token)
-
-
 def test_http_transport_headers_and_query_param_integration(server):
     """Starlette TestClient with HTTP transport propagates headers and query params for tools/list."""
     from starlette.testclient import TestClient

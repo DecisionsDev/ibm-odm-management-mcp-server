@@ -49,11 +49,11 @@ Publish all the tools:
 "args": ["--tool-profile", "ALL"]
 ```
 
-Publish the essential tools, plus `addServer` and `updateServer`, but not `deploy`:
+Publish the essential tools, plus `servers`, `addServer`, `updateServer` and `deleteServer`, but not `deploy`:
 
 ```json
 "args": [
-  "--tools",    "addServer", "updateServer",
+  "--tools",    "servers", "addServer", "updateServer", "deleteServer",
   "--no-tools", "deploy"
 ]
 ```

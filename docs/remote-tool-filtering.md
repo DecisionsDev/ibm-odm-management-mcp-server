@@ -83,7 +83,7 @@ Create a plain text file (e.g. `/path/to/headers.txt`) with one `Name: Value` en
 
 ```
 X-Tool-Profile: essentials
-X-Tools: addServer, updateServer, deleteServer
+X-Tools: servers, addServer, updateServer, deleteServer
 ```
 
 Or, to remove specific tools from whatever the server default is:
@@ -135,7 +135,7 @@ Pass the header file using `--header-file`:
         "--header",
         "X-Tool-Profile: essentials",
         "--header",
-        "X-Tools: addServer, updateServer, deleteServer"
+        "X-Tools: servers, addServer, updateServer, deleteServer"
       ]
     }
   }
@@ -155,9 +155,9 @@ If you do not use mcp-remote, IBM Bob enables to specify headers too:
       "url": "https://my-mcp-server.com/mcp",
       "headers": {
         "X-Tool-Profile": "essentials",
-        "X-Tools": "addServer, updateServer, deleteServer"
+        "X-Tools":        "servers, addServer, updateServer, deleteServer"
       },
-      "alwaysAllow": ["addServer", "updateServer"],
+      "alwaysAllow": ["servers", "addServer", "updateServer"],
       "disabled": false
     }
   }
