@@ -114,7 +114,7 @@ This step is optional and only needed if you choose to run ODM as a container on
   - **Username:** `odmAdmin`
   - **Password:** `odmAdmin`
 
-## Configuring MCP servers in IBM Bob
+## Configure IBM Bob
 
 You can manage MCP server configurations at two levels:
 
@@ -150,6 +150,10 @@ Add the following configuration:
    }
    ```
 
+   > [!NOTE]
+   > - By default, the server publishes only the most useful tools (`--tool-profile ESSENTIAL`, see [Essential tools](Essential-tools.md)): most of the tools are not needed most of the time, and having fewer tools helps Bob to pick the right one.
+   > - The scenario of Example 1 of the demo walkthrough below runs the tool `addGroup`, which is not an essential tool. To run this scenario, add `"--tool-profile", "ALL"` to the configuration (or add `"--tools", "addGroup"`).
+
 1. Save the file, and open IBM Bob settings.
 
     ![IBM Bob Screenshot](images/bob-ide-start.png)
@@ -174,6 +178,9 @@ With the configuration above, the Management MCP Server :
 1. and exposes the Decision Center REST API endpoints and the RES console REST API endpoints as tools.
 
 ### Example 1: Decision Center REST API
+
+> [!IMPORTANT]
+> This example requires the tool `addGroup`, which is not published by default. Add `"--tools", "addGroup"` to the configuration (or let all the tools be published: `"--tool-profile", "ALL"`) and click the `Refresh all servers` icon before running it.
 
 - Enter the following text and press ENTER:
     ```

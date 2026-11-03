@@ -15,8 +15,10 @@
 from typing import Optional, Any, Literal
 import socket
 import inspect
+import contextvars
 from mcp_types import Tool, Resource, CallToolResult, TextContent
 from mcp.server.mcpserver.context import Context
+from mcp.server.context import ServerRequestContext
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server import MCPServer as SDK_MCPServer
 from mcp.server.subscriptions import InMemorySubscriptionBus, SubscriptionBus
@@ -78,7 +80,7 @@ class MCPServer:
     DEFAULT_TOKEN_VALIDATION_ORDER = ["jwks", "introspect", "userinfo"]
   
     def __init__(self, credentials: Credentials,
-                 tags: list[str] = [], tools: list[str] = [], no_tools: list[str] = [],
+                 tags: list[str] = [], tools: list[str] = [], no_tools: list[str] = [], essential_tools: bool = False,
                  trace: list[str] = [], traces_dir: str = None, traces_maxsize: int = max_trace_files,
                  transport: Literal['stdio', 'sse', 'streamable-http'] = 'stdio', host: str = '0.0.0.0', port: int = 3000, path: str = '/mcp', mcp_ext_url: Optional[str] = None, issuer_url: Optional[str] = None, introspection_url: Optional[str] = None, userinfo_url: Optional[str] = None,
                  jwks_url: Optional[str] = None, jwt_algorithms: Optional[list[str]] = None,
@@ -92,6 +94,8 @@ class MCPServer:
         self.tags: list[str] = tags
         self.tools: list[str] = tools       # explicit list of tools to publish
         self.no_tools: list[str] = no_tools # explicit list of tools to discard
+        self.essential_tools: bool = essential_tools # publish only the most useful tools
+        self._current_request: contextvars.ContextVar[Optional[Request]] = contextvars.ContextVar("current_request", default=None)
         self.trace          = trace
         self.traces_dir     = traces_dir
         self.traces_maxsize = traces_maxsize
@@ -324,6 +328,75 @@ class MCPServer:
     def token_overview(self, token):
         return token[:5] + '...' + token[-5:]
 
+    def get_current_request(self, context: Optional[Context] = None) -> Optional[Request]:
+        req = self._current_request.get()
+        if req is not None:
+            return req
+        if context is not None and hasattr(context, "request_context") and context.request_context:
+            return getattr(context.request_context, "request", None)
+        return None
+
+    def get_effective_tool_options(self, context: Optional[Context] = None) -> tuple[list[str], list[str], list[str], bool, str]:
+        """Compute the effective tool filtering options for the current request.
+
+        Falls back to server-level configuration if not overridden by request headers or query parameters.
+        Supported request overrides:
+        - Header X-Tool-Profile: 'essential' | 'essentials' | 'all' (case-insensitive)
+        - Query parameter 'tools': 'essential' | 'essentials' | 'all' (case-insensitive)
+        - Header X-Tools: list similar to --tools
+        - Header X-No-Tools: list similar to --no-tools
+        - Header X-Tags: list similar to --tags
+        """
+        default_tags = [t.lower() for t in self.tags]
+        default_tools = [t.lower() for t in self.tools]
+        default_no_tools = [t.lower() for t in self.no_tools]
+        default_essential_tools = self.essential_tools
+
+        request = self.get_current_request(context)
+        if request is None:
+            return default_tags, default_tools, default_no_tools, default_essential_tools, ""
+
+        def _parse_profile(val: Any, default: bool) -> bool:
+            if isinstance(val, str):
+                v = val.strip().lower()
+                if v in ("essentials", "essential"):
+                    return True
+                if v == "all":
+                    return False
+            return default
+
+        def _parse_list_header(header_name: str) -> list[str] | None:
+            val = request.headers.get(header_name) if hasattr(request, "headers") else None
+            if isinstance(val, str):
+                return [t for t in re.split(r"[\s,;]+", val.lower()) if t]
+            return []
+
+        tags = tools = no_tools = essential_tools = None
+
+        # Resolve essential_tools overrides (header and query parameter)
+        if hasattr(request, "headers"):
+            essential_tools = _parse_profile(request.headers.get("x-tool-profile"), None)
+        if hasattr(request, "query_params"):
+            query_val = request.query_params.get("tools") or request.query_params.get("Tools")
+            essential_tools = _parse_profile(query_val, essential_tools)
+
+        # Resolve list overrides
+        tools = _parse_list_header("x-tools")
+        no_tools = _parse_list_header("x-no-tools")
+        tags = _parse_list_header("x-tags")
+
+        msg_client_filtering: str = \
+            ("" if essential_tools == default_essential_tools else f" Tool_profile={'ESSENTIAL' if essential_tools else 'ALL'}") + \
+            ("" if tools           == default_tools           else f" tools={tools}") + \
+            ("" if no_tools        == default_no_tools        else f" no_tools={no_tools}") + \
+            ("" if tags            == default_tags            else f" tags={tags}")
+
+        return tags if tags else default_tags, \
+               tools if tools else default_tools, \
+               no_tools if no_tools else default_no_tools, \
+               essential_tools if essential_tools is not None else default_essential_tools, \
+               msg_client_filtering
+
     def get_current_token(self) -> str:
         """Return the bearer token for the current request via the SDK contextvar.
 
@@ -402,7 +475,7 @@ class MCPServer:
         res_tools_error = None
         if len(self.repository_res_monitor) == 0 and credentials.odm_res_url:
             try:
-                self.repository_res_monitor, self.repository_res_deployer = self.manager.generate_res_tools(self.manager.fetch_res_api_endpoints(credentials), self.tags, self.tools, self.no_tools)
+                self.repository_res_monitor, self.repository_res_deployer = self.manager.generate_res_tools(self.manager.fetch_res_api_endpoints(credentials))
             except Exception as e:
                 res_tools_error = e
 
@@ -410,7 +483,7 @@ class MCPServer:
         dc_tools_error = None
         if len(self.repository_dc) == 0 and credentials.odm_url:
             try:
-                self.repository_dc, self.repository_dc_admin = self.manager.generate_tools_format(self.manager.fetch_endpoints(credentials), self.tags, self.tools, self.no_tools)
+                self.repository_dc, self.repository_dc_admin = self.manager.generate_tools_format(self.manager.fetch_endpoints(credentials))
             except Exception as e:
                 dc_tools_error = e
 
@@ -446,13 +519,26 @@ class MCPServer:
         elif credentials.isResMonitor:  res_repository = self.repository_res_monitor
         else:                           res_repository = {}
 
-        tools = [MCPServer.tools_executions_tool] if self.trace_recorder.trace_executions else []
-        for tool_name, endpoint in dc_repository.items():
-            tools.append(endpoint.tool)
-        for tool_name, endpoint in res_repository.items():
-            tools.append(endpoint.tool)
+        tags, tools_to_publish, no_tools, essential_tools, msg_client_filtering = self.get_effective_tool_options()
 
-        self.logger.info(f"list_tools returned {len(dc_repository)} DC tools + {len(res_repository)} RES tools" + " + 1 tool to query tool executions" if self.trace_recorder.trace_executions else "")
+        tools = [MCPServer.tools_executions_tool] if self.trace_recorder.trace_executions else []
+        dc_tools_number = res_tools_number = 0
+        for tool_name, endpoint in dc_repository.items():
+            name = getattr(endpoint, "tool_name", getattr(getattr(endpoint, "tool", None), "name", tool_name))
+            endpoint_tags = getattr(endpoint, "tags", [])
+            if self.manager.publish_tool(name, endpoint_tags, tools_to_publish, no_tools, tags, essential_tools):
+                tools.append(endpoint.tool)
+                dc_tools_number += 1
+        for tool_name, endpoint in res_repository.items():
+            name = getattr(endpoint, "tool_name", getattr(getattr(endpoint, "tool", None), "name", tool_name))
+            endpoint_tags = getattr(endpoint, "tags", [])
+            if self.manager.publish_tool(name, endpoint_tags, tools_to_publish, no_tools, tags, essential_tools):
+                tools.append(endpoint.tool)
+                res_tools_number += 1
+
+        self.logger.info(f"list_tools returned {dc_tools_number} DC tools + {res_tools_number} RES tools" + \
+                        (" + 1 execution query tool" if self.trace_recorder.trace_executions else "") + \
+                        (f" - Client Tool filtering:{msg_client_filtering}" if msg_client_filtering else ""))
         return tools
 
     async def call_tool(self, name: str, arguments: dict | None, context: Context) -> CallToolResult:
@@ -567,11 +653,27 @@ class MCPServer:
                               subscriptions=self.subscriptions,
                              )
 
+        async def request_context_middleware(ctx: ServerRequestContext, call_next):
+            token = self._current_request.set(ctx.request)
+            try:
+                return await call_next(ctx)
+            finally:
+                self._current_request.reset(token)
+
+        self.server.middleware.append(request_context_middleware)
+
         # Register handlers
         self.server.list_resources = self.list_resources
         self.server.read_resource  = self.read_resource
         self.server.list_tools = self.list_tools
         self.server.call_tool  = self.call_tool
+
+        if self.essential_tools:
+            self.logger.info("Tool profile: ESSENTIAL. Only essential tools are published (see --tool-profile).")
+        else:
+            self.logger.info("Tool profile: ALL. All the tools are published (see --tool-profile).")
+        if self.transport != "stdio":
+            self.logger.info("Each MCP client can adjust which tools are published by sending filtering options in the HTTP request — either as a query parameter or as custom headers.")
 
         if self.https_cert_path and self.transport == 'stdio':
             self.logger.warning("HTTPS options are ignored with the stdio transport")
@@ -735,6 +837,7 @@ def init(args):
         tags            = [t for t in re.split(r"[\s,;]+", args.tags.lower())     if t] if isinstance(args.tags, str)     else [tag.lower()  for tag  in args.tags],
         tools           = [t for t in re.split(r"[\s,;]+", args.tools.lower())    if t] if isinstance(args.tools, str)    else [tool.lower() for tool in args.tools],
         no_tools        = [t for t in re.split(r"[\s,;]+", args.no_tools.lower()) if t] if isinstance(args.no_tools, str) else [tool.lower() for tool in args.no_tools],
+        essential_tools = args.tool_profile.upper() == "ESSENTIAL",
         trace           = [t for t in re.split(r"[\s,;]+", args.trace)            if t] if isinstance(args.trace, str)    else args.trace,
         traces_dir      = args.traces_dir,
         traces_maxsize  = args.traces_maxsize,
@@ -834,6 +937,7 @@ def parse_arguments():
     parser.add_argument("--tags",              type=str, default=os.getenv("TAGS", ""),     nargs='+', help="List of Tags (eg. About Explore Build). Useful to keep only the tools whose tag is in the list. If this option is not specified, all the tools are published by the MCP server.")
     parser.add_argument("--tools",             type=str, default=os.getenv("TOOLS", ""),    nargs='+', help="Explicit list of tools to publish. All the other tools are filtered out. If this option is not specified, all the tools are published by the MCP server.")
     parser.add_argument("--no-tools",          type=str, default=os.getenv("NO_TOOLS", ""), nargs='+', help="Explicit list of tools to discard. All the other tools are published. Option ignored if the option --tools is provided. If this option is not specified, all the tools are published by the MCP server.")
+    parser.add_argument("--tool-profile",      type=str.upper, default=os.getenv("TOOL_PROFILE", "ESSENTIAL").upper(), choices=["ESSENTIAL", "ALL"], help="Set of tools published: ESSENTIAL (default) publishes only the most useful tools, ALL publishes all the tools. The tools listed with --tools are always published. The options --no-tools and --tags further restrict the tools published.")
 
     # Trace-related arguments
     parser.add_argument("--trace",             type=str, default=os.getenv("TRACE", ""),    nargs='+', choices=["EXECUTIONS", "EXECUTIONS_WITH_CONTENT", "CONFIGURATION"], help="Specifies what to trace.")

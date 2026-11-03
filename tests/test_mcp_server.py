@@ -16,6 +16,7 @@ import pytest
 from unittest.mock import Mock, patch
 import os
 import argparse
+import logging
 from mcp_types import Tool, TextContent
 from mcp.server import MCPServer as SDK_MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -103,6 +104,14 @@ def test_server_initialization(mcp_server):
     (
         ["--tags",  "Manage", "--tools",  "Tool1", "--no-tools",  "Tool2"],
           {"tags": ["Manage"],  "tools": ["Tool1"],  "no_tools": ["Tool2"]}
+    ),
+    (
+        ["--tool-profile", "ALL"],
+          {"tool_profile": "ALL"}
+    ),
+    (
+        ["--tool-profile", "essential"],  # case-insensitive
+          {"tool_profile": "ESSENTIAL"}
     ),
     (
         [],  # No arguments
@@ -234,6 +243,7 @@ def test_tags_verification(tags, expected_tags, tools, expected_tools, notools, 
         tags=tags,
         tools=tools,
         no_tools=notools,
+        tool_profile="ALL",
         transport=None,
         host=None,
         port=None,
@@ -263,7 +273,7 @@ def _make_init_args(**overrides):
         mtls_cert_path=None, mtls_key_path=None, mtls_key_password=None,
         console_auth_type=None, runtime_auth_type=None, log_level="INFO",
         trace="", traces_dir=None, traces_maxsize=200,
-        tags="", tools="", no_tools="",
+        tags="", tools="", no_tools="", tool_profile="ALL",
         transport=None, host=None, port=None, mount_path=None,
         jwks_url=None, jwt_algorithms=None,
         https_cert_path=None, https_key_path=None, https_key_password=None,
@@ -297,6 +307,38 @@ def test_trace_string_separators(raw, expected):
     MCPServer.update_repository = Mock(return_value = {})
     server = init(_make_init_args(trace=raw))
     assert server.trace == expected
+def test_tool_profile_passed_to_server():
+    MCPServer.update_repository = Mock(return_value = {})
+    assert init(_make_init_args(tool_profile="ESSENTIAL")).essential_tools is True
+    assert init(_make_init_args(tool_profile="essential")).essential_tools is True
+    assert init(_make_init_args(tool_profile="ALL")).essential_tools is False
+
+def test_tool_profile_default_is_essential():
+    with patch('sys.argv', ['script']), patch.dict('os.environ', {}, clear=False) as env:
+        env.pop('TOOL_PROFILE', None)
+        assert parse_arguments().tool_profile == "ESSENTIAL"
+
+def test_tool_profile_from_env():
+    with patch('sys.argv', ['script']), patch.dict('os.environ', {'TOOL_PROFILE': 'all'}):
+        assert parse_arguments().tool_profile == "ALL"
+
+def test_tool_profile_invalid_value_exits():
+    with patch('sys.argv', ['script', '--tool-profile', 'SOME']), pytest.raises(SystemExit):
+        parse_arguments()
+
+def test_essential_tools_flag_removed():
+    with patch('sys.argv', ['script', '--essential-tools']), pytest.raises(SystemExit):
+        parse_arguments()
+
+def test_start_logs_tool_profile(caplog):
+    MCPServer.update_repository = Mock(return_value = {})
+    for profile, label in (("ESSENTIAL", "Tool profile: ESSENTIAL"), ("ALL", "Tool profile: ALL")):
+        server = init(_make_init_args(tool_profile=profile, transport="stdio"))
+        with patch("decisioncenter_mcp_server.MCPServer.SDK_MCPServer") as sdk, caplog.at_level(logging.INFO):
+            caplog.clear()
+            server.start()
+        assert any(label in r.getMessage() for r in caplog.records)
+
 def test_init_passes_https_arguments():
     with patch('sys.argv', ['script', '--url', 'http://test:9060/decisioncenter-api', '--transport', 'streamable-http',
                             '--https-cert-path', 'cert.pem', '--https-key-path', 'key.pem', '--https-key-password', 'secret']):
@@ -1497,3 +1539,312 @@ def test_get_mcp_token_falls_back_to_introspection_when_decode_fails():
 
     mock_introspect.assert_called_once_with("t")
     assert result == fake
+
+
+# -- Tool Filtering via Headers and Query Parameters (X-Tool-Profile, X-Tools, X-No-Tools, X-Tags, ?tools=) --
+
+from starlette.requests import Request
+from decisioncenter_mcp_server.DecisionCenterManager import DecisionCenterManager
+from decisioncenter_mcp_server.DecisionCenterEndpoint import DecisionCenterEndpoint
+
+def _make_dummy_request(headers: dict = None, query_params: dict = None) -> Request:
+    raw_headers = []
+    if headers:
+        for k, v in headers.items():
+            raw_headers.append((k.lower().encode("latin-1"), v.encode("latin-1")))
+    query_string = ""
+    if query_params:
+        query_string = "&".join(f"{k}={v}" for k, v in query_params.items())
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/mcp",
+        "headers": raw_headers,
+        "query_string": query_string.encode("latin-1"),
+    }
+    return Request(scope)
+
+
+def test_get_effective_tool_options_defaults(server):
+    """When no request context is present, options match server defaults."""
+    tags, tools, no_tools, essential, _ = server.get_effective_tool_options()
+    assert tags == []
+    assert tools == []
+    assert no_tools == []
+    assert essential is False
+
+
+def test_get_effective_tool_options_headers(server):
+    """Headers X-Tool-Profile, X-Tools, X-No-Tools, X-Tags configure effective options."""
+    req = _make_dummy_request(
+        headers={
+            "X-Tool-Profile": "essentials",
+            "X-Tools": "toolA, toolB; toolC",
+            "X-No-Tools": "toolD toolE",
+            "X-Tags": "Explore, Govern",
+        }
+    )
+    token = server._current_request.set(req)
+    try:
+        tags, tools, no_tools, essential, _ = server.get_effective_tool_options()
+        assert essential is True
+        assert tools == ["toola", "toolb", "toolc"]
+        assert no_tools == ["toold", "toole"]
+        assert tags == ["explore", "govern"]
+    finally:
+        server._current_request.reset(token)
+
+
+def test_get_effective_tool_options_tool_profile_all_overrides_server_default(server):
+    """X-Tool-Profile: all overrides server default essential_tools=True."""
+    server.essential_tools = True
+    req = _make_dummy_request(headers={"X-Tool-Profile": "all"})
+    token = server._current_request.set(req)
+    try:
+        _, _, _, essential, _ = server.get_effective_tool_options()
+        assert essential is False
+    finally:
+        server._current_request.reset(token)
+
+
+def test_get_effective_tool_options_query_param_tools(server):
+    """Query parameter ?tools=essentials and ?tools=all configure essential_tools."""
+    req_essentials = _make_dummy_request(query_params={"tools": "essentials"})
+    token = server._current_request.set(req_essentials)
+    try:
+        _, _, _, essential, _ = server.get_effective_tool_options()
+        assert essential is True
+    finally:
+        server._current_request.reset(token)
+
+    server.essential_tools = True
+    req_all = _make_dummy_request(query_params={"tools": "all"})
+    token = server._current_request.set(req_all)
+    try:
+        _, _, _, essential, _ = server.get_effective_tool_options()
+        assert essential is False
+    finally:
+        server._current_request.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_list_tools_filtered_by_x_tool_profile_essentials(server, mock_manager):
+    """list_tools() filters out non-essential tools when X-Tool-Profile: essentials is set."""
+    server.manager = DecisionCenterManager(credentials=server.credentials)
+    # create endpoints: 'decisionservices' (essential) and 'wipe' (non-essential)
+    endpoint_essential = DecisionCenterEndpoint(
+        tool_name="decisionservices", summary="Get DS", description="desc",
+        method="GET", url="http://test/ds", parameters={}, input_schema={"type": "object"}, tags=["explore"]
+    )
+    endpoint_non_essential = DecisionCenterEndpoint(
+        tool_name="wipe", summary="Wipe DB", description="desc",
+        method="POST", url="http://test/wipe", parameters={}, input_schema={"type": "object"}, tags=["admin"]
+    )
+    server.repository_dc_admin = {
+        "decisionservices": endpoint_essential,
+        "wipe": endpoint_non_essential,
+    }
+    server.repository_dc = dict(server.repository_dc_admin)
+
+    # Without header: all 2 tools returned
+    tools_all = await server.list_tools()
+    assert {t.name for t in tools_all} == {"decisionservices", "wipe"}
+
+    # With X-Tool-Profile: essentials header
+    req = _make_dummy_request(headers={"X-Tool-Profile": "essentials"})
+    token = server._current_request.set(req)
+    try:
+        tools_ess = await server.list_tools()
+        assert {t.name for t in tools_ess} == {"decisionservices"}
+    finally:
+        server._current_request.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_list_tools_filtered_by_query_param_tools_essentials(server):
+    """list_tools() filters out non-essential tools when ?tools=essentials is set."""
+    server.manager = DecisionCenterManager(credentials=server.credentials)
+    server.repository_dc_admin = {
+        "decisionservices": DecisionCenterEndpoint(
+            tool_name="decisionservices", summary="Get DS", description="desc",
+            method="GET", url="http://test/ds", parameters={}, input_schema={"type": "object"}, tags=["explore"]
+        ),
+        "wipe": DecisionCenterEndpoint(
+            tool_name="wipe", summary="Wipe DB", description="desc",
+            method="POST", url="http://test/wipe", parameters={}, input_schema={"type": "object"}, tags=["admin"]
+        ),
+    }
+    server.repository_dc = dict(server.repository_dc_admin)
+
+    req = _make_dummy_request(query_params={"tools": "essentials"})
+    token = server._current_request.set(req)
+    try:
+        tools_ess = await server.list_tools()
+        assert {t.name for t in tools_ess} == {"decisionservices"}
+    finally:
+        server._current_request.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_list_tools_filtered_by_x_tools_and_x_no_tools_and_x_tags(server):
+    """list_tools() respects X-Tools, X-No-Tools, and X-Tags headers."""
+    server.manager = DecisionCenterManager(credentials=server.credentials)
+    ep1 = DecisionCenterEndpoint(tool_name="tool1", summary="t1", description="d1", method="GET", url="http://t/1", parameters={}, input_schema={"type": "object"}, tags=["explore"])
+    ep2 = DecisionCenterEndpoint(tool_name="tool2", summary="t2", description="d2", method="GET", url="http://t/2", parameters={}, input_schema={"type": "object"}, tags=["explore"])
+    ep3 = DecisionCenterEndpoint(tool_name="tool3", summary="t3", description="d3", method="GET", url="http://t/3", parameters={}, input_schema={"type": "object"}, tags=["admin"])
+    server.repository_dc_admin = {"tool1": ep1, "tool2": ep2, "tool3": ep3}
+    server.repository_dc = dict(server.repository_dc_admin)
+
+    # Filter with X-Tools
+    req_tools = _make_dummy_request(headers={"X-Tools": "tool1, tool3"})
+    token = server._current_request.set(req_tools)
+    try:
+        tools = await server.list_tools()
+        assert {t.name for t in tools} == {"tool1", "tool3"}
+    finally:
+        server._current_request.reset(token)
+
+    # Filter with X-No-Tools
+    req_no_tools = _make_dummy_request(headers={"X-No-Tools": "tool2"})
+    token = server._current_request.set(req_no_tools)
+    try:
+        tools = await server.list_tools()
+        assert {t.name for t in tools} == {"tool1", "tool3"}
+    finally:
+        server._current_request.reset(token)
+
+    # Filter with X-Tags
+    req_tags = _make_dummy_request(headers={"X-Tags": "explore"})
+    token = server._current_request.set(req_tags)
+    try:
+        tools = await server.list_tools()
+        assert {t.name for t in tools} == {"tool1", "tool2"}
+    finally:
+        server._current_request.reset(token)
+
+def test_http_transport_headers_and_query_param_integration(server):
+    """Starlette TestClient with HTTP transport propagates headers and query params for tools/list."""
+    from starlette.testclient import TestClient
+    from unittest.mock import patch
+
+    server.manager = DecisionCenterManager(credentials=server.credentials)
+    server.repository_dc_admin = {
+        "decisionservices": DecisionCenterEndpoint(
+            tool_name="decisionservices", summary="Get DS", description="desc",
+            method="GET", url="http://test/ds", parameters={}, input_schema={"type": "object"}, tags=["explore"]
+        ),
+        "wipe": DecisionCenterEndpoint(
+            tool_name="wipe", summary="Wipe DB", description="desc",
+            method="POST", url="http://test/wipe", parameters={}, input_schema={"type": "object"}, tags=["admin"]
+        ),
+    }
+    server.repository_dc = dict(server.repository_dc_admin)
+
+    with patch.object(SDK_MCPServer, "run"):
+        server.start()
+
+    app = server.server.streamable_http_app(streamable_http_path="/mcp", stateless_http=True, host="127.0.0.1")
+    with TestClient(app, base_url="http://127.0.0.1:8000") as client:
+        # 1. Without header: all 2 tools
+        res_all = client.post(
+            "/mcp",
+            headers={"Accept": "application/json, text/event-stream"},
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+        )
+        assert res_all.status_code == 200
+        assert "decisionservices" in res_all.text
+        assert "wipe" in res_all.text
+
+        # 2. With X-Tool-Profile: essentials header
+        res_ess = client.post(
+            "/mcp",
+            headers={"X-Tool-Profile": "essentials", "Accept": "application/json, text/event-stream"},
+            json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        )
+        assert res_ess.status_code == 200
+        assert "decisionservices" in res_ess.text
+        assert "wipe" not in res_ess.text
+
+        # 3. With ?tools=essentials query param
+        res_query = client.post(
+            "/mcp?tools=essentials",
+            headers={"Accept": "application/json, text/event-stream"},
+            json={"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {}},
+        )
+        assert res_query.status_code == 200
+        assert "decisionservices" in res_query.text
+        assert "wipe" not in res_query.text
+
+        # 4. With X-Tools: wipe header
+        res_tools = client.post(
+            "/mcp",
+            headers={"X-Tools": "wipe", "Accept": "application/json, text/event-stream"},
+            json={"jsonrpc": "2.0", "id": 4, "method": "tools/list", "params": {}},
+        )
+        assert res_tools.status_code == 200
+        assert "wipe" in res_tools.text
+        assert "decisionservices" not in res_tools.text
+
+def test_query_param_precedence_over_header(server):
+    """Query parameter ?tools= overrides X-Tool-Profile header when both are provided."""
+    # Header says all, query param says essentials
+    req = _make_dummy_request(headers={"X-Tool-Profile": "all"}, query_params={"tools": "essentials"})
+    token = server._current_request.set(req)
+    try:
+        _, _, _, essential, _ = server.get_effective_tool_options()
+        assert essential is True
+    finally:
+        server._current_request.reset(token)
+
+    # Header says essentials, query param says all
+    req2 = _make_dummy_request(headers={"X-Tool-Profile": "essentials"}, query_params={"tools": "all"})
+    token2 = server._current_request.set(req2)
+    try:
+        _, _, _, essential, _ = server.get_effective_tool_options()
+        assert essential is False
+    finally:
+        server._current_request.reset(token2)
+
+
+def test_headers_case_insensitivity(server):
+    """Headers and their values are parsed in a case-insensitive manner."""
+    req = _make_dummy_request(
+        headers={
+            "x-TOOL-profile": "ESSENTIALS",
+            "x-TOOLS": "ToolA, ToolB",
+            "x-NO-tools": "ToolC",
+            "x-TAGS": "Explore",
+        }
+    )
+    token = server._current_request.set(req)
+    try:
+        tags, tools, no_tools, essential, _ = server.get_effective_tool_options()
+        assert essential is True
+        assert tools == ["toola", "toolb"]
+        assert no_tools == ["toolc"]
+        assert tags == ["explore"]
+    finally:
+        server._current_request.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_call_tool_allowed_via_x_tools_when_essential_tools_only(server, mock_manager):
+    """call_tool succeeds for a non-essential tool if explicitly whitelisted via X-Tools."""
+    server.manager = DecisionCenterManager(credentials=server.credentials)
+    server.manager.invokeDecisionCenterApi = Mock(return_value={"result": "wiped"})
+    ep = DecisionCenterEndpoint(
+        tool_name="wipe", summary="Wipe", description="desc",
+        method="POST", url="http://test/wipe", parameters={}, input_schema={"type": "object"}, tags=["admin"]
+    )
+    server.repository_dc_admin = {"wipe": ep}
+    server.repository_dc = dict(server.repository_dc_admin)
+
+    # X-Tool-Profile: essentials + X-Tools: wipe
+    req = _make_dummy_request(headers={"X-Tool-Profile": "essentials", "X-Tools": "wipe"})
+    token = server._current_request.set(req)
+    try:
+        result = await server.call_tool("wipe", {}, {})
+        assert not result.is_error
+        assert json.loads(result.content[0].text) == {"result": "wiped"}
+    finally:
+        server._current_request.reset(token)

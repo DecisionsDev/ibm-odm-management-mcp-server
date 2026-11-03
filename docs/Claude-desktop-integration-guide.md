@@ -169,6 +169,11 @@ This ODM instance will be available for the MCP Server, pre-populated with sampl
      }
    }
    ```
+   By default, the server publishes only the most useful tools (`--tool-profile ESSENTIAL`, see [Essential tools](Essential-tools.md)): most of the tools are not needed most of the time, and having fewer tools helps Claude to pick the right one.
+
+   > [!NOTE]
+   > The scenario of step 3 and 4 of the demo walkthrough below runs the tools `addGroup` and `branchSecurity_1`, which are not essential tools. To run this scenario, add `"--tool-profile", "ALL"` to the configuration (or add `"--tools", "addGroup", "branchSecurity_1"`), then restart Claude Desktop.
+
 1. Restart Claude Desktop:
 
     Simply closing the window is not enough, Claude Desktop must be stopped and restarted:
@@ -212,6 +217,9 @@ The user initiates a conversation in Claude with request in natural language suc
 
 #### 3. Next Conversation: creating a group of users
 
+> [!IMPORTANT]
+> This scenario requires the tool `addGroup`, which is not published by default (`--tool-profile ESSENTIAL`). Add `"--tool-profile", "ALL"` to the configuration (or add `"--tools", "addGroup"`) and restart Claude Desktop before running it.
+
 - **User:** "Create a group named 'Miniloan Users' with rtsUser1 and rtsUser2 as members and with full authoring permissions"
 
 - **Claude** runs the `addGroup` tool with the parameters
@@ -233,6 +241,9 @@ The user initiates a conversation in Claude with request in natural language suc
     - Role: rtsUser
 
 #### 4. Next Conversation: Enforcing the security of a branch to users of the newly created group
+
+> [!IMPORTANT]
+> This scenario requires the tool `branchSecurity_1`, which is not published by default (`--tool-profile ESSENTIAL`). Add `"--tool-profile", "ALL"` to the configuration (or add `"--tools", "branchSecurity_1"`) and restart Claude Desktop before running it.
 
 - **User:** "Configure all the branches of the decision service Miniloan Service so that only members of this new group can modify this branch"
 
