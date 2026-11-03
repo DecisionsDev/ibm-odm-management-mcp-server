@@ -1848,3 +1848,79 @@ async def test_call_tool_allowed_via_x_tools_when_essential_tools_only(server, m
         assert json.loads(result.content[0].text) == {"result": "wiped"}
     finally:
         server._current_request.reset(token)
+
+
+# Healthcheck endpoint
+def _start_remote_server(transport="streamable-http", path="/mcp", startup_args=None):
+    from unittest.mock import patch
+    credentials = Credentials(odm_url="http://test:9060/decisioncenter-api", username="u", password="p")
+    server = MCPServer(credentials=credentials, transport=transport, path=path, startup_args=startup_args)
+    with patch.object(SDK_MCPServer, "run"):
+        server.start()
+    return server
+
+@pytest.mark.parametrize("transport, app_factory, path", [
+    ("streamable-http", "streamable_http_app", "/mcp"),
+    ("sse",             "sse_app",             "/sse"),
+])
+def test_healthcheck_empty_body_without_config(transport, app_factory, path):
+    """{path}/healthcheck answers 200 with an empty body, without authentication."""
+    from starlette.testclient import TestClient
+    server = _start_remote_server(transport=transport, path=path)
+    app_kwargs = {"streamable_http_path": path} if transport == "streamable-http" else {"sse_path": path}
+    app = getattr(server.server, app_factory)(host="127.0.0.1", **app_kwargs)
+    with TestClient(app, base_url="http://127.0.0.1:8000") as client:
+        for method in ("GET", "HEAD", "OPTIONS"):
+            res = client.request(method, f"{path}/healthcheck")
+            assert res.status_code == 200
+            assert res.content == b""
+
+def test_healthcheck_config_masks_sensitive_values(monkeypatch):
+    """?config returns the startup arguments and env variables, sensitive ones masked, unset ones omitted."""
+    from starlette.testclient import TestClient
+    monkeypatch.setenv("ODM_URL", "http://odm")
+    monkeypatch.setenv("ODM_PASSWORD", "secret-env")
+    monkeypatch.setenv("CLIENT_ID", "client-env")
+    monkeypatch.delenv("CLIENT_SECRET", raising=False)
+    monkeypatch.setenv("UNRELATED_SECRET", "must-not-leak")
+    startup_args = {"url": "http://odm", "username": "user", "password": "secret", "zenapikey": None,
+                    "client_id": "cid", "client_secret": "csecret", "pkjwt_key_password": "pk",
+                    "mtls_key_password": "mk", "https_key_password": "hk", "transport": "streamable-http"}
+    server = _start_remote_server(startup_args=startup_args)
+    app = server.server.streamable_http_app(host="127.0.0.1", streamable_http_path="/mcp")
+    with TestClient(app, base_url="http://127.0.0.1:8000") as client:
+        res = client.get("/mcp/healthcheck?config")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["arguments"] == {"url": "http://odm", "username": "*****", "password": "*****",
+                                 "client_id": "*****", "client_secret": "*****", "pkjwt_key_password": "*****",
+                                 "mtls_key_password": "*****", "https_key_password": "*****",
+                                 "transport": "streamable-http"}
+    assert body["environment"]["ODM_URL"] == "http://odm"
+    assert body["environment"]["ODM_PASSWORD"] == "*****"
+    assert body["environment"]["CLIENT_ID"] == "*****"
+    assert "CLIENT_SECRET" not in body["environment"]
+    assert "UNRELATED_SECRET" not in body["environment"]
+    for leaked in ("secret-env", "csecret", "client-env", "must-not-leak", '"user"', '"pk"', '"mk"', '"hk"'):
+        assert leaked not in res.text
+
+def test_healthcheck_not_registered_with_stdio():
+    """No healthcheck route is registered with the stdio transport."""
+    from unittest.mock import patch
+    credentials = Credentials(odm_url="http://test:9060/decisioncenter-api", username="u", password="p")
+    server = MCPServer(credentials=credentials)
+    with patch.object(SDK_MCPServer, "run"):
+        server.start()
+    assert server.server._custom_starlette_routes == []
+
+def test_init_passes_startup_args():
+    """init() hands the parsed arguments to the MCP server."""
+    args = argparse.Namespace(**{**vars(parse_arguments_defaults()), "transport": "streamable-http"})
+    with patch("decisioncenter_mcp_server.MCPServer.create_credentials"), \
+         patch.object(MCPServer, "update_repository"):
+        server = init(args)
+    assert server.startup_args["transport"] == "streamable-http"
+
+def parse_arguments_defaults():
+    with patch("sys.argv", ["prog"]):
+        return parse_arguments()
