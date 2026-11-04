@@ -708,6 +708,8 @@ class MCPServer:
 
         # Last step before serving (run() blocks): the healthcheck route only exists once the MCP server is ready to be started
         if self.transport != "stdio":
+            scheme = "https" if self.https_cert_path else "http"
+            self.logger.info(f"Serving healthcheck on {scheme}://{self.host}:{self.port}{self.path.rstrip('/')}/healthcheck")
             self.register_healthcheck()
 
         if self.https_cert_path and self.transport != 'stdio':
@@ -743,6 +745,7 @@ class MCPServer:
         No authentication is required. The route is registered by `start()` right before the MCP server
         begins serving, so the endpoint does not exist (no 200) while the MCP server is not started.
         """
+
         @self.server.custom_route(f"{self.path.rstrip('/')}/healthcheck", methods=["GET", "HEAD", "OPTIONS"])
         async def healthcheck(request: Request) -> Response:
             if "config" in request.query_params:
