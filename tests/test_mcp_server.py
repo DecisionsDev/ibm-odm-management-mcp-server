@@ -1916,10 +1916,29 @@ def test_healthcheck_not_registered_with_stdio():
 def test_init_passes_startup_args():
     """init() hands the parsed arguments to the MCP server."""
     args = argparse.Namespace(**{**vars(parse_arguments_defaults()), "transport": "streamable-http"})
+    del args.explicit
     with patch("decisioncenter_mcp_server.MCPServer.create_credentials"), \
          patch.object(MCPServer, "update_repository"):
         server = init(args)
     assert server.startup_args["transport"] == "streamable-http"
+
+def test_parse_arguments_explicit_only():
+    """parse_arguments() records only the options given on the command line, not the defaults."""
+    with patch("sys.argv", ["prog", "--url", "http://odm", "--port", "4000"]), \
+         patch.dict(os.environ, {"ODM_USERNAME": "from-env"}):
+        args = parse_arguments()
+    assert args.explicit == {"url": "http://odm", "port": 4000}
+    assert args.username == "from-env"
+    assert args.transport == "stdio"
+
+def test_init_passes_only_explicit_startup_args():
+    """init() hands only the explicitly passed arguments to the MCP server."""
+    with patch("sys.argv", ["prog", "--transport", "streamable-http"]):
+        args = parse_arguments()
+    with patch("decisioncenter_mcp_server.MCPServer.create_credentials"), \
+         patch.object(MCPServer, "update_repository"):
+        server = init(args)
+    assert server.startup_args == {"transport": "streamable-http"}
 
 def parse_arguments_defaults():
     with patch("sys.argv", ["prog"]):

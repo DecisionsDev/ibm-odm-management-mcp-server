@@ -78,17 +78,23 @@ class MCPServer:
 
     MASKED_VALUE = "*****"
     # Startup arguments (argparse destination names) whose value must not be disclosed by the healthcheck endpoint
-    SENSITIVE_ARGUMENTS = frozenset({"username", "password", "zenapikey", "client_id", "client_secret",
-                                     "pkjwt_key_password", "mtls_key_password", "https_key_password"})
+    SENSITIVE_ARGUMENTS = frozenset({"username", "password", "zenapikey", 
+                                                     "client_id", "client_secret", "scope"
+                                                     "pkjwt_key_password", "mtls_key_password", "https_key_password"})
     # Environment variables read by the MCP server, with a flag telling whether their value is sensitive
     ENVIRONMENT_VARIABLES = {
-        "ODM_URL": False, "ODM_RES_URL": False, "ODM_USERNAME": True, "ODM_PASSWORD": True, "ZENAPIKEY": True,
-        "CLIENT_ID": True, "CLIENT_SECRET": True, "TOKEN_URL": False, "SCOPE": True,
-        "VERIFY_SSL": False, "VERIFY_SSL_HOSTNAME": False, "SSL_CERT_PATH": False,
-        "PKJWT_CERT_PATH": False, "PKJWT_KEY_PATH": False, "PKJWT_KEY_PASSWORD": True,
-        "MTLS_CERT_PATH": False, "MTLS_KEY_PATH": False, "MTLS_KEY_PASSWORD": True,
+        # sensitive
+        "ODM_USERNAME": True, "ODM_PASSWORD": True, "ZENAPIKEY": True,
+        "CLIENT_ID": True, "CLIENT_SECRET": True, "SCOPE": True,
+        "PKJWT_KEY_PASSWORD": True, "MTLS_KEY_PASSWORD": True, "HTTPS_KEY_PASSWORD": True,
+        # not-sensitive
+        "ODM_URL": False, "ODM_RES_URL": False, "TOKEN_URL": False, 
+        "VERIFY_SSL": False, "VERIFY_SSL_HOSTNAME": False, 
+        "SSL_CERT_PATH": False,
+        "PKJWT_CERT_PATH": False, "PKJWT_KEY_PATH": False, 
+        "MTLS_CERT_PATH": False, "MTLS_KEY_PATH": False, 
+        "HTTPS_CERT_PATH": False, "HTTPS_KEY_PATH": False, 
         "TRANSPORT": False, "HOST": False, "PORT": False, "MOUNT_PATH": False,
-        "HTTPS_CERT_PATH": False, "HTTPS_KEY_PATH": False, "HTTPS_KEY_PASSWORD": True,
         "MCP_EXT_URL": False, "ISSUER_URL": False, "INTROSPECTION_URL": False, "USERINFO_URL": False,
         "JWKS_URL": False, "JWT_ALGORITHMS": False, "TOKEN_VALIDATION_ORDER": False,
         "LOG_LEVEL": False, "TAGS": False, "TOOLS": False, "NO_TOOLS": False, "TOOL_PROFILE": False,
@@ -911,7 +917,7 @@ def init(args):
         https_cert_path    = args.https_cert_path,
         https_key_path     = args.https_key_path,
         https_key_password = args.https_key_password,
-        startup_args       = vars(args),
+        startup_args       = getattr(args, "explicit", vars(args)),
     )
 
     retry = is_running_in_pod()
@@ -1001,7 +1007,13 @@ def parse_arguments():
     parser.add_argument("--traces-dir",        type=str, default=os.getenv("TRACES_DIR"), help="Directory to store traces files (optional). If not provided, traces will be stored in the directory '~/.ibm-odm-management-mcp-server/traces'")
     parser.add_argument("--traces-maxsize",    type=int, default=int(os.getenv("TRACES_MAXSIZE", f"{MCPServer.max_trace_files}")), help=f"Maximum number of traces to store (default: {MCPServer.max_trace_files}). When the limit is reached, the oldest trace file will be deleted when a new trace is saved.  ")
 
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    # Re-parse with all defaults suppressed: only the options explicitly given on the command line remain
+    for action in parser._actions:
+        action.default = argparse.SUPPRESS
+    args.explicit = vars(parser.parse_args())
+    return args
 
 def main():
     args = parse_arguments()
