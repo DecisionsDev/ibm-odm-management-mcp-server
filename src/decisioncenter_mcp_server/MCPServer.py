@@ -414,7 +414,7 @@ class MCPServer:
         tags = _parse_list_header("x-tags")
 
         msg_client_filtering: str = \
-            ("" if essential_tools == default_essential_tools else f" Tool_profile={'ESSENTIAL' if essential_tools else 'ALL'}") + \
+            ("" if essential_tools is None or essential_tools == default_essential_tools else f" Tool_profile={'ESSENTIAL' if essential_tools else 'ALL'}") + \
             ("" if tools           == default_tools           else f" tools={tools}") + \
             ("" if no_tools        == default_no_tools        else f" no_tools={no_tools}") + \
             ("" if tags            == default_tags            else f" tags={tags}")
@@ -469,15 +469,17 @@ class MCPServer:
                                         )
             self.user_credentials[token] = credentials
 
-            # check if the user credentials grant the rtsAdministrator/rtsInstaller role
             try:
                 with credentials.get_session() as session:
+                    # check if the user credentials grant the rtsAdministrator/rtsInstaller role
                     credentials.isDcAdmin = self.manager.isDcAdmin(credentials.odm_url, session)
+
+                    # check if the user credentials grant the resMonitor and resDeployer roles
+                    self.manager.check_res_roles(credentials)
+            except PermissionError:
+                pass
             finally:
                 credentials.cleanup()
-
-            # check if the user credentials grant the resMonitor and resDeployer roles
-            self.manager.check_res_roles(credentials)
 
         self.logger.debug(f"Using user credentials. user token: '{self.token_overview(credentials.token)}'")
         return credentials

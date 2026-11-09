@@ -555,6 +555,7 @@ class DecisionCenterManager:
                 return content
 
         session = None
+        response = None
         try:
             session = credentials.get_session()
 
@@ -574,29 +575,7 @@ class DecisionCenterManager:
             response = session.get(wadl_uri, 
                                    headers=session.headers, 
                                    verify=credentials.cacert)
-            
-            # Check if the request was successful
-            if response.status_code == 200:
-                self.logger.info("Successfully retrieved the RES console REST API WADL. Connected with the resMonitor role.")
 
-                # since the request succeeded, it means that the credentials grant the resMonitor role (giving access to most RES console tools)
-                credentials.isResMonitor  = True
-
-                return response.text
-            else:
-                if response.status_code == 403:
-                    self.logger.info("Connected without the resMonitor role. Therefore no access to the RES console tools.")
-                    raise PermissionError("Access denied (403): insufficient permissions to access the RES console tools.")
-                elif response.status_code == 401:
-                    self.logger.error("Wrong credentials. Therefore no access to the RES console tools.")
-                    raise PermissionError("Authentication failed (401): wrong credentials.")
-                elif response.status_code == 500 and "NoResourceFoundException" in response.text:
-                    self.logger.error("Could not retrieve the RES console REST API WADL. Please check that the RES console URL is valid: %s", uri)
-                else: 
-                    self.logger.error("Request failed with status code: %s", response.status_code)
-                    self.logger.error("Response: %s", response.text)
-                    raise(Exception(response.text))
-            
         except Exception as e:
             self.logger.error("An error occurred: %s", e)
             raise(e)
@@ -606,6 +585,29 @@ class DecisionCenterManager:
                 session.close()
             credentials.cleanup()
 
+        # Check if the request was successful
+        if response.status_code == 200:
+            self.logger.info("Successfully retrieved the RES console REST API WADL. Connected with the resMonitor role.")
+
+            # since the request succeeded, it means that the credentials grant the resMonitor role (giving access to most RES console tools)
+            credentials.isResMonitor  = True
+
+            return response.text
+        else:
+            if response.status_code == 403:
+                credentials.isResMonitor = False
+                self.logger.info("Connected without the resMonitor role. Therefore no access to the RES console tools.")
+                raise PermissionError("Access denied (403): insufficient permissions to access the RES console tools.")
+            elif response.status_code == 401:
+                self.logger.error("Wrong credentials. Therefore no access to the RES console tools.")
+                raise PermissionError("Authentication failed (401): wrong credentials.")
+            elif response.status_code == 500 and "NoResourceFoundException" in response.text:
+                self.logger.error("Could not retrieve the RES console REST API WADL. Please check that the RES console URL is valid: %s", uri)
+            else: 
+                self.logger.error("Request failed with status code: %s", response.status_code)
+                self.logger.error("Response: %s", response.text)
+                raise(Exception(response.text))
+        
     # returns the WADL description of the RES console REST API
     # and sets 
     #  - self.credentials.isResDeployer to True if the credentials grant the resDeployer Role
