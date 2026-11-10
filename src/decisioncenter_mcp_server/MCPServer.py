@@ -668,9 +668,13 @@ class MCPServer:
         filepathname = uri[len('file://'):]    # remove the 'file://' prefix to get the local file path
         filepath     = Path(filepathname).resolve()
         resources_dir = Path(self.trace_recorder.storage_dir).resolve()
-        known_files   = {Path(trace_file).resolve() for trace_file in self.trace_recorder.trace_files}
-        if filepath not in known_files or filepath.parent != resources_dir:
+        
+        if filepath.parent != resources_dir:
             raise ValueError("resource not found")
+            
+        if str(filepath) not in set(self.trace_recorder.trace_files):
+            raise ValueError("resource not found")
+
         try:
             with open(filepath, 'r') as f:
                 return [ReadResourceContents(content=f.read())]
