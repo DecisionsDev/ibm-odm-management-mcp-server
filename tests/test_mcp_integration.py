@@ -128,6 +128,23 @@ async def test_list_and_read_resources_through_protocol(started_server, tmp_path
 
 
 @pytest.mark.asyncio
+async def test_resources_not_served_when_running_remotely_without_user_credentials(tmp_path):
+    credentials = Credentials(odm_url="http://test:9060/decisioncenter-api", username="test", password="test")
+    server = MCPServer(credentials=credentials, transport="streamable-http")
+    trace_file = tmp_path / "trace.json"
+    trace_file.write_text('{"hello": "world"}')
+    server.trace_recorder.storage_dir = str(tmp_path)
+    server.trace_recorder.trace_files = [str(trace_file)]
+
+    with patch.object(SDK_MCPServer, "run"):
+        server.start()
+
+    async with Client(server.server) as client:
+        resources = (await client.list_resources()).resources
+        assert resources == []
+
+
+@pytest.mark.asyncio
 async def test_read_resource_rejects_unlisted_file(started_server, tmp_path):
     listed = tmp_path / "trace.json"
     listed.write_text("{}")

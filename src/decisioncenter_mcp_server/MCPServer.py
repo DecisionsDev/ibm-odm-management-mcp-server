@@ -710,8 +710,9 @@ class MCPServer:
         self.server.middleware.append(request_context_middleware)
 
         # Register handlers
-        self.server.list_resources = self.list_resources
-        self.server.read_resource  = self.read_resource
+        if self.transport == "stdio" or self.use_user_credentials():
+            self.server.list_resources = self.list_resources
+            self.server.read_resource  = self.read_resource
         self.server.list_tools = self.list_tools
         self.server.call_tool  = self.call_tool
 

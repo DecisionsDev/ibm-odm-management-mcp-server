@@ -1943,3 +1943,55 @@ def test_init_passes_only_explicit_startup_args():
 def parse_arguments_defaults():
     with patch("sys.argv", ["prog"]):
         return parse_arguments()
+
+# -- Resources registration in start() --------------------------------------
+
+def test_start_registers_resources_handlers_with_stdio():
+    """start() registers list_resources and read_resource handlers when using stdio transport."""
+    credentials = Credentials(odm_url="http://test:9060/decisioncenter-api", username="u", password="p")
+    server = MCPServer(credentials=credentials, transport="stdio")
+    with patch.object(SDK_MCPServer, "run"):
+        server.start()
+    assert server.server.list_resources == server.list_resources
+    assert server.server.read_resource == server.read_resource
+
+
+def test_start_does_not_register_resources_handlers_remote_without_user_credentials():
+    """start() does not register list_resources and read_resource handlers when running remotely without user credentials."""
+    credentials = Credentials(odm_url="http://test:9060/decisioncenter-api", username="u", password="p")
+    server = MCPServer(credentials=credentials, transport="streamable-http")
+    with patch.object(server, "use_user_credentials", return_value=False), \
+         patch.object(SDK_MCPServer, "run"):
+        server.start()
+    assert server.server.list_resources != server.list_resources
+    assert server.server.read_resource != server.read_resource
+
+
+def test_start_registers_resources_handlers_remote_with_user_credentials():
+    """start() registers list_resources and read_resource handlers when running remotely with user credentials."""
+    credentials = Credentials(odm_url="http://test:9060/decisioncenter-api", username="u", password="p")
+    server = MCPServer(
+        credentials=credentials,
+        transport="streamable-http",
+        issuer_url="https://idp.example.com",
+        userinfo_url="https://idp.example.com/userinfo",
+        mcp_ext_url="https://mcp.example.com",
+    )
+    with patch.object(server, "use_user_credentials", return_value=True), \
+         patch.object(SDK_MCPServer, "run"):
+        server.start()
+    assert server.server.list_resources == server.list_resources
+    assert server.server.read_resource == server.read_resource
+
+
+@pytest.mark.asyncio
+async def test_list_resources_returns_trace_files(server, tmp_path):
+    """list_resources() returns Resource objects for trace files in trace_recorder."""
+    trace_file = tmp_path / "trace.json"
+    trace_file.write_text("{}")
+    server.trace_recorder.trace_files = [str(trace_file)]
+
+    resources = await server.list_resources()
+    assert len(resources) == 1
+    assert resources[0].name == "trace.json"
+    assert resources[0].uri == f"file://{trace_file}"
