@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from pathlib import Path
 from typing import Optional, Any, Literal
 import socket
 import inspect
@@ -648,15 +649,31 @@ class MCPServer:
     async def read_resource(self, uri: AnyUrl | str, context: Context | None = None) -> list[ReadResourceContents]:
         """
         Read a resource by its URI.
+
+        Args:
+            uri: The URI of the resource, as returned by `list_resources`.
+            context: The optional request context.
+
+        Returns:
+            The contents of the resource.
+
+        Raises:
+            ValueError: If the resource is not one of the listed resources, if its file is not
+                located in the resources directory, or if the file does not exist.
         """
         uri = str(uri)  # the SDK passes a str; str(AnyUrl) is its encoded form
         self.logger.info(f"Reading resource from URI: {uri}")
+        filepathname = uri[len('file://'):]    # remove the 'file://' prefix to get the local file path
+        filepath     = Path(filepathname).resolve()
+        resources_dir = Path(self.trace_recorder.storage_dir).resolve()
+        known_files   = {Path(trace_file).resolve() for trace_file in self.trace_recorder.trace_files}
+        if filepath not in known_files or filepath.parent != resources_dir:
+            raise ValueError("resource not found")
         try:
-            filepathname = uri[len('file://'):]    # remove the 'file://' prefix to get the local file path
-            with open(filepathname, 'r') as f:
+            with open(filepath, 'r') as f:
                 return [ReadResourceContents(content=f.read())]
         except FileNotFoundError:
-            raise ValueError(f"resource not found")
+            raise ValueError("resource not found")
 
     def start(self):
 

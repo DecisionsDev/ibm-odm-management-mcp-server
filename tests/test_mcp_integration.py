@@ -115,6 +115,7 @@ async def test_call_unknown_tool_through_protocol(started_server):
 async def test_list_and_read_resources_through_protocol(started_server, tmp_path):
     trace_file = tmp_path / "trace.json"
     trace_file.write_text('{"hello": "world"}')
+    started_server.trace_recorder.storage_dir = str(tmp_path)
     started_server.trace_recorder.trace_files = [str(trace_file)]
 
     async with Client(started_server.server) as client:
@@ -124,6 +125,32 @@ async def test_list_and_read_resources_through_protocol(started_server, tmp_path
         content = await client.read_resource(str(resources[0].uri))
 
     assert json.loads(content.contents[0].text) == {"hello": "world"}
+
+
+@pytest.mark.asyncio
+async def test_read_resource_rejects_unlisted_file(started_server, tmp_path):
+    listed = tmp_path / "trace.json"
+    listed.write_text("{}")
+    unlisted = tmp_path / "other.json"
+    unlisted.write_text("{}")
+    started_server.trace_recorder.storage_dir = str(tmp_path)
+    started_server.trace_recorder.trace_files = [str(listed)]
+
+    with pytest.raises(ValueError, match="resource not found"):
+        await started_server.read_resource(f"file://{unlisted}")
+
+
+@pytest.mark.asyncio
+async def test_read_resource_rejects_file_outside_resources_directory(started_server, tmp_path):
+    resources_dir = tmp_path / "traces"
+    resources_dir.mkdir()
+    outside = tmp_path / "outside.json"
+    outside.write_text("{}")
+    started_server.trace_recorder.storage_dir = str(resources_dir)
+    started_server.trace_recorder.trace_files = [str(outside)]
+
+    with pytest.raises(ValueError, match="resource not found"):
+        await started_server.read_resource(f"file://{outside}")
 
 
 @pytest.mark.asyncio
