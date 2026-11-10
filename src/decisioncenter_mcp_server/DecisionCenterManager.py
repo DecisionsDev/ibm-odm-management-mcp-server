@@ -185,6 +185,90 @@ class DecisionCenterManager:
         'getdiagnosticbyid',
     ]
 
+    dc_tools = {
+        # ----- Decision Center -----
+        # About
+        'about',
+
+        # Admin
+        'decisionServiceExport', 'decisionServicesImport',
+        'addgroup', 'adduser', 'branch_1', 'branchgroups', 'branchimport', 'branchsecurity', 'branchsecurity_1', 'deletedecisionservice',
+        'deletegroup', 'deleteuser', 'effectivepermissions', 'eraseallgroups', 'eraseallusers', 'exportcommandpermissions', 'exportpermissions',
+        'exporttabpermissions', 'getusersrolesregistry', 'group', 'groups', 'importcommandpermissions', 'importpermissions', 'importtabpermissions',
+        'ldapsync', 'listdynamicdomains', 'metrics', 'setusersrolesregistry', 'unlockalluserartifacts', 'updatedynamicdomains', 'user', 'users',
+
+        # Build
+        'deploy', 'run',
+        'build', 'deletetestreport', 'download', 'snapshot_1',
+
+        # DBAdmin
+        'cleanupoldreports', 'cleanupreport', 'executesqlscript', 'generate', 'generateextensionmodelscript', 'generatemigrationrole',
+        'generatemigrationscript', 'getexecutionstatus', 'getmodelextensionfiles', 'iscleanuprunning', 'launchcleanup', 'results',
+        'setpersistencelocale', 'stopcleanup', 'uploadextensionmodelfiles', 'uploadmessagesfile', 'wipe',
+
+        # Explore
+        'branch', 'branches', 'decisionService', 'decisionServices', 'deploymentConfiguration', 'deploymentConfigurations', 'folders', 'functions',
+        'operations', 'project', 'projects', 'queries', 'queryRun', 'release', 'releases', 'ruleflows', 'rules', 'snapshots', 'technicalrules', 'testReport',
+        'testReports', 'testSuite', 'testSuites', 'variablesets',
+        'activities', 'activity', 'deploymentreport', 'deploymentreports', 'generatereport', 'queryreport', 'server', 'servers', 'snapshot_2',
+
+        # Govern
+        'addactivityapprover', 'addactivityauthor', 'addreleaseapprover', 'allowactivityapproval', 'allowreleaseapproval',
+        'approvechangesinactivity', 'approverelease', 'cancelactivity', 'cancelrelease', 'changeactivityowner', 'changereleaseowner',
+        'createchangeactivity', 'createrelease', 'createvalidationactivity', 'deleteactivity', 'deleterelease', 'finishworkinactivity',
+        'rejectchangesinactivity', 'rejectrelease', 'removeactivityapprover', 'removeactivityauthor', 'removereleaseapprover', 'reopenactivity',
+        'reopenrelease', 'resumeworkinactivity', 'updateactivity', 'updaterelease',
+
+        # Interchange
+        'applyasset',
+
+        # Manage
+        'createDSBranch', 'deleteBranch', 'exportDT', 'importDT', 'renameBranch',
+        'addserver', 'copybranch', 'deleteserver', 'deletesnapshot', 'deletewebhook', 'discardbuildstate', 'registerwebhook', 'registerwebhook_1',
+        'renamesnapshot', 'snapshot', 'updateserver', 'webhooks',
+
+        # Model
+        'createActionRule', 'createDecisionTable', 'createFolder', 'createRuleflow', 'createRuleTask', 'createTransition', 'moveActionRule',
+        'moveDecisionTable', 'moveFolder', 'moveRuleflow', 'renameFolder', 'updateActionRule', 'updateDecisionTable', 'updateRuleflow', 'updateRuleTask',
+        'updateTransition'
+    }
+
+    res_tools = {
+        # ----- Decision Server console -----
+        # Ruleapps
+        'addRulesetProperty', 'deleteRuleApp', 'deleteRulesetProperty', 'deployRuleAppArchive', 'getRuleApp', 'getRuleApps', 'getRuleset',
+        'getRulesetProperties', 'getRulesets', 'getRulesetSignature', 'updateRulesetProperty',
+        'addruleapp', 'addruleappproperty', 'addruleset', 'deleteruleappproperty', 'deleteruleset', 'deployrulesetarchive',
+        'getcountofruleappproperties', 'getcountofruleapps', 'getcountofruleappsbyname', 'getcountofrulesetproperties', 'getcountofrulesets',
+        'getcountofrulesetsbyname', 'getruleapparchive', 'getruleappproperties', 'getruleappsbyname', 'getruleappwithhighestnumber',
+        'getruleappwithhighestnumberarchive', 'getrulesetarchive', 'getrulesetsbyname', 'getrulesetwithhighestnumber',
+        'getrulesetwithhighestnumberarchive', 'getrulesetwithhighestnumberarchive2', 'getrulesetxoms', 'notifyruleappchanges',
+        'notifyrulesetchanges', 'updateruleapp', 'updateruleappproperty', 'updateruleset', 'updaterulesetarchive',
+
+        # Rulesets
+        'getallrulesets', 'getcountofallrulesets',
+
+        # Libraries
+        'addlibrary', 'deletelibrary', 'deleteunusedlibraries', 'getcountoflibraries', 'getcountoflibrariesbyname', 'getlibraries',
+        'getlibrariesbyname', 'getlibrary', 'getlibrarywithhighestnumber', 'updatelibrary',
+
+        # Xoms
+        'deleteresource', 'deleteunusedxomresources', 'deployresource', 'getbytecodeofhighestresource', 'getbytecodeofresource',
+        'getcountofresources', 'getcountofresourcesbyname', 'getresource', 'getresources', 'getresourcesbyname', 'getresourcewithhighestnumber',
+
+        # Decisiontraces
+        'getDecisionTrace', 'getDecisionTraces',
+        'deletedecisiontrace', 'deletedecisiontraces', 'deletedecisiontracesbyids', 'getcountofdecisiontraces',
+
+        # Executionunits
+        'getExecutionUnits', 'getRulesetStatistics',
+        'getcountofexecutionunits', 'getrulesetstatisticsforexecutionunit', 'resetrulesetstatistics',
+
+        # Utilities
+        'getConsoleInfo', 'getDiagnostics', 'getVersion',
+        'getdiagnosticbyid',
+    }
+
     def __init__(self, credentials, trace_recorder : DiskTraceStorage = None):
         """
         :no-index:

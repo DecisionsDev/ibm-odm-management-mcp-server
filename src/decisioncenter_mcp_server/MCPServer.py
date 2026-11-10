@@ -50,7 +50,7 @@ from jwt import PyJWKClient
 from .Credentials import Credentials
 from .DecisionCenterManager import DecisionCenterManager
 from .DecisionCenterEndpoint import DecisionCenterEndpoint
-from .ToolTrace import DiskTraceStorage
+from .ToolTrace import DiskTraceStorage, ToolExecutionAccess
 from .utils.ssl_utils import merge_ssl_cert_paths
 
 INSTRUCTIONS = """
@@ -552,7 +552,7 @@ class MCPServer:
 
         tags, tools_to_publish, no_tools, essential_tools, msg_client_filtering = self.get_effective_tool_options()
 
-        tools = [MCPServer.tools_executions_tool] if self.trace_recorder.trace_executions else []
+        tools = [MCPServer.tools_executions_tool] if self.publish_executions_tool() else []
         dc_tools_number = res_tools_number = 0
         for tool_name, endpoint in dc_repository.items():
             name = getattr(endpoint, "tool_name", getattr(getattr(endpoint, "tool", None), "name", tool_name))
@@ -568,7 +568,7 @@ class MCPServer:
                 res_tools_number += 1
 
         self.logger.info(f"list_tools returned {dc_tools_number} DC tools + {res_tools_number} RES tools" + \
-                        (" + 1 execution query tool" if self.trace_recorder.trace_executions else "") + \
+                        (" + 1 execution query tool" if self.publish_executions_tool() else "") + \
                         (f" - Client Tool filtering:{msg_client_filtering}" if msg_client_filtering else ""))
         return tools
 
@@ -579,7 +579,9 @@ class MCPServer:
         def get_tools_executions(arguments):
             filter = arguments.get('filter') if arguments else None
             with_content = arguments.get('with_content', False) if arguments else False
-            return self.trace_recorder.get_executions(filter=filter, with_content=with_content)
+            return self.trace_recorder.get_executions(policy=self.getToolExecutionAccess(),
+                                                      filter=filter,
+                                                      with_content=with_content)
 
         if self.logger.isEnabledFor(logging.DEBUG): self.logger.debug("Calling tool '%s' with arguments: %s", name, arguments)
         else:                                             self.logger.info ("Calling tool '%s'", name)
@@ -716,6 +718,9 @@ class MCPServer:
         self.server.list_tools = self.list_tools
         self.server.call_tool  = self.call_tool
 
+        # Tool execution access
+        self.toolExecutionAccess = ToolExecutionAccess(full_access=True) if self.transport == "stdio" else ToolExecutionAccess()
+
         if self.essential_tools:
             self.logger.info("Tool profile: ESSENTIAL. Only essential tools are published (see --tool-profile).")
         else:
@@ -793,6 +798,21 @@ class MCPServer:
                     ssl_certfile=self.https_cert_path,
                     ssl_keyfile=self.https_key_path,
                     ssl_keyfile_password=self.https_key_password)
+
+    def publish_executions_tool(self)-> bool:
+        return self.trace_recorder.trace_executions and \
+              (self.transport == "stdio" or self.use_user_credentials())
+
+    def getToolExecutionAccess(self) -> ToolExecutionAccess:
+        if self.use_user_credentials():
+            credentials = self.get_user_credentials()
+            return ToolExecutionAccess(dcAdmin=credentials.isDcAdmin,
+                                       resDeployer=credentials.isResDeployer,
+                                       user_details=self.get_current_user_details())
+        else:
+            # in practice, we reach this line in "stdio" mode, and then all the execution traces are available
+            return self.toolExecutionAccess
+        
 
 
 class _SuppressAccessLogForProbes(logging.Filter):

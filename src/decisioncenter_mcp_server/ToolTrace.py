@@ -17,10 +17,10 @@ import json
 import os
 import glob
 import logging
-import time
+from enum import Enum
 from datetime import datetime, timezone
 from .DecisionCenterEndpoint import DecisionCenterEndpoint
-            
+
 class ToolExecutionTrace:
     """
     Class to store details about a tool execution or configuration
@@ -46,6 +46,60 @@ class ToolExecutionTrace:
         now = datetime.now(timezone.utc)
         self.timestamp = f"{int(now.timestamp()):x}"
         self.iso_timestamp = now.isoformat()
+
+class Access(Enum):
+    GRANTED = 1
+    REJECTED = 2
+    NEED_USER_DETAILS = 3
+
+    def granted(self):
+        return self == Access.GRANTED
+
+    def rejected(self):
+        return self == Access.REJECTED
+
+    def user_details_needed(self):
+        return self == Access.NEED_USER_DETAILS
+
+class ToolExecutionAccess:
+    """
+    Class to assess if a user should have access to a tool execution
+    """
+    
+    def __init__(
+        self,
+        dcAdmin: Optional[bool] = None,
+        resDeployer: Optional[bool] = None,
+        user_details: Optional[Dict[str, Any]] = None,
+        full_access: Optional[bool] = None,
+    ):
+        """
+        Initialize a new ToolExecutionAccess.
+        """
+        self.dcAdmin = dcAdmin
+        self.resDeployer = resDeployer
+        self.user_details = user_details
+        self.full_access = full_access
+
+    def toolExecutionAccess(self, tool:str|None, user_details:Optional[Dict[str,Any]] = None) -> Access:
+        if self.full_access:
+            return Access.GRANTED
+
+        from .DecisionCenterManager import DecisionCenterManager
+        if tool in DecisionCenterManager.dc_tools:
+            if self.dcAdmin:
+                return Access.GRANTED
+        elif tool in DecisionCenterManager.res_tools:
+            if self.resDeployer:
+                return Access.GRANTED
+        else:
+            # unknown tool
+            return Access.REJECTED
+
+        if user_details is None:
+            return Access.NEED_USER_DETAILS
+
+        return Access.GRANTED if user_details == self.user_details else Access.REJECTED
 
 class DiskTraceStorage:
     """
@@ -189,7 +243,7 @@ class DiskTraceStorage:
             except Exception as e:
                 self.logger.warning(f"Error removing traces file {file2remove_path}: {e}")
 
-    def get_executions(self, filter: Optional[str] = None, with_content: bool = False) -> list[Dict[str, Any]]:
+    def get_executions(self, policy:ToolExecutionAccess, filter: Optional[str] = None, with_content: bool = False) -> list[Dict[str, Any]]:
         """
         Get the list of saved tool executions, optionally filtered by tool name.
         
@@ -200,8 +254,11 @@ class DiskTraceStorage:
         def parse_trace_filename(filename: str):
             # Expected filename format: {tool_name}-{http_code}-{timestamp}.json
             parts = filename.rsplit('.', 1)[0].split('-')
+            tool= None
             http_code= None
             timestamp= None
+            if len(parts) >= 1:
+                tool = parts[0]
             if len(parts) >= 2 and parts[1].isdigit():
                 http_code = parts[1]
             if len(parts) >= 3:
@@ -209,8 +266,7 @@ class DiskTraceStorage:
                     timestamp = str(datetime.fromtimestamp(int(parts[2], 16)))
                 except Exception as e:
                     self.logger.debug(f"Error converting timestamp {parts[2]}: {e}")
-            return http_code, timestamp
-            return "unknown", "unknown"
+            return tool, http_code, timestamp
 
         executions = []
         for trace_file in self.trace_files:
@@ -219,20 +275,26 @@ class DiskTraceStorage:
                 continue
             if filter and filter not in filename:
                 continue
-            http_code, timestamp = parse_trace_filename(filename)
+            tool, http_code, timestamp = parse_trace_filename(filename)
+            if policy.toolExecutionAccess(tool).rejected():
+                continue
             execution_info = {
                 "trace_file":filename,
+                "tool":      tool,
                 "http_code": http_code,
                 "timestamp": timestamp
             }
-            if with_content:
+            if with_content or policy.toolExecutionAccess(tool).user_details_needed():
                 try:
                     with open(trace_file, 'r') as f:
                         trace_data = json.load(f)
-                    if "user" in trace_data:
-                        execution_info["user"] = trace_data["user"]
-                    execution_info["inputs"] = trace_data.get("inputs", {})
-                    execution_info["results"] = trace_data.get("results", {})
+                    if not policy.toolExecutionAccess(tool,trace_data.get("user")).granted():
+                        continue
+                    if with_content:
+                        if "user" in trace_data:
+                            execution_info["user"] = trace_data["user"]
+                        execution_info["inputs"]  = trace_data.get("inputs", {})
+                        execution_info["results"] = trace_data.get("results", {})
                 except Exception as e:
                     self.logger.debug(f"Error reading trace file {trace_file}: {e}")
             executions.append(execution_info)

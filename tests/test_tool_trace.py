@@ -14,9 +14,10 @@
 
 import json
 import os
+import pytest
 from unittest.mock import Mock
 from datetime import datetime
-from decisioncenter_mcp_server.ToolTrace import DiskTraceStorage, ToolExecutionTrace
+from decisioncenter_mcp_server.ToolTrace import Access, DiskTraceStorage, ToolExecutionAccess, ToolExecutionTrace
 
 
 def test_tool_execution_trace_initializes_iso_timestamp():
@@ -157,3 +158,136 @@ def test_tool_execution_trace_hex_and_iso_timestamp_consistency():
     iso_dt = datetime.fromisoformat(trace.iso_timestamp)
     expected_hex = f"{int(iso_dt.timestamp()):x}"
     assert trace.timestamp == expected_hex
+
+
+# ---------------------------------------------------------------------------
+# Access / ToolExecutionAccess
+# ---------------------------------------------------------------------------
+
+def test_access_enum_helpers():
+    assert Access.GRANTED.granted() and not Access.GRANTED.rejected()
+    assert Access.REJECTED.rejected() and not Access.REJECTED.granted()
+    assert Access.NEED_USER_DETAILS.user_details_needed()
+    assert not Access.GRANTED.user_details_needed()
+
+
+def test_access_full_access_grants_everything():
+    policy = ToolExecutionAccess(full_access=True)
+    assert policy.toolExecutionAccess("branches").granted()
+    assert policy.toolExecutionAccess("getRuleApps").granted()
+    assert policy.toolExecutionAccess("unknownTool").granted()
+
+
+def test_access_unknown_tool_is_rejected():
+    policy = ToolExecutionAccess(dcAdmin=True, resDeployer=True)
+    assert policy.toolExecutionAccess("unknownTool").rejected()
+    assert policy.toolExecutionAccess(None).rejected()
+
+
+def test_access_dc_admin_granted_on_dc_tool_only():
+    policy = ToolExecutionAccess(dcAdmin=True, resDeployer=False, user_details={"subject": "u1"})
+    assert policy.toolExecutionAccess("branches").granted()
+    # RES tool: not a deployer, so ownership of the trace must be checked
+    assert policy.toolExecutionAccess("getRuleApps").user_details_needed()
+
+
+def test_access_res_deployer_granted_on_res_tool_only():
+    policy = ToolExecutionAccess(dcAdmin=False, resDeployer=True, user_details={"subject": "u1"})
+    assert policy.toolExecutionAccess("getRuleApps").granted()
+    assert policy.toolExecutionAccess("branches").user_details_needed()
+
+
+def test_access_non_admin_requires_matching_user_details():
+    policy = ToolExecutionAccess(dcAdmin=False, resDeployer=False, user_details={"subject": "u1"})
+    assert policy.toolExecutionAccess("branches").user_details_needed()
+    assert policy.toolExecutionAccess("branches", {"subject": "u1"}).granted()
+    assert policy.toolExecutionAccess("branches", {"subject": "u2"}).rejected()
+
+
+# ---------------------------------------------------------------------------
+# DiskTraceStorage.get_executions
+# ---------------------------------------------------------------------------
+
+def _save_trace(storage, tool_name, user=None, http_code="200"):
+    endpoint = Mock()
+    endpoint.tool.name = tool_name
+    storage.save(ToolExecutionTrace(endpoint=endpoint, inputs={"in": tool_name}, http_code=http_code,
+                                    results={"out": tool_name}, user=user))
+
+
+@pytest.fixture
+def storage(tmp_path):
+    return DiskTraceStorage(trace_executions=True, verbose=True, trace_configuration=False,
+                            storage_dir=str(tmp_path))
+
+
+def test_get_executions_full_access_returns_all_with_tool_name(storage):
+    _save_trace(storage, "branches")
+    _save_trace(storage, "getRuleApps")
+
+    executions = storage.get_executions(policy=ToolExecutionAccess(full_access=True))
+
+    assert sorted(e["tool"] for e in executions) == ["branches", "getRuleApps"]
+    assert all(e["http_code"] == "200" for e in executions)
+    assert all("inputs" not in e for e in executions)
+
+
+def test_get_executions_with_content(storage):
+    _save_trace(storage, "branches", user={"subject": "u1"})
+
+    executions = storage.get_executions(policy=ToolExecutionAccess(full_access=True), with_content=True)
+
+    assert len(executions) == 1
+    assert executions[0]["inputs"] == {"in": "branches"}
+    assert executions[0]["results"] == {"out": "branches"}
+    assert executions[0]["user"] == {"subject": "u1"}
+
+
+def test_get_executions_filter(storage):
+    _save_trace(storage, "branches")
+    _save_trace(storage, "getRuleApps")
+
+    executions = storage.get_executions(policy=ToolExecutionAccess(full_access=True), filter="getRuleApps")
+
+    assert [e["tool"] for e in executions] == ["getRuleApps"]
+
+
+def test_get_executions_skips_unknown_tools_without_full_access(storage):
+    _save_trace(storage, "unknownTool")
+    _save_trace(storage, "branches")
+
+    policy = ToolExecutionAccess(dcAdmin=True, resDeployer=False, user_details={"subject": "u1"})
+    executions = storage.get_executions(policy=policy)
+
+    assert [e["tool"] for e in executions] == ["branches"]
+
+
+def test_get_executions_restricts_non_admin_to_own_traces(storage):
+    _save_trace(storage, "branches", user={"subject": "u1"})
+    _save_trace(storage, "rules", user={"subject": "u2"})
+
+    policy = ToolExecutionAccess(dcAdmin=False, resDeployer=False, user_details={"subject": "u1"})
+    executions = storage.get_executions(policy=policy, with_content=True)
+
+    assert [e["tool"] for e in executions] == ["branches"]
+    assert executions[0]["user"] == {"subject": "u1"}
+
+
+def test_get_executions_non_admin_without_content_does_not_leak_content(storage):
+    _save_trace(storage, "branches", user={"subject": "u1"})
+
+    policy = ToolExecutionAccess(dcAdmin=False, resDeployer=False, user_details={"subject": "u1"})
+    executions = storage.get_executions(policy=policy)
+
+    assert len(executions) == 1
+    assert "inputs" not in executions[0] and "results" not in executions[0]
+
+
+def test_get_executions_dc_admin_sees_dc_tools_of_all_users_but_not_res_of_others(storage):
+    _save_trace(storage, "branches", user={"subject": "u2"})
+    _save_trace(storage, "getRuleApps", user={"subject": "u2"})
+
+    policy = ToolExecutionAccess(dcAdmin=True, resDeployer=False, user_details={"subject": "u1"})
+    executions = storage.get_executions(policy=policy)
+
+    assert [e["tool"] for e in executions] == ["branches"]

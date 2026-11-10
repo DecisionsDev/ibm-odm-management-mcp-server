@@ -1995,3 +1995,94 @@ async def test_list_resources_returns_trace_files(server, tmp_path):
     assert len(resources) == 1
     assert resources[0].name == "trace.json"
     assert resources[0].uri == f"file://{trace_file}"
+
+
+# ---------------------------------------------------------------------------
+# Tool execution access (publish_executions_tool / getToolExecutionAccess)
+# ---------------------------------------------------------------------------
+
+def _remote_server():
+    cred = Credentials(odm_url="http://localhost:9060/decisioncenter-api", client_id="my-client")
+    return MCPServer(
+        credentials=cred,
+        transport="sse",
+        mcp_ext_url="https://mcp.example.com",
+        issuer_url="https://idp.example.com",
+        introspection_url="https://idp.example.com/introspect",
+    )
+
+
+def test_publish_executions_tool_stdio():
+    cred = Credentials(odm_url="http://localhost:9060/decisioncenter-api", username="u", password="p")
+    server = MCPServer(credentials=cred)
+    server.trace_recorder.trace_executions = True
+    assert server.publish_executions_tool()
+    server.trace_recorder.trace_executions = False
+    assert not server.publish_executions_tool()
+
+
+def test_publish_executions_tool_remote_requires_user_credentials():
+    server = _remote_server()
+    server.trace_recorder.trace_executions = True
+    with patch.object(server, 'use_user_credentials', return_value=True):
+        assert server.publish_executions_tool()
+    with patch.object(server, 'use_user_credentials', return_value=False):
+        assert not server.publish_executions_tool()
+    server.trace_recorder.trace_executions = False
+    with patch.object(server, 'use_user_credentials', return_value=True):
+        assert not server.publish_executions_tool()
+
+
+def test_get_tool_execution_access_stdio_is_full_access():
+    from decisioncenter_mcp_server.ToolTrace import ToolExecutionAccess
+    cred = Credentials(odm_url="http://localhost:9060/decisioncenter-api", username="u", password="p")
+    server = MCPServer(credentials=cred)
+    with patch('decisioncenter_mcp_server.MCPServer.SDK_MCPServer'), \
+         patch('decisioncenter_mcp_server.MCPServer.DecisionCenterManager'):
+        server.start()
+    access = server.getToolExecutionAccess()
+    assert isinstance(access, ToolExecutionAccess)
+    assert access.full_access
+    assert access.toolExecutionAccess("branches").granted()
+
+
+def test_get_tool_execution_access_user_credentials():
+    server = _remote_server()
+    cred = Credentials(odm_url="http://localhost:9060/decisioncenter-api", client_id="my-client")
+    cred.isDcAdmin = True
+    cred.isResDeployer = False
+    details = {"subject": "john"}
+    with patch.object(server, 'use_user_credentials', return_value=True), \
+         patch.object(server, 'get_user_credentials', return_value=cred), \
+         patch.object(server, 'get_current_user_details', return_value=details):
+        access = server.getToolExecutionAccess()
+    assert access.dcAdmin is True
+    assert access.resDeployer is False
+    assert access.user_details == details
+    assert not access.full_access
+
+
+@pytest.mark.asyncio
+async def test_call_tool_get_tool_executions_passes_policy(server):
+    from decisioncenter_mcp_server.ToolTrace import ToolExecutionAccess
+    policy = ToolExecutionAccess(full_access=True)
+    server.trace_recorder = Mock()
+    server.trace_recorder.trace_executions = False
+    server.trace_recorder.get_executions.return_value = [{"tool": "branches"}]
+
+    with patch.object(server, 'getToolExecutionAccess', return_value=policy):
+        result = await server.call_tool(MCPServer.get_tools_executions_toolname, {"filter": "branches", "with_content": True}, Mock())
+
+    assert not result.is_error
+    server.trace_recorder.get_executions.assert_called_once_with(policy=policy, filter="branches", with_content=True)
+
+
+@pytest.mark.asyncio
+async def test_list_tools_includes_executions_tool_only_when_published(server):
+    server.trace_recorder.trace_executions = True
+    tools = await server.list_tools()
+    assert MCPServer.get_tools_executions_toolname in [t.name for t in tools]
+
+    server.trace_recorder.trace_executions = False
+    tools = await server.list_tools()
+    assert MCPServer.get_tools_executions_toolname not in [t.name for t in tools]
