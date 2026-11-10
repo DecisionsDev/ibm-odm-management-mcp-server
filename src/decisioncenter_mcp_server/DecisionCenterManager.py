@@ -1135,8 +1135,12 @@ class DecisionCenterManager:
         for param,props in endpoint.parameters.items():
             if props['in'] == 'path':
                 if arguments.get(param) is None:
-                    raise ValueError(f'Missing argument {param}')          
-                url = url.replace('{'+param+'}', arguments.get(param))
+                    raise ValueError(f'Missing argument {param}')
+                path_value = str(arguments[param])
+                # reject path traversal and URL structure manipulation
+                if any(forbidden in path_value for forbidden in ('/', '..', '?', '#')):
+                    raise ValueError(f'Invalid value for argument {param}: it must not contain "/", "..", "?" or "#"')
+                url = url.replace('{'+param+'}', path_value)
             elif props['in'] == 'query':
                 fixed = props.get('fixed')
                 if fixed is not None:
