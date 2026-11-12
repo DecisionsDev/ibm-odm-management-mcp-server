@@ -20,6 +20,7 @@ import logging
 from enum import Enum
 from datetime import datetime, timezone
 from .DecisionCenterEndpoint import DecisionCenterEndpoint
+from mcp_types import Resource
 
 class ToolExecutionTrace:
     """
@@ -81,7 +82,7 @@ class ToolExecutionAccess:
         self.user_details = user_details
         self.full_access = full_access
 
-    def toolExecutionAccess(self, tool:str|None, user_details:Optional[Dict[str,Any]] = None) -> Access:
+    def toolExecutionAccess(self, tool:str|None, user_details_or_subject:Optional[Dict[str,Any]|str] = None) -> Access:
         if self.full_access:
             return Access.GRANTED
 
@@ -96,10 +97,17 @@ class ToolExecutionAccess:
             # unknown tool
             return Access.REJECTED
 
-        if user_details is None:
+        if user_details_or_subject is None:
             return Access.NEED_USER_DETAILS
 
-        return Access.GRANTED if user_details == self.user_details else Access.REJECTED
+        if isinstance(user_details_or_subject, dict):
+            subject = subject_from_dict(user_details_or_subject)
+        else:
+            subject = subject_from_str(user_details_or_subject)
+
+        my_subject = subject_from_dict(self.user_details)
+        return Access.GRANTED if (my_subject and my_subject == subject) \
+          else Access.REJECTED
 
 class DiskTraceStorage:
     """
@@ -214,7 +222,9 @@ class DiskTraceStorage:
         self._exists_storage_dir()
 
         # Save the trace to disk
-        file_path = os.path.join(self.storage_dir, f"{trace.endpoint.tool.name}-{trace.http_code}-{trace.timestamp}.json")
+        user_sub = subject_from_dict(trace.user)
+        filename = f"{trace.endpoint.tool.name}-{trace.http_code}-{trace.timestamp}{f'-{user_sub}' if user_sub else ''}.json"
+        file_path = os.path.join(self.storage_dir, filename)
         with open(file_path, 'w') as f:
             if self.verbose:
                 traces = {
@@ -243,7 +253,7 @@ class DiskTraceStorage:
             except Exception as e:
                 self.logger.warning(f"Error removing traces file {file2remove_path}: {e}")
 
-    def get_executions(self, policy:ToolExecutionAccess, filter: Optional[str] = None, with_content: bool = False) -> list[Dict[str, Any]]:
+    def get_executions(self, policy:ToolExecutionAccess, filter: Optional[str] = None, with_content: Optional[bool] = False, output:Optional[type[Resource]|type[dict]] = dict) -> list:
         """
         Get the list of saved tool executions, optionally filtered by tool name.
         
@@ -252,18 +262,18 @@ class DiskTraceStorage:
             with_content: Whether to include the inputs and results content in the returned executions
         """
         def parse_trace_filename(filename: str):
-            # Expected filename format: {tool_name}-{http_code}-{timestamp}.json
-            parts = filename.rsplit('.', maxsplit=1)[0].rsplit('-', maxsplit=2)
-            tool= None
-            http_code= None
-            timestamp= None
-            if len(parts) >= 1:
+            # Expected filename format: {tool_name}-{http_code}-{timestamp}[-{subject}].json
+            parts = filename.rsplit('.', maxsplit=1)[0].rsplit('-', maxsplit=3)
+            tool = http_code = timestamp = subject = None
+            if len(parts) == 4:
+                tool, http_code, timestamp, subject = parts
+            elif len(parts) == 3:
+                tool, http_code, timestamp = parts
+            elif len(parts) == 2:
+                tool, http_code = parts
+            elif len(parts) == 1:
                 tool = parts[0]
-            if len(parts) >= 2 and parts[1].isdigit():
-                http_code = parts[1]
-            if len(parts) >= 3:
-                timestamp = parts[2]
-            return tool, http_code, timestamp
+            return tool, http_code, timestamp, subject
 
         def timestamp_to_date(timestamp:str|None):
             if timestamp:
@@ -280,28 +290,39 @@ class DiskTraceStorage:
                 continue
             if filter and filter not in filename:
                 continue
-            tool, http_code, timestamp = parse_trace_filename(filename)
-            access = policy.toolExecutionAccess(tool)
+            tool, http_code, timestamp, subject = parse_trace_filename(filename)
+            access = policy.toolExecutionAccess(tool,subject)
             if access.rejected():
                 continue
-            execution_info = {
-                "trace_file":filename,
-                "tool":      tool,
-                "http_code": http_code,
-                "date":      timestamp_to_date(timestamp)
-            }
+            if output == dict:
+                execution_info = {
+                    "trace_file":filename,
+                    "tool":      tool,
+                    "http_code": http_code,
+                    "date":      timestamp_to_date(timestamp)
+                }
             if with_content or access.user_details_needed():
                 try:
                     with open(trace_file, 'r') as f:
                         trace_data = json.load(f)
                     if not policy.toolExecutionAccess(tool,trace_data.get("user")).granted():
                         continue
-                    if with_content:
+                    if with_content and output == dict:
                         if "user" in trace_data:
                             execution_info["user"] = trace_data["user"]
                         execution_info["inputs"]  = trace_data.get("inputs", {})
                         execution_info["results"] = trace_data.get("results", {})
                 except Exception as e:
                     self.logger.debug(f"Error reading trace file {trace_file}: {e}")
+                    if access.user_details_needed():
+                        continue
+            if output == Resource:
+                execution_info = Resource(name=filename, uri=f'file://{trace_file}')
             executions.append(execution_info)
         return executions
+
+def subject_from_str(subject:Optional[str] = None) -> str:
+    return subject.replace('-','_') if subject else ""
+
+def subject_from_dict(user_details:Optional[dict[str,Any]] = None) -> str:
+    return subject_from_str(user_details.get("subject")) if isinstance(user_details, dict) else ""

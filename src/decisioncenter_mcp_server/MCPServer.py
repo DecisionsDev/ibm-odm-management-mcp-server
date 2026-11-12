@@ -182,6 +182,8 @@ class MCPServer:
                                                storage_dir = self.traces_dir, 
                                                max_traces = self.traces_maxsize)
 
+        self.toolExecutionAccess = ToolExecutionAccess(full_access=True) if self.transport == "stdio" else ToolExecutionAccess()
+
         self.manager = DecisionCenterManager(credentials, self.trace_recorder)
 
     def _parse_token_validation_order(self) -> list[str]:
@@ -659,7 +661,7 @@ class MCPServer:
         """
         List available resources.
         """
-        resources = [Resource(name=os.path.basename(trace_file), uri=f'file://{trace_file}') for trace_file in self.trace_recorder.trace_files]
+        resources: list[Resource] = self.trace_recorder.get_executions(policy=self.getToolExecutionAccess(), output=Resource)
         self.logger.info(f"{len(resources)} resources available")
         return resources
 
@@ -675,8 +677,8 @@ class MCPServer:
             The contents of the resource.
 
         Raises:
-            ValueError: If the resource is not one of the listed resources, if its file is not
-                located in the resources directory, or if the file does not exist.
+            ValueError: If the resource is not one of the resources listed for the current user,
+                if its file is not located in the resources directory, or if the file does not exist.
         """
         uri = str(uri)  # the SDK passes a str; str(AnyUrl) is its encoded form
         self.logger.info(f"Reading resource from URI: {uri}")
@@ -688,6 +690,11 @@ class MCPServer:
             raise ValueError("resource not found")
             
         if str(filepath) not in set(self.trace_recorder.trace_files):
+            raise ValueError("resource not found")
+
+        # the user must be allowed to see this execution, exactly as in `list_resources`
+        allowed = self.trace_recorder.get_executions(policy=self.getToolExecutionAccess(), filter=filepath.name, output=Resource)
+        if f"file://{filepath}" not in {str(resource.uri) for resource in allowed}:
             raise ValueError("resource not found")
 
         try:

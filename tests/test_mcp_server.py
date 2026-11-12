@@ -1996,6 +1996,58 @@ async def test_list_resources_returns_trace_files(server, tmp_path):
     assert resources[0].name == "trace.json"
     assert resources[0].uri == f"file://{trace_file}"
 
+def _server_with_user_traces(tmp_path):
+    """Build a server whose trace storage holds one `branches` trace for user u1 and one for user u2."""
+    from decisioncenter_mcp_server.ToolTrace import DiskTraceStorage, ToolExecutionTrace
+    storage = DiskTraceStorage(trace_executions=True, verbose=True, trace_configuration=False,
+                               storage_dir=str(tmp_path))
+    for subject in ("u1", "u2"):
+        endpoint = Mock()
+        endpoint.tool.name = "branches"
+        storage.save(ToolExecutionTrace(endpoint=endpoint, inputs={}, http_code="200",
+                                        results={"owner": subject}, user={"subject": subject}))
+    cred = Credentials(odm_url="http://test:9060/decisioncenter-api", username="u", password="p")
+    server = MCPServer(credentials=cred)
+    server.trace_recorder = storage
+    return server
+
+
+def _non_admin_policy(subject):
+    from decisioncenter_mcp_server.ToolTrace import ToolExecutionAccess
+    return ToolExecutionAccess(dcAdmin=False, resDeployer=False, user_details={"subject": subject})
+
+
+@pytest.mark.asyncio
+async def test_list_resources_non_admin_sees_only_own_traces(tmp_path):
+    """With user credentials, a non-admin only gets the resources of their own tool executions."""
+    server = _server_with_user_traces(tmp_path)
+    with patch.object(server, "getToolExecutionAccess", return_value=_non_admin_policy("u1")):
+        resources = await server.list_resources()
+    assert len(resources) == 1
+    assert resources[0].name.endswith("-u1.json")
+
+
+@pytest.mark.asyncio
+async def test_read_resource_non_admin_can_read_own_trace(tmp_path):
+    """With user credentials, a non-admin can read the resource of their own tool execution."""
+    server = _server_with_user_traces(tmp_path)
+    with patch.object(server, "getToolExecutionAccess", return_value=_non_admin_policy("u1")):
+        own = (await server.list_resources())[0]
+        contents = await server.read_resource(own.uri)
+    assert json.loads(contents[0].content)["results"] == {"owner": "u1"}
+
+
+@pytest.mark.asyncio
+async def test_read_resource_non_admin_cannot_read_other_users_trace(tmp_path):
+    """With user credentials, a non-admin cannot read another user's trace even if they know its URI."""
+    server = _server_with_user_traces(tmp_path)
+    other = next(f for f in server.trace_recorder.trace_files if f.endswith("-u2.json"))
+    with patch.object(server, "getToolExecutionAccess", return_value=_non_admin_policy("u1")):
+        with pytest.raises(ValueError, match="resource not found"):
+            await server.read_resource(f"file://{other}")
+
+
+
 
 # ---------------------------------------------------------------------------
 # Tool execution access (allow_executions_tool_with_content / getToolExecutionAccess)
