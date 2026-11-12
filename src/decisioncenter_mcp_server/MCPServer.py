@@ -65,14 +65,25 @@ class MCPServer:
     get_tools_executions_toolname = "getToolExecutions"
     max_trace_files = 200
 
-    tools_executions_tool = Tool(
+    tools_executions_tool_with_content = Tool(
             name=get_tools_executions_toolname,
             title="Get tool executions",
-            description=f"Get the tool executions with or without content. Useful to keep track of the tools that have been executed, their arguments and results. Only the most recent executions are kept. The number of executions that are kept is defined by the MCP server option --traces-maxsize ({max_trace_files} by default).",
+            description=f"Get tool executions with or without content (input,output,user details). Useful to keep track of the tools that have been executed, their arguments and results. Only the most recent executions are kept. The number of executions that are kept is defined by the MCP server option --traces-maxsize ({max_trace_files} by default).",
             input_schema={'type': 'object', 'required': [], 
                          'properties': {
                             'filter': {'type': 'string', 'description': 'Filter to apply on the tool executions. Only the executions of tools whose name matches the filter will be included in the result. The filter supports partial match.'},
                             'with_content': {'type': 'boolean', 'description': 'Whether to include the content of the tool execution (arguments and results) in the trace. If false, only metadata such as timestamps, tool name and execution status will be included.'}
+                            }
+                        }
+            )
+
+    tools_executions_tool_WITHOUT_content = Tool(
+            name=get_tools_executions_toolname,
+            title="Get tool executions",
+            description=f"Get tool executions (without detail of each execution (input,output,user details)). Useful to keep track of the tools that have been executed. Only the most recent executions are kept. The number of executions that are kept is defined by the MCP server option --traces-maxsize ({max_trace_files} by default).",
+            input_schema={'type': 'object', 'required': [], 
+                         'properties': {
+                            'filter': {'type': 'string', 'description': 'Filter to apply on the tool executions. Only the executions of tools whose name matches the filter will be included in the result. The filter supports partial match.'}
                             }
                         }
             )
@@ -552,7 +563,11 @@ class MCPServer:
 
         tags, tools_to_publish, no_tools, essential_tools, msg_client_filtering = self.get_effective_tool_options()
 
-        tools = [MCPServer.tools_executions_tool] if self.publish_executions_tool() else []
+        if not self.trace_recorder.trace_executions:
+            tools = []
+        else:
+            tools = [MCPServer.tools_executions_tool_with_content] if self.allow_executions_tool_with_content() else \
+                                [MCPServer.tools_executions_tool_WITHOUT_content]
         dc_tools_number = res_tools_number = 0
         for tool_name, endpoint in dc_repository.items():
             name = getattr(endpoint, "tool_name", getattr(getattr(endpoint, "tool", None), "name", tool_name))
@@ -568,7 +583,7 @@ class MCPServer:
                 res_tools_number += 1
 
         self.logger.info(f"list_tools returned {dc_tools_number} DC tools + {res_tools_number} RES tools" + \
-                        (" + 1 execution query tool" if self.publish_executions_tool() else "") + \
+                        (" + 1 execution query tool" if self.trace_recorder.trace_executions else "") + \
                         (f" - Client Tool filtering:{msg_client_filtering}" if msg_client_filtering else ""))
         return tools
 
@@ -695,6 +710,9 @@ class MCPServer:
         else: 
             if self.transport != "stdio": 
                 self.logger.warning("MCP Server running in remote mode, but NOT using users credentials\n" + HOWTO_USE_USERS_CREDENTIALS_MSG)
+                if self.trace_recorder.verbose:
+                    self.logger.warning("The MCP server won't provide tool execution details for security reason because the MCP server is not using users credentials and therefore cannot check if the user should have access to the information.")
+
             token_verifier = None
             auth = None
 
@@ -803,8 +821,8 @@ class MCPServer:
                     ssl_keyfile=self.https_key_path,
                     ssl_keyfile_password=self.https_key_password)
 
-    def publish_executions_tool(self)-> bool:
-        return self.trace_recorder.trace_executions and \
+    def allow_executions_tool_with_content(self)-> bool:
+        return self.trace_recorder.verbose and \
               (self.transport == "stdio" or self.use_user_credentials())
 
     def getToolExecutionAccess(self) -> ToolExecutionAccess:

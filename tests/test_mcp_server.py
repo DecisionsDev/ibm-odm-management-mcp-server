@@ -1998,7 +1998,7 @@ async def test_list_resources_returns_trace_files(server, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Tool execution access (publish_executions_tool / getToolExecutionAccess)
+# Tool execution access (allow_executions_tool_with_content / getToolExecutionAccess)
 # ---------------------------------------------------------------------------
 
 def _remote_server():
@@ -2012,25 +2012,25 @@ def _remote_server():
     )
 
 
-def test_publish_executions_tool_stdio():
+def test_allow_executions_tool_with_content_stdio():
     cred = Credentials(odm_url="http://localhost:9060/decisioncenter-api", username="u", password="p")
     server = MCPServer(credentials=cred)
-    server.trace_recorder.trace_executions = True
-    assert server.publish_executions_tool()
-    server.trace_recorder.trace_executions = False
-    assert not server.publish_executions_tool()
+    server.trace_recorder.verbose = True
+    assert server.allow_executions_tool_with_content()
+    server.trace_recorder.verbose = False
+    assert not server.allow_executions_tool_with_content()
 
 
-def test_publish_executions_tool_remote_requires_user_credentials():
+def test_allow_executions_tool_with_content_remote_requires_user_credentials():
     server = _remote_server()
-    server.trace_recorder.trace_executions = True
+    server.trace_recorder.verbose = True
     with patch.object(server, 'use_user_credentials', return_value=True):
-        assert server.publish_executions_tool()
+        assert server.allow_executions_tool_with_content()
     with patch.object(server, 'use_user_credentials', return_value=False):
-        assert not server.publish_executions_tool()
-    server.trace_recorder.trace_executions = False
+        assert not server.allow_executions_tool_with_content()
+    server.trace_recorder.verbose = False
     with patch.object(server, 'use_user_credentials', return_value=True):
-        assert not server.publish_executions_tool()
+        assert not server.allow_executions_tool_with_content()
 
 
 def test_get_tool_execution_access_stdio_is_full_access():
@@ -2086,3 +2086,17 @@ async def test_list_tools_includes_executions_tool_only_when_published(server):
     server.trace_recorder.trace_executions = False
     tools = await server.list_tools()
     assert MCPServer.get_tools_executions_toolname not in [t.name for t in tools]
+
+
+@pytest.mark.asyncio
+async def test_list_tools_executions_tool_variant_depends_on_content_access(server):
+    server.trace_recorder.trace_executions = True
+    with patch.object(server, 'allow_executions_tool_with_content', return_value=True):
+        tools = await server.list_tools()
+    tool = next(t for t in tools if t.name == MCPServer.get_tools_executions_toolname)
+    assert "with_content" in tool.input_schema["properties"]
+
+    with patch.object(server, 'allow_executions_tool_with_content', return_value=False):
+        tools = await server.list_tools()
+    tool = next(t for t in tools if t.name == MCPServer.get_tools_executions_toolname)
+    assert "with_content" not in tool.input_schema["properties"]

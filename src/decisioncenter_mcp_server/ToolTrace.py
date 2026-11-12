@@ -253,7 +253,7 @@ class DiskTraceStorage:
         """
         def parse_trace_filename(filename: str):
             # Expected filename format: {tool_name}-{http_code}-{timestamp}.json
-            parts = filename.rsplit('.', 1)[0].split('-')
+            parts = filename.rsplit('.', maxsplit=1)[0].rsplit('-', maxsplit=2)
             tool= None
             http_code= None
             timestamp= None
@@ -262,11 +262,16 @@ class DiskTraceStorage:
             if len(parts) >= 2 and parts[1].isdigit():
                 http_code = parts[1]
             if len(parts) >= 3:
-                try:  # convert hex timestamp
-                    timestamp = str(datetime.fromtimestamp(int(parts[2], 16)))
-                except Exception as e:
-                    self.logger.debug(f"Error converting timestamp {parts[2]}: {e}")
+                timestamp = parts[2]
             return tool, http_code, timestamp
+
+        def timestamp_to_date(timestamp:str|None):
+            if timestamp:
+                try:  # convert hex timestamp
+                    return str(datetime.fromtimestamp(int(timestamp, 16)))
+                except Exception as e:
+                    self.logger.debug(f"Error converting timestamp {timestamp}: {e}")
+            return timestamp
 
         executions = []
         for trace_file in self.trace_files:
@@ -276,15 +281,16 @@ class DiskTraceStorage:
             if filter and filter not in filename:
                 continue
             tool, http_code, timestamp = parse_trace_filename(filename)
-            if policy.toolExecutionAccess(tool).rejected():
+            access = policy.toolExecutionAccess(tool)
+            if access.rejected():
                 continue
             execution_info = {
                 "trace_file":filename,
                 "tool":      tool,
                 "http_code": http_code,
-                "timestamp": timestamp
+                "date":      timestamp_to_date(timestamp)
             }
-            if with_content or policy.toolExecutionAccess(tool).user_details_needed():
+            if with_content or access.user_details_needed():
                 try:
                     with open(trace_file, 'r') as f:
                         trace_data = json.load(f)
