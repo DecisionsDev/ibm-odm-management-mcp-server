@@ -182,7 +182,7 @@ class MCPServer:
                                                storage_dir = self.traces_dir, 
                                                max_traces = self.traces_maxsize)
 
-        self.toolExecutionAccess = ToolExecutionAccess(full_access=True) if self.transport == "stdio" else ToolExecutionAccess()
+        self.toolExecutionAccess = ToolExecutionAccess(full_access=True)
 
         self.manager = DecisionCenterManager(credentials, self.trace_recorder)
 
@@ -746,9 +746,6 @@ class MCPServer:
             self.server.read_resource  = self.read_resource
         self.server.list_tools = self.list_tools
         self.server.call_tool  = self.call_tool
-
-        # Tool execution access
-        self.toolExecutionAccess = ToolExecutionAccess(full_access=True) if self.transport == "stdio" else ToolExecutionAccess()
 
         if self.essential_tools:
             self.logger.info("Tool profile: ESSENTIAL. Only essential tools are published (see --tool-profile).")
