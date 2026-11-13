@@ -1943,3 +1943,214 @@ def test_init_passes_only_explicit_startup_args():
 def parse_arguments_defaults():
     with patch("sys.argv", ["prog"]):
         return parse_arguments()
+
+# -- Resources registration in start() --------------------------------------
+
+def test_start_registers_resources_handlers_with_stdio():
+    """start() registers list_resources and read_resource handlers when using stdio transport."""
+    credentials = Credentials(odm_url="http://test:9060/decisioncenter-api", username="u", password="p")
+    server = MCPServer(credentials=credentials, transport="stdio")
+    with patch.object(SDK_MCPServer, "run"):
+        server.start()
+    assert server.server.list_resources == server.list_resources
+    assert server.server.read_resource == server.read_resource
+
+
+def test_start_does_not_register_resources_handlers_remote_without_user_credentials():
+    """start() does not register list_resources and read_resource handlers when running remotely without user credentials."""
+    credentials = Credentials(odm_url="http://test:9060/decisioncenter-api", username="u", password="p")
+    server = MCPServer(credentials=credentials, transport="streamable-http")
+    with patch.object(server, "use_user_credentials", return_value=False), \
+         patch.object(SDK_MCPServer, "run"):
+        server.start()
+    assert server.server.list_resources != server.list_resources
+    assert server.server.read_resource != server.read_resource
+
+
+def test_start_registers_resources_handlers_remote_with_user_credentials():
+    """start() registers list_resources and read_resource handlers when running remotely with user credentials."""
+    credentials = Credentials(odm_url="http://test:9060/decisioncenter-api", username="u", password="p")
+    server = MCPServer(
+        credentials=credentials,
+        transport="streamable-http",
+        issuer_url="https://idp.example.com",
+        userinfo_url="https://idp.example.com/userinfo",
+        mcp_ext_url="https://mcp.example.com",
+    )
+    with patch.object(server, "use_user_credentials", return_value=True), \
+         patch.object(SDK_MCPServer, "run"):
+        server.start()
+    assert server.server.list_resources == server.list_resources
+    assert server.server.read_resource == server.read_resource
+
+
+@pytest.mark.asyncio
+async def test_list_resources_returns_trace_files(server, tmp_path):
+    """list_resources() returns Resource objects for trace files in trace_recorder."""
+    trace_file = tmp_path / "tool-200-6a7dd9cc.json"
+    trace_file.touch()
+    ignored_trace_file = tmp_path / "not-a-trace-file.json"
+    ignored_trace_file.touch()
+    server.trace_recorder.trace_files = [str(trace_file), str(ignored_trace_file)]
+
+    resources = await server.list_resources()
+    assert len(resources) == 1
+    assert resources[0].name == trace_file.name
+    assert resources[0].uri == f"file://{trace_file}"
+
+def _server_with_user_traces(tmp_path):
+    """Build a server whose trace storage holds one `branches` trace for user u1 and one for user u2."""
+    from decisioncenter_mcp_server.ToolTrace import DiskTraceStorage, ToolExecutionTrace
+    storage = DiskTraceStorage(trace_executions=True, verbose=True, trace_configuration=False,
+                               storage_dir=str(tmp_path))
+    for subject in ("u1", "u2"):
+        endpoint = Mock()
+        endpoint.tool.name = "branches"
+        storage.save(ToolExecutionTrace(endpoint=endpoint, inputs={}, http_code="200",
+                                        results={"owner": subject}, user={"subject": subject}))
+    cred = Credentials(odm_url="http://test:9060/decisioncenter-api", username="u", password="p")
+    server = MCPServer(credentials=cred)
+    server.trace_recorder = storage
+    return server
+
+
+def _non_admin_policy(subject):
+    from decisioncenter_mcp_server.ToolTrace import ToolExecutionAccess
+    return ToolExecutionAccess(dcAdmin=False, resDeployer=False, user_details={"subject": subject})
+
+
+@pytest.mark.asyncio
+async def test_list_resources_non_admin_sees_only_own_traces(tmp_path):
+    """With user credentials, a non-admin only gets the resources of their own tool executions."""
+    server = _server_with_user_traces(tmp_path)
+    with patch.object(server, "getToolExecutionAccess", return_value=_non_admin_policy("u1")):
+        resources = await server.list_resources()
+    assert len(resources) == 1
+    assert resources[0].name.endswith("-u1.json")
+
+
+@pytest.mark.asyncio
+async def test_read_resource_non_admin_can_read_own_trace(tmp_path):
+    """With user credentials, a non-admin can read the resource of their own tool execution."""
+    server = _server_with_user_traces(tmp_path)
+    with patch.object(server, "getToolExecutionAccess", return_value=_non_admin_policy("u1")):
+        own = (await server.list_resources())[0]
+        contents = await server.read_resource(own.uri)
+    assert json.loads(contents[0].content)["results"] == {"owner": "u1"}
+
+
+@pytest.mark.asyncio
+async def test_read_resource_non_admin_cannot_read_other_users_trace(tmp_path):
+    """With user credentials, a non-admin cannot read another user's trace even if they know its URI."""
+    server = _server_with_user_traces(tmp_path)
+    other = next(f for f in server.trace_recorder.trace_files if f.endswith("-u2.json"))
+    with patch.object(server, "getToolExecutionAccess", return_value=_non_admin_policy("u1")):
+        with pytest.raises(ValueError, match="resource not found"):
+            await server.read_resource(f"file://{other}")
+
+
+
+
+# ---------------------------------------------------------------------------
+# Tool execution access (allow_executions_tool_with_content / getToolExecutionAccess)
+# ---------------------------------------------------------------------------
+
+def _remote_server():
+    cred = Credentials(odm_url="http://localhost:9060/decisioncenter-api", client_id="my-client")
+    return MCPServer(
+        credentials=cred,
+        transport="sse",
+        mcp_ext_url="https://mcp.example.com",
+        issuer_url="https://idp.example.com",
+        introspection_url="https://idp.example.com/introspect",
+    )
+
+
+def test_allow_executions_tool_with_content_stdio():
+    cred = Credentials(odm_url="http://localhost:9060/decisioncenter-api", username="u", password="p")
+    server = MCPServer(credentials=cred)
+    server.trace_recorder.verbose = True
+    assert server.allow_executions_tool_with_content()
+    server.trace_recorder.verbose = False
+    assert not server.allow_executions_tool_with_content()
+
+
+def test_allow_executions_tool_with_content_remote_requires_user_credentials():
+    server = _remote_server()
+    server.trace_recorder.verbose = True
+    with patch.object(server, 'use_user_credentials', return_value=True):
+        assert server.allow_executions_tool_with_content()
+    with patch.object(server, 'use_user_credentials', return_value=False):
+        assert not server.allow_executions_tool_with_content()
+    server.trace_recorder.verbose = False
+    with patch.object(server, 'use_user_credentials', return_value=True):
+        assert not server.allow_executions_tool_with_content()
+
+
+def test_get_tool_execution_access_stdio_is_full_access():
+    from decisioncenter_mcp_server.ToolTrace import ToolExecutionAccess
+    cred = Credentials(odm_url="http://localhost:9060/decisioncenter-api", username="u", password="p")
+    server = MCPServer(credentials=cred)
+    with patch('decisioncenter_mcp_server.MCPServer.SDK_MCPServer'), \
+         patch('decisioncenter_mcp_server.MCPServer.DecisionCenterManager'):
+        server.start()
+    access = server.getToolExecutionAccess()
+    assert isinstance(access, ToolExecutionAccess)
+    assert access.full_access
+    assert access.toolExecutionAccess("branches").granted()
+
+
+def test_get_tool_execution_access_user_credentials():
+    server = _remote_server()
+    cred = Credentials(odm_url="http://localhost:9060/decisioncenter-api", client_id="my-client")
+    cred.isDcAdmin = True
+    cred.isResDeployer = False
+    details = {"subject": "john"}
+    with patch.object(server, 'use_user_credentials', return_value=True), \
+         patch.object(server, 'get_user_credentials', return_value=cred), \
+         patch.object(server, 'get_current_user_details', return_value=details):
+        access = server.getToolExecutionAccess()
+    assert access.dcAdmin is True
+    assert access.resDeployer is False
+    assert access.user_details == details
+    assert not access.full_access
+
+
+@pytest.mark.asyncio
+async def test_call_tool_get_tool_executions_passes_policy(server):
+    from decisioncenter_mcp_server.ToolTrace import ToolExecutionAccess
+    policy = ToolExecutionAccess(full_access=True)
+    server.trace_recorder = Mock()
+    server.trace_recorder.trace_executions = False
+    server.trace_recorder.get_executions.return_value = [{"tool": "branches"}]
+
+    with patch.object(server, 'getToolExecutionAccess', return_value=policy):
+        result = await server.call_tool(MCPServer.get_tools_executions_toolname, {"filter": "branches", "with_content": True}, Mock())
+
+    assert not result.is_error
+    server.trace_recorder.get_executions.assert_called_once_with(policy=policy, filter="branches", with_content=True)
+
+
+@pytest.mark.asyncio
+async def test_list_tools_includes_executions_tool_only_when_published(server):
+    server.trace_recorder.trace_executions = True
+    tools = await server.list_tools()
+    assert MCPServer.get_tools_executions_toolname in [t.name for t in tools]
+
+    server.trace_recorder.trace_executions = False
+    tools = await server.list_tools()
+    assert MCPServer.get_tools_executions_toolname not in [t.name for t in tools]
+
+
+@pytest.mark.asyncio
+async def test_list_tools_executions_tool_variant_depends_on_content_access(server):
+    server.trace_recorder.trace_executions = True
+    with patch.object(server, 'allow_executions_tool_with_content', return_value=True):
+        tools = await server.list_tools()
+    tool = next(t for t in tools if t.name == MCPServer.get_tools_executions_toolname)
+    assert "with_content" in tool.input_schema["properties"]
+
+    with patch.object(server, 'allow_executions_tool_with_content', return_value=False):
+        tools = await server.list_tools()
+    tool = next(t for t in tools if t.name == MCPServer.get_tools_executions_toolname)
+    assert "with_content" not in tool.input_schema["properties"]

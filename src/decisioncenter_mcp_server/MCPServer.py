@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from pathlib import Path
 from typing import Optional, Any, Literal
 import socket
 import inspect
@@ -49,7 +50,7 @@ from jwt import PyJWKClient
 from .Credentials import Credentials
 from .DecisionCenterManager import DecisionCenterManager
 from .DecisionCenterEndpoint import DecisionCenterEndpoint
-from .ToolTrace import DiskTraceStorage
+from .ToolTrace import DiskTraceStorage, ToolExecutionAccess
 from .utils.ssl_utils import merge_ssl_cert_paths
 
 INSTRUCTIONS = """
@@ -64,14 +65,25 @@ class MCPServer:
     get_tools_executions_toolname = "getToolExecutions"
     max_trace_files = 200
 
-    tools_executions_tool = Tool(
+    tools_executions_tool_with_content = Tool(
             name=get_tools_executions_toolname,
             title="Get tool executions",
-            description=f"Get the tool executions with or without content. Useful to keep track of the tools that have been executed, their arguments and results. Only the most recent executions are kept. The number of executions that are kept is defined by the MCP server option --traces-maxsize ({max_trace_files} by default).",
+            description=f"Get tool executions with or without content (input,output,user details). Useful to keep track of the tools that have been executed, their arguments and results. Only the most recent executions are kept. The number of executions that are kept is defined by the MCP server option --traces-maxsize ({max_trace_files} by default).",
             input_schema={'type': 'object', 'required': [], 
                          'properties': {
                             'filter': {'type': 'string', 'description': 'Filter to apply on the tool executions. Only the executions of tools whose name matches the filter will be included in the result. The filter supports partial match.'},
                             'with_content': {'type': 'boolean', 'description': 'Whether to include the content of the tool execution (arguments and results) in the trace. If false, only metadata such as timestamps, tool name and execution status will be included.'}
+                            }
+                        }
+            )
+
+    tools_executions_tool_WITHOUT_content = Tool(
+            name=get_tools_executions_toolname,
+            title="Get tool executions",
+            description=f"Get tool executions (without detail of each execution (input,output,user details)). Useful to keep track of the tools that have been executed. Only the most recent executions are kept. The number of executions that are kept is defined by the MCP server option --traces-maxsize ({max_trace_files} by default).",
+            input_schema={'type': 'object', 'required': [], 
+                         'properties': {
+                            'filter': {'type': 'string', 'description': 'Filter to apply on the tool executions. Only the executions of tools whose name matches the filter will be included in the result. The filter supports partial match.'}
                             }
                         }
             )
@@ -169,6 +181,8 @@ class MCPServer:
                                                trace_configuration = "CONFIGURATION"           in self.trace,
                                                storage_dir = self.traces_dir, 
                                                max_traces = self.traces_maxsize)
+
+        self.toolExecutionAccess = ToolExecutionAccess(full_access=True)
 
         self.manager = DecisionCenterManager(credentials, self.trace_recorder)
 
@@ -551,7 +565,11 @@ class MCPServer:
 
         tags, tools_to_publish, no_tools, essential_tools, msg_client_filtering = self.get_effective_tool_options()
 
-        tools = [MCPServer.tools_executions_tool] if self.trace_recorder.trace_executions else []
+        if not self.trace_recorder.trace_executions:
+            tools = []
+        else:
+            tools = [MCPServer.tools_executions_tool_with_content] if self.allow_executions_tool_with_content() else \
+                    [MCPServer.tools_executions_tool_WITHOUT_content]
         dc_tools_number = res_tools_number = 0
         for tool_name, endpoint in dc_repository.items():
             name = getattr(endpoint, "tool_name", getattr(getattr(endpoint, "tool", None), "name", tool_name))
@@ -578,7 +596,9 @@ class MCPServer:
         def get_tools_executions(arguments):
             filter = arguments.get('filter') if arguments else None
             with_content = arguments.get('with_content', False) if arguments else False
-            return self.trace_recorder.get_executions(filter=filter, with_content=with_content)
+            return self.trace_recorder.get_executions(policy=self.getToolExecutionAccess(),
+                                                      filter=filter,
+                                                      with_content=with_content)
 
         if self.logger.isEnabledFor(logging.DEBUG): self.logger.debug("Calling tool '%s' with arguments: %s", name, arguments)
         else:                                             self.logger.info ("Calling tool '%s'", name)
@@ -641,22 +661,47 @@ class MCPServer:
         """
         List available resources.
         """
-        resources = [Resource(name=os.path.basename(trace_file), uri=f'file://{trace_file}') for trace_file in self.trace_recorder.trace_files]
+        resources: list[Resource] = self.trace_recorder.get_executions(policy=self.getToolExecutionAccess(), output=Resource)
         self.logger.info(f"{len(resources)} resources available")
         return resources
 
     async def read_resource(self, uri: AnyUrl | str, context: Context | None = None) -> list[ReadResourceContents]:
         """
         Read a resource by its URI.
+
+        Args:
+            uri: The URI of the resource, as returned by `list_resources`.
+            context: The optional request context.
+
+        Returns:
+            The contents of the resource.
+
+        Raises:
+            ValueError: If the resource is not one of the resources listed for the current user,
+                if its file is not located in the resources directory, or if the file does not exist.
         """
         uri = str(uri)  # the SDK passes a str; str(AnyUrl) is its encoded form
         self.logger.info(f"Reading resource from URI: {uri}")
+        filepathname = uri[len('file://'):]    # remove the 'file://' prefix to get the local file path
+        filepath     = Path(filepathname).resolve()
+        resources_dir = Path(self.trace_recorder.storage_dir).resolve()
+        
+        if filepath.parent != resources_dir:
+            raise ValueError("resource not found")
+            
+        if str(filepath) not in set(self.trace_recorder.trace_files):
+            raise ValueError("resource not found")
+
+        # the user must be allowed to see this execution, exactly as in `list_resources`
+        allowed = self.trace_recorder.get_executions(policy=self.getToolExecutionAccess(), filter=filepath.name, output=Resource)
+        if f"file://{filepath}" not in {str(resource.uri) for resource in allowed}:
+            raise ValueError("resource not found")
+
         try:
-            filepathname = uri[len('file://'):]    # remove the 'file://' prefix to get the local file path
-            with open(filepathname, 'r') as f:
+            with open(filepath, 'r') as f:
                 return [ReadResourceContents(content=f.read())]
         except FileNotFoundError:
-            raise ValueError(f"resource not found")
+            raise ValueError("resource not found")
 
     def start(self):
 
@@ -672,6 +717,9 @@ class MCPServer:
         else: 
             if self.transport != "stdio": 
                 self.logger.warning("MCP Server running in remote mode, but NOT using users credentials\n" + HOWTO_USE_USERS_CREDENTIALS_MSG)
+                if self.trace_recorder.verbose:
+                    self.logger.warning("The MCP server won't provide tool execution details for security reason because the MCP server is not using users credentials and therefore cannot check if the user should have access to the information.")
+
             token_verifier = None
             auth = None
 
@@ -693,8 +741,9 @@ class MCPServer:
         self.server.middleware.append(request_context_middleware)
 
         # Register handlers
-        self.server.list_resources = self.list_resources
-        self.server.read_resource  = self.read_resource
+        if self.transport == "stdio" or self.use_user_credentials():
+            self.server.list_resources = self.list_resources
+            self.server.read_resource  = self.read_resource
         self.server.list_tools = self.list_tools
         self.server.call_tool  = self.call_tool
 
@@ -775,6 +824,21 @@ class MCPServer:
                     ssl_certfile=self.https_cert_path,
                     ssl_keyfile=self.https_key_path,
                     ssl_keyfile_password=self.https_key_password)
+
+    def allow_executions_tool_with_content(self)-> bool:
+        return self.trace_recorder.verbose and \
+              (self.transport == "stdio" or self.use_user_credentials())
+
+    def getToolExecutionAccess(self) -> ToolExecutionAccess:
+        if self.use_user_credentials():
+            credentials = self.get_user_credentials()
+            return ToolExecutionAccess(dcAdmin=credentials.isDcAdmin,
+                                       resDeployer=credentials.isResDeployer,
+                                       user_details=self.get_current_user_details())
+        else:
+            # in practice, we reach this line in "stdio" mode, and then all the execution traces are available
+            return self.toolExecutionAccess
+        
 
 
 class _SuppressAccessLogForProbes(logging.Filter):

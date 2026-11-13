@@ -17,10 +17,11 @@ import json
 import os
 import glob
 import logging
-import time
+from enum import Enum
 from datetime import datetime, timezone
 from .DecisionCenterEndpoint import DecisionCenterEndpoint
-            
+from mcp_types import Resource
+
 class ToolExecutionTrace:
     """
     Class to store details about a tool execution or configuration
@@ -46,6 +47,62 @@ class ToolExecutionTrace:
         now = datetime.now(timezone.utc)
         self.timestamp = f"{int(now.timestamp()):x}"
         self.iso_timestamp = now.isoformat()
+
+class Access(Enum):
+    GRANTED = 1
+    REJECTED = 2
+    NEED_USER_DETAILS = 3
+
+    def granted(self):
+        return self == Access.GRANTED
+
+    def rejected(self):
+        return self == Access.REJECTED
+
+    def user_details_needed(self):
+        return self == Access.NEED_USER_DETAILS
+
+class ToolExecutionAccess:
+    """
+    Class to assess if a user should have access to a tool execution
+    """
+    
+    def __init__(
+        self,
+        dcAdmin: Optional[bool] = None,
+        resDeployer: Optional[bool] = None,
+        user_details: Optional[Dict[str, Any]] = None,
+        full_access: Optional[bool] = None,
+    ):
+        """
+        Initialize a new ToolExecutionAccess.
+        """
+        self.dcAdmin = dcAdmin
+        self.resDeployer = resDeployer
+        self.user_details = user_details
+        self.full_access = full_access
+
+    def toolExecutionAccess(self, tool:str|None, user_details_or_subject:Optional[Dict[str,Any]|str] = None) -> Access:
+        if self.full_access:
+            return Access.GRANTED
+
+        from .DecisionCenterManager import DecisionCenterManager
+        if self.dcAdmin and tool in DecisionCenterManager.dc_tools:
+            return Access.GRANTED
+        if self.resDeployer and tool in DecisionCenterManager.res_tools:
+            return Access.GRANTED
+
+        if user_details_or_subject is None:
+            return Access.NEED_USER_DETAILS
+
+        if isinstance(user_details_or_subject, dict):
+            subject = subject_from_dict(user_details_or_subject)
+        else:
+            subject = subject_from_str(user_details_or_subject)
+
+        my_subject = subject_from_dict(self.user_details)
+        return Access.GRANTED if (my_subject and my_subject == subject) \
+          else Access.REJECTED
 
 class DiskTraceStorage:
     """
@@ -90,8 +147,15 @@ class DiskTraceStorage:
     def _init_trace_files(self):
         # Initialize an in-memory index of available traces
         self.trace_files = list(filter(os.path.isfile, glob.glob(os.path.join(self.storage_dir, "*.json"))))
-        if 'parsing.json' in self.trace_files:
-            self.trace_files.remove('parsing.json')
+        i = 0
+        while i < len(self.trace_files):
+            trace_file = self.trace_files[i]
+            filename = os.path.basename(trace_file)
+            tool, http_code, timestamp, subject = self.parse_trace_filename(filename)
+            if not tool:
+                del self.trace_files[i]
+            else:
+                i += 1
         self.trace_files.sort(key=lambda x: os.path.getctime(x))   # sort by creation time (from the oldest to the newest)
 
     def save(self, arg):
@@ -160,7 +224,9 @@ class DiskTraceStorage:
         self._exists_storage_dir()
 
         # Save the trace to disk
-        file_path = os.path.join(self.storage_dir, f"{trace.endpoint.tool.name}-{trace.http_code}-{trace.timestamp}.json")
+        user_sub = subject_from_dict(trace.user)
+        filename = f"{trace.endpoint.tool.name}-{trace.http_code}-{trace.timestamp}{f'-{user_sub}' if user_sub else ''}.json"
+        file_path = os.path.join(self.storage_dir, filename)
         with open(file_path, 'w') as f:
             if self.verbose:
                 traces = {
@@ -189,7 +255,28 @@ class DiskTraceStorage:
             except Exception as e:
                 self.logger.warning(f"Error removing traces file {file2remove_path}: {e}")
 
-    def get_executions(self, filter: Optional[str] = None, with_content: bool = False) -> list[Dict[str, Any]]:
+    def parse_trace_filename(self, filename: str):
+        tool = http_code = timestamp = subject = None
+        # Expected filename format: {tool_name}-{http_code}-{timestamp}[-{subject}].json
+        parts = filename.rsplit('.', maxsplit=1)[0].rsplit('-', maxsplit=3)
+        l = len(parts)
+        if l >= 3 and l <=4:
+            if   l == 3:  tool, http_code, timestamp          = parts
+            elif l == 4:  tool, http_code, timestamp, subject = parts
+
+            # check HTTP code is decimal
+            if not http_code or not http_code.isdigit():
+                return None, None, None, None
+
+            # check timestamp is hexadecimal
+            try:
+                int(timestamp, 16)
+            except:
+                return None, None, None, None
+
+        return tool, http_code, timestamp, subject
+
+    def get_executions(self, policy:ToolExecutionAccess, filter: Optional[str] = None, with_content: Optional[bool] = False, output:Optional[type[Resource]|type[dict]] = dict) -> list:
         """
         Get the list of saved tool executions, optionally filtered by tool name.
         
@@ -197,43 +284,54 @@ class DiskTraceStorage:
             filter: Optional string to filter executions by tool name (matches if tool name contains the filter string)
             with_content: Whether to include the inputs and results content in the returned executions
         """
-        def parse_trace_filename(filename: str):
-            # Expected filename format: {tool_name}-{http_code}-{timestamp}.json
-            parts = filename.rsplit('.', 1)[0].split('-')
-            http_code= None
-            timestamp= None
-            if len(parts) >= 2 and parts[1].isdigit():
-                http_code = parts[1]
-            if len(parts) >= 3:
+        def timestamp_to_date(timestamp:str|None):
+            if timestamp:
                 try:  # convert hex timestamp
-                    timestamp = str(datetime.fromtimestamp(int(parts[2], 16)))
+                    return str(datetime.fromtimestamp(int(timestamp, 16)))
                 except Exception as e:
-                    self.logger.debug(f"Error converting timestamp {parts[2]}: {e}")
-            return http_code, timestamp
-            return "unknown", "unknown"
+                    self.logger.debug(f"Error converting timestamp {timestamp}: {e}")
+            return timestamp
 
         executions = []
         for trace_file in self.trace_files:
             filename = os.path.basename(trace_file)
-            if filename == "parsing.json":
-                continue
             if filter and filter not in filename:
                 continue
-            http_code, timestamp = parse_trace_filename(filename)
-            execution_info = {
-                "trace_file":filename,
-                "http_code": http_code,
-                "timestamp": timestamp
-            }
-            if with_content:
+            tool, http_code, timestamp, subject = self.parse_trace_filename(filename)
+            if not tool:
+                continue
+            access = policy.toolExecutionAccess(tool,subject)
+            if access.rejected():
+                continue
+            if output == dict:
+                execution_info = {
+                    "trace_file":filename,
+                    "tool":      tool,
+                    "http_code": http_code,
+                    "date":      timestamp_to_date(timestamp)
+                }
+            if with_content or access.user_details_needed():
                 try:
                     with open(trace_file, 'r') as f:
                         trace_data = json.load(f)
-                    if "user" in trace_data:
-                        execution_info["user"] = trace_data["user"]
-                    execution_info["inputs"] = trace_data.get("inputs", {})
-                    execution_info["results"] = trace_data.get("results", {})
+                    if not policy.toolExecutionAccess(tool,trace_data.get("user")).granted():
+                        continue
+                    if with_content and output == dict:
+                        if "user" in trace_data:
+                            execution_info["user"] = trace_data["user"]
+                        execution_info["inputs"]  = trace_data.get("inputs", {})
+                        execution_info["results"] = trace_data.get("results", {})
                 except Exception as e:
                     self.logger.debug(f"Error reading trace file {trace_file}: {e}")
+                    if access.user_details_needed():
+                        continue
+            if output == Resource:
+                execution_info = Resource(name=filename, uri=f'file://{trace_file}')
             executions.append(execution_info)
         return executions
+
+def subject_from_str(subject:Optional[str] = None) -> str:
+    return subject.replace('-','_') if subject else ""
+
+def subject_from_dict(user_details:Optional[dict[str,Any]] = None) -> str:
+    return subject_from_str(user_details.get("subject")) if isinstance(user_details, dict) else ""

@@ -308,6 +308,14 @@ class TestInvokeDecisionCenterApi:
        with pytest.raises(ValueError, match='Missing argument testId'):
            manager.invokeDecisionCenterApi(sample_endpoint, arguments, run_locally=True)
 
+
+   @pytest.mark.parametrize('bad_value', ['a/b', '../etc', 'a..b', 'a?x=1', 'a#frag'])
+   def test_invoke_with_unsafe_path_parameter(self, manager, sample_endpoint, mock_credentials, bad_value):
+       """Test that path parameters containing '/', '..', '?' or '#' are rejected"""
+       with pytest.raises(ValueError, match='Invalid value for argument testId'):
+           manager.invokeDecisionCenterApi(sample_endpoint, {'testId': bad_value}, run_locally=True)
+       mock_credentials.get_session.return_value.request.assert_not_called()
+
    def test_invoke_with_query_parameters(self, manager, sample_endpoint, mock_credentials):
        """Test invoking API with query parameters"""
        mock_session = mock_credentials.get_session.return_value

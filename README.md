@@ -232,7 +232,7 @@ MCP clients then connect to `https://localhost:3000/mcp`. With a self-signed cer
 >|--------------|----------------------|-------------|---------|
 >| `--log-level`      | `LOG_LEVEL`      | Set the logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) | `INFO` |
 >| `--traces-dir`     | `TRACES_DIR`     | Directory to store tools execution traces | `~/.ibm-odm-management-mcp-server/traces` |
->| `--trace`          | `TRACE`          | Specifies what to trace (`EXECUTIONS`, `EXECUTIONS_WITH_CONTENT`, `CONFIGURATION`) |
+>| `--trace`          | `TRACE`          | Specifies what to trace (`EXECUTIONS`, `EXECUTIONS_WITH_CONTENT`, `CONFIGURATION`). Read more in [Example 9: Monitoring enabled](#example-9-monitoring-enabled) |
 >| `--traces-maxsize` | `TRACES_MAXSIZE` | Maximum number of traces to store before removing oldest traces | `200` |
 
 > Parameters to filter out the tools published
@@ -552,7 +552,7 @@ See [Remote Tool Filtering](/docs/remote-tool-filtering.md).
 
 ### Example 9: Monitoring enabled
 
-With the configuration below, the MCP server records a file named `<tool_name>-<HTTP-response-code>-<timestamp>.json` in the `~/.mcp-server-traces` directory each time a tool is ran. This file is empty. Alternatively it can store the input and output of the tool execution by replacing `EXECUTIONS` with `EXECUTIONS_WITH_CONTENT`.
+With the configuration below, the MCP server records an empty file named `<tool_name>-<HTTP-response-code>-<timestamp>.json` in the `~/.mcp-server-traces` directory each time a tool is ran. Alternatively the file can contain the details of the tool execution (input, output, user details) by replacing `--trace EXECUTIONS` with `--trace EXECUTIONS_WITH_CONTENT`.
 
 ```json
 "args": [
@@ -569,9 +569,25 @@ With the configuration below, the MCP server records a file named `<tool_name>-<
 }
 ```
 
-With this configuration, an additional tool named `getToolExecutions` is available to return the tool executions. By default the MCP server only keeps 200 executions (configurable). When this limit is reached the oldest executions are deleted.
+When tool executions are recorded (`--trace EXECUTIONS`), a tool named `getToolExecutions` is available.
+`getToolExecutions` can query the executions of a specific tool or with a specific HTTP response code. 
 
-This tool can query the executions of a specific tool or with a specific HTTP response code. It can optionally retrieve the inputs used to call the tools and outputs returned provided those information are stored (requires the argument `EXECUTIONS_WITH_CONTENT`).
+When the content of each execution is recorded as well (`--trace EXECUTIONS_WITH_CONTENT`), `getToolExecutions` also enables to retrieve the tool execution details, unless the MCP server is running remotely not using users credentials, in which case the MCP server is unable to assess whether the user is allowed to access the details of a tool execution or not.
+
+1. When running remotely using users credentials, the MCP server allows:
+    - users with the `rtsAdministrators` role to read any DC tool executions details,
+    - users with the `resDeployer` role to read any RES console tool executions details,
+    - other users to read their own tool executions details only,
+
+1. When running remotely WITHOUT using users credentials, the MCP server allows:
+    - all users to query the list of tool executions WITHOUT their details.
+
+1. When running locally (stdio), the MCP server allows:
+    - the user to see their tool executions with their details.
+
+The tool execution details include:
+- the input and output,
+- and the details about the user who ran the tool (only available when running remotely using users credentials).
 
 You can ask the AI agent questions such as:
   ```
@@ -584,9 +600,9 @@ You can ask the AI agent questions such as:
   Which executions failed and for which reason ?
   ```
 
-
-
-> Note: You can also have the MCP server record a file named `parsing.json` containing the list of tools as returned to the AI agent (for debug) by adding the `CONFIGURATION` argument: `"--trace", "EXECUTIONS", "CONFIGURATION",`.
+> [!NOTE]: 
+> - The MCP server only keeps a limited number of executions (200 by default (configurable)). When this limit is reached each new execution trace replace the oldest one.
+> - You can also have the MCP server record a file named `parsing.json` containing the list of tools as returned to the AI agent (for debug) by adding the `CONFIGURATION` argument: `"--trace", "EXECUTIONS", "CONFIGURATION",`.
 
 ## Docker image
 
