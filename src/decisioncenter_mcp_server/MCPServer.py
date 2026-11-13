@@ -569,7 +569,7 @@ class MCPServer:
             tools = []
         else:
             tools = [MCPServer.tools_executions_tool_with_content] if self.allow_executions_tool_with_content() else \
-                                [MCPServer.tools_executions_tool_WITHOUT_content]
+                    [MCPServer.tools_executions_tool_WITHOUT_content]
         dc_tools_number = res_tools_number = 0
         for tool_name, endpoint in dc_repository.items():
             name = getattr(endpoint, "tool_name", getattr(getattr(endpoint, "tool", None), "name", tool_name))
