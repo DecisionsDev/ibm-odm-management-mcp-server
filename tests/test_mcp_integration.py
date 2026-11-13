@@ -113,14 +113,16 @@ async def test_call_unknown_tool_through_protocol(started_server):
 
 @pytest.mark.asyncio
 async def test_list_and_read_resources_through_protocol(started_server, tmp_path):
-    trace_file = tmp_path / "trace.json"
+    trace_file = tmp_path / "tool-200-6a7dd9cc-subject.json"
     trace_file.write_text('{"hello": "world"}')
+    ignored_trace_file = tmp_path / "not-a-trace-file.json"
+    ignored_trace_file.touch()
     started_server.trace_recorder.storage_dir = str(tmp_path)
-    started_server.trace_recorder.trace_files = [str(trace_file)]
+    started_server.trace_recorder.trace_files = [str(trace_file), str(ignored_trace_file)]
 
     async with Client(started_server.server) as client:
         resources = (await client.list_resources()).resources
-        assert [r.name for r in resources] == ["trace.json"]
+        assert [r.name for r in resources] == [trace_file.name]
 
         content = await client.read_resource(str(resources[0].uri))
 

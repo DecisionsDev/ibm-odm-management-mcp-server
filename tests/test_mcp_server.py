@@ -1987,13 +1987,15 @@ def test_start_registers_resources_handlers_remote_with_user_credentials():
 @pytest.mark.asyncio
 async def test_list_resources_returns_trace_files(server, tmp_path):
     """list_resources() returns Resource objects for trace files in trace_recorder."""
-    trace_file = tmp_path / "trace.json"
-    trace_file.write_text("{}")
-    server.trace_recorder.trace_files = [str(trace_file)]
+    trace_file = tmp_path / "tool-200-6a7dd9cc.json"
+    trace_file.touch()
+    ignored_trace_file = tmp_path / "not-a-trace-file.json"
+    ignored_trace_file.touch()
+    server.trace_recorder.trace_files = [str(trace_file), str(ignored_trace_file)]
 
     resources = await server.list_resources()
     assert len(resources) == 1
-    assert resources[0].name == "trace.json"
+    assert resources[0].name == trace_file.name
     assert resources[0].uri == f"file://{trace_file}"
 
 def _server_with_user_traces(tmp_path):

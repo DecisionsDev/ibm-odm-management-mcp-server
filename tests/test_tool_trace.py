@@ -178,12 +178,6 @@ def test_access_full_access_grants_everything():
     assert policy.toolExecutionAccess("unknownTool").granted()
 
 
-def test_access_unknown_tool_is_rejected():
-    policy = ToolExecutionAccess(dcAdmin=True, resDeployer=True)
-    assert policy.toolExecutionAccess("unknownTool").rejected()
-    assert policy.toolExecutionAccess(None).rejected()
-
-
 def test_access_dc_admin_granted_on_dc_tool_only():
     policy = ToolExecutionAccess(dcAdmin=True, resDeployer=False, user_details={"subject": "u1"})
     assert policy.toolExecutionAccess("branches").granted()

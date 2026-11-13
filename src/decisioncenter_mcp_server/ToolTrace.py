@@ -87,15 +87,10 @@ class ToolExecutionAccess:
             return Access.GRANTED
 
         from .DecisionCenterManager import DecisionCenterManager
-        if tool in DecisionCenterManager.dc_tools:
-            if self.dcAdmin:
-                return Access.GRANTED
-        elif tool in DecisionCenterManager.res_tools:
-            if self.resDeployer:
-                return Access.GRANTED
-        else:
-            # unknown tool
-            return Access.REJECTED
+        if self.dcAdmin and tool in DecisionCenterManager.dc_tools:
+            return Access.GRANTED
+        if self.resDeployer and tool in DecisionCenterManager.res_tools:
+            return Access.GRANTED
 
         if user_details_or_subject is None:
             return Access.NEED_USER_DETAILS
@@ -152,8 +147,15 @@ class DiskTraceStorage:
     def _init_trace_files(self):
         # Initialize an in-memory index of available traces
         self.trace_files = list(filter(os.path.isfile, glob.glob(os.path.join(self.storage_dir, "*.json"))))
-        if 'parsing.json' in self.trace_files:
-            self.trace_files.remove('parsing.json')
+        i = 0
+        while i < len(self.trace_files):
+            trace_file = self.trace_files[i]
+            filename = os.path.basename(trace_file)
+            tool, http_code, timestamp, subject = self.parse_trace_filename(filename)
+            if not tool:
+                del self.trace_files[i]
+            else:
+                i += 1
         self.trace_files.sort(key=lambda x: os.path.getctime(x))   # sort by creation time (from the oldest to the newest)
 
     def save(self, arg):
@@ -253,6 +255,27 @@ class DiskTraceStorage:
             except Exception as e:
                 self.logger.warning(f"Error removing traces file {file2remove_path}: {e}")
 
+    def parse_trace_filename(self, filename: str):
+        tool = http_code = timestamp = subject = None
+        # Expected filename format: {tool_name}-{http_code}-{timestamp}[-{subject}].json
+        parts = filename.rsplit('.', maxsplit=1)[0].rsplit('-', maxsplit=3)
+        l = len(parts)
+        if l >= 3 and l <=4:
+            if   l == 3:  tool, http_code, timestamp          = parts
+            elif l == 4:  tool, http_code, timestamp, subject = parts
+
+            # check HTTP code is decimal
+            if not http_code or not http_code.isdigit():
+                return None, None, None, None
+
+            # check timestamp is hexadecimal
+            try:
+                int(timestamp, 16)
+            except:
+                return None, None, None, None
+
+        return tool, http_code, timestamp, subject
+
     def get_executions(self, policy:ToolExecutionAccess, filter: Optional[str] = None, with_content: Optional[bool] = False, output:Optional[type[Resource]|type[dict]] = dict) -> list:
         """
         Get the list of saved tool executions, optionally filtered by tool name.
@@ -261,20 +284,6 @@ class DiskTraceStorage:
             filter: Optional string to filter executions by tool name (matches if tool name contains the filter string)
             with_content: Whether to include the inputs and results content in the returned executions
         """
-        def parse_trace_filename(filename: str):
-            # Expected filename format: {tool_name}-{http_code}-{timestamp}[-{subject}].json
-            parts = filename.rsplit('.', maxsplit=1)[0].rsplit('-', maxsplit=3)
-            tool = http_code = timestamp = subject = None
-            if len(parts) == 4:
-                tool, http_code, timestamp, subject = parts
-            elif len(parts) == 3:
-                tool, http_code, timestamp = parts
-            elif len(parts) == 2:
-                tool, http_code = parts
-            elif len(parts) == 1:
-                tool = parts[0]
-            return tool, http_code, timestamp, subject
-
         def timestamp_to_date(timestamp:str|None):
             if timestamp:
                 try:  # convert hex timestamp
@@ -286,11 +295,11 @@ class DiskTraceStorage:
         executions = []
         for trace_file in self.trace_files:
             filename = os.path.basename(trace_file)
-            if filename == "parsing.json":
-                continue
             if filter and filter not in filename:
                 continue
-            tool, http_code, timestamp, subject = parse_trace_filename(filename)
+            tool, http_code, timestamp, subject = self.parse_trace_filename(filename)
+            if not tool:
+                continue
             access = policy.toolExecutionAccess(tool,subject)
             if access.rejected():
                 continue
