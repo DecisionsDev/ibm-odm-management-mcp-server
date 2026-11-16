@@ -467,7 +467,7 @@ class MCPServer:
     def get_user_credentials(self):
         token = self.get_current_token()
 
-        credentials = self.user_credentials.get(token)
+        credentials: Any | None = self.user_credentials.get(token)
         if credentials is None:
             credentials = Credentials(
                                         odm_url=self.credentials.odm_url,
@@ -488,8 +488,12 @@ class MCPServer:
                     # check if the user credentials grant the rtsAdministrator/rtsInstaller role
                     credentials.isDcAdmin = self.manager.isDcAdmin(credentials.odm_url, session)
 
+                    if not credentials.isDcAdmin and os.getenv("CHECK_RTSUSER_ROLE", "False") == "True":
+                        # check if the user credentials grant the rtsUser role
+                        credentials.isDcUser = self.manager.isDcUser(credentials.odm_url, session)
+
                     # check if the user credentials grant the resMonitor and resDeployer roles
-                    self.manager.check_res_roles(credentials)
+                    self.manager.check_res_roles(credentials, session)
             except PermissionError:
                 pass
             finally:
@@ -557,7 +561,8 @@ class MCPServer:
 
         # select the list of tools based on the roles granted to the credentials used
         if   credentials.isDcAdmin:     dc_repository = self.repository_dc_admin
-        else:                           dc_repository = self.repository_dc
+        elif credentials.isDcUser:      dc_repository = self.repository_dc
+        else:                           dc_repository = {}
 
         if   credentials.isResDeployer: res_repository = self.repository_res_deployer
         elif credentials.isResMonitor:  res_repository = self.repository_res_monitor

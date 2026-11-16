@@ -309,6 +309,24 @@ class DecisionCenterManager:
             self.logger.info("Assuming connected without rtsAdministrator role")
             return False
             
+    def isDcUser(self, uri:str, session):
+        if uri is None:
+            return False
+        try:
+            response = session.get(uri + '/v1/decisionservices/0000',
+                                   headers=session.headers,
+                                   verify=self.credentials.cacert)
+            if response.status_code in (404, 200):
+                self.logger.info("Connected with the rtsUser role")
+                return True
+            else:
+                self.logger.info("Connected without the rtsUser role")
+                return False
+        except Exception as e:
+            self.logger.warning("Failed to check if the credentials grant the rtsUser role: %s", e)
+            self.logger.info("Assuming connected without the rtsUser role")
+            return False
+
     def isResDeployer(self, uri:str, session):
         try:
             response = session.delete(uri + '/apiauth/v1/executionunits/statistics/fake-ruleapp/99999.9/fake-ruleset/99999.9',
@@ -625,7 +643,7 @@ class DecisionCenterManager:
         self.logger.info("Successfully generated the MCP tools for the Decision Center REST API")
         return tools, tools_admin
 
-    def _fetch_res_api_endpoints(self, uri:str, credentials, only_check_roles: bool = False):
+    def _fetch_res_api_endpoints(self, uri:str, credentials, only_check_roles: bool = False, available_session = None):
         """
         :no-index:
         Fetches the WADL description of the Decision Server REST API
@@ -638,10 +656,11 @@ class DecisionCenterManager:
                 content = file.read()
                 return content
 
-        session = None
+        session = available_session
         response = None
         try:
-            session = credentials.get_session()
+            if session is None:
+                session = credentials.get_session()
 
             if credentials.isResDeployer is None:
                 # check if the credentials grant the resDeployer role (giving access to the restricted RES console tools)
@@ -665,9 +684,10 @@ class DecisionCenterManager:
             raise(e)
 
         finally:
-            if session is not None:
-                session.close()
-            credentials.cleanup()
+            if available_session is None:
+                if session is not None:
+                    session.close()
+                credentials.cleanup()
 
         # Check if the request was successful
         if response.status_code == 200:
@@ -701,9 +721,9 @@ class DecisionCenterManager:
             credentials = self.credentials
         return self._fetch_res_api_endpoints(self.credentials.odm_res_url, credentials)
 
-    def check_res_roles(self, credentials):
+    def check_res_roles(self, credentials, session):
         if self.credentials.odm_res_url:
-            self._fetch_res_api_endpoints(self.credentials.odm_res_url, credentials, only_check_roles = True)
+            self._fetch_res_api_endpoints(self.credentials.odm_res_url, credentials, only_check_roles = True, available_session = session)
 
     def generate_res_tools(self, wadl : str, tags_to_publish: list[str] = [], tools_to_publish: list[str] = [], tools_to_ignore: list[str] = [], essential_tools_only: bool = False):
         """
