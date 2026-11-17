@@ -72,7 +72,8 @@ class Credentials:
         else:
             self.cacert = None
 
-        self.isDcAdmin = None
+        self.isDcAdmin:bool = None
+        self.isDcUser = True
         self.isResDeployer = None
         self.isResMonitor = None
         self.username = username
