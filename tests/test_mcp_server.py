@@ -1060,7 +1060,7 @@ def test_get_mcp_token_uses_userinfo_when_no_introspection():
 
     with patch.object(server, 'validate_token_via_userinfo', return_value=fake_token) as mock_userinfo, \
          patch.object(server, 'introspect_token') as mock_introspect:
-        result = server.get_mcp_token("t")
+        result, _ = server.get_mcp_token("t")
 
     mock_userinfo.assert_called_once_with("t")
     mock_introspect.assert_not_called()
@@ -1079,7 +1079,7 @@ def test_get_mcp_token_uses_introspection_when_both_urls_set():
 
     with patch.object(server, 'introspect_token', return_value=fake_token) as mock_introspect, \
          patch.object(server, 'validate_token_via_userinfo') as mock_userinfo:
-        result = server.get_mcp_token("t")
+        result, _ = server.get_mcp_token("t")
 
     mock_introspect.assert_called_once_with("t")
     mock_userinfo.assert_not_called()
@@ -1519,7 +1519,7 @@ def test_get_mcp_token_uses_decode_when_jwks_url_set():
     fake = AccessToken(token="t", client_id="c", scopes=[], expires_at=9999999999)
 
     with patch.object(server, 'decode_token', return_value=fake) as mock_decode:
-        result = server.get_mcp_token("t")
+        result, _ = server.get_mcp_token("t")
 
     mock_decode.assert_called_once_with("t")
     assert result == fake
@@ -1535,7 +1535,7 @@ def test_get_mcp_token_falls_back_to_introspection_when_decode_fails():
 
     with patch.object(server, 'decode_token', return_value=None), \
          patch.object(server, 'introspect_token', return_value=fake) as mock_introspect:
-        result = server.get_mcp_token("t")
+        result, _ = server.get_mcp_token("t")
 
     mock_introspect.assert_called_once_with("t")
     assert result == fake
@@ -1585,9 +1585,11 @@ def test_token_becoming_inactive_after_ttl_is_rejected():
     inactive = _introspection_response({"active": False})
 
     with patch("requests.post", side_effect=[active, inactive]) as mock_post:
-        assert server.get_mcp_token("tok") is not None
+        mcp_token, _ = server.get_mcp_token("tok")
+        assert mcp_token is not None
         clock.advance(min(ttl, TOKEN_MAX_TTL) + 1)
-        assert server.get_mcp_token("tok") is None
+        mcp_token, _ = server.get_mcp_token("tok")
+        assert mcp_token is None
 
     assert mock_post.call_count == 2
 
@@ -1603,7 +1605,7 @@ def test_token_without_exp_is_revalidated_after_ttl():
 
     body = {"active": True, "sub": "u1", "scope": "openid"}  # no exp
     with patch("requests.post", side_effect=lambda **kw: _introspection_response(body)) as mock_post:
-        first = server.get_mcp_token("tok")
+        first, _ = server.get_mcp_token("tok")
         assert first is not None
         assert first.expires_at > 0
 
@@ -1612,7 +1614,8 @@ def test_token_without_exp_is_revalidated_after_ttl():
         assert mock_post.call_count == 1  # still cached
 
         clock.advance(2)
-        assert server.get_mcp_token("tok") is not None
+        mcp_token, _ = server.get_mcp_token("tok")
+        assert mcp_token is not None
         assert mock_post.call_count == 2  # re-validated after the TTL
 
 
@@ -1654,7 +1657,8 @@ def test_cache_avoids_idp_calls_within_ttl():
     body = {"active": True, "sub": "u1", "scope": "openid", "exp": int(time.time()) + 3600}
     with patch("requests.post", return_value=_introspection_response(body)) as mock_post:
         for _ in range(3):
-            assert server.get_mcp_token("tok") is not None
+            mcp_token, _ = server.get_mcp_token("tok")
+            assert mcp_token is not None
             clock.advance(10)
     assert mock_post.call_count == 1
 

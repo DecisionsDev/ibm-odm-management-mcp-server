@@ -354,11 +354,13 @@ class MCPServer:
             return 0 if mcp_token is None or mcp_token.expires_at is None else max(0, mcp_token.expires_at - int(time.time()))
 
         if token is None:
-            return None
+            return None, None
         if token_info := self.token_cache.get(token):
-            mcp_token : AccessToken | None = token_info.mcp_token
+            mcp_token   : AccessToken | None = token_info.mcp_token
+            credentials : Credentials | None = token_info.credentials
         else:
             mcp_token = None
+            credentials = None
             for method in self._token_validation_order:
                 url, validate_fn = self._token_validation_map[method]()
                 if url:
@@ -384,7 +386,7 @@ class MCPServer:
             validity = token_ttl(mcp_token)
             self.logger.debug("token %s", f"expiring in {validity} seconds" if validity > 0 else "expired")
 
-        return mcp_token
+        return mcp_token, credentials
 
     def token_overview(self, token):
         return token[:5] + '...' + token[-5:]
@@ -485,13 +487,14 @@ class MCPServer:
 
     def get_user_credentials(self):
         token = self.get_current_token()
-
-        if token_info := self.token_cache.get(token):
-            credentials = token_info.credentials
-            self.logger.debug(f"Using user credentials. user token: '{self.token_overview(credentials.token)}'")
-            return credentials
-        else:
+        _, credentials = self.get_mcp_token(token)
+        if credentials is None:
             raise MCPError(INVALID_REQUEST, "Authentication required.")
+
+        if self.logger.isEnabledFor(logging.DEBUG):
+            self.logger.debug(f"Using user credentials. user token: '{self.token_overview(credentials.token)}'")
+        self.check_user_roles(credentials)
+        return credentials
 
     def check_user_roles(self, credentials):
         if None in (credentials.isDcAdmin,
@@ -564,7 +567,6 @@ class MCPServer:
         """
         if self.use_user_credentials():
             credentials = self.get_user_credentials()
-            self.check_user_roles(credentials)
         else:
             credentials = self.credentials
 
@@ -678,7 +680,7 @@ class MCPServer:
         """
         List available resources.
         """
-        resources: list[Resource] = self.trace_recorder.get_executions(policy=self.getToolExecutionAccess(check_user_roles=True), output=Resource)
+        resources: list[Resource] = self.trace_recorder.get_executions(policy=self.getToolExecutionAccess(), output=Resource)
         self.logger.info(f"{len(resources)} resources available")
         return resources
 
@@ -846,11 +848,9 @@ class MCPServer:
         return self.trace_recorder.verbose and \
               (self.transport == "stdio" or self.use_user_credentials())
 
-    def getToolExecutionAccess(self, check_user_roles:bool = False) -> ToolExecutionAccess:
+    def getToolExecutionAccess(self) -> ToolExecutionAccess:
         if self.use_user_credentials():
             credentials = self.get_user_credentials()
-            if check_user_roles:
-                self.check_user_roles(credentials)
             return ToolExecutionAccess(dcAdmin=credentials.isDcAdmin,
                                        resDeployer=credentials.isResDeployer,
                                        user_details=self.get_current_user_details())
@@ -1120,7 +1120,8 @@ class AccessTokenVerifier(TokenVerifier):
         self.mcpserver = mcpserver
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        return self.mcpserver.get_mcp_token(token)
+        mcp_token, _ = self.mcpserver.get_mcp_token(token)
+        return mcp_token
 
 JWKS_TTL:int          = int(os.getenv("JWKS_TTL",          3600))
 TOKEN_DEFAULT_TTL:int = int(os.getenv("TOKEN_DEFAULT_TTL",  300))
