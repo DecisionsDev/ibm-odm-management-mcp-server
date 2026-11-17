@@ -1127,12 +1127,12 @@ TOKEN_DEFAULT_TTL:int = int(os.getenv("TOKEN_DEFAULT_TTL",  300))
 TOKEN_MAX_TTL:int     = int(os.getenv("TOKEN_MAX_TTL",     3600))
 
 def token_ttu(_key, item, now):
-    if isinstance(item, AccessTokenInfo) and item.ttl > 0:
-        return now + min(item.ttl, TOKEN_MAX_TTL)
+    if isinstance(item, AccessTokenInfo):
+        return now + item.ttl
     return now
 
 class AccessTokenInfo():
     def __init__(self, mcp_token:AccessToken, credentials:Credentials, ttl):
         self.mcp_token = mcp_token
         self.credentials = credentials
-        self.ttl = ttl
+        self.ttl = min(ttl, TOKEN_MAX_TTL)
