@@ -469,14 +469,14 @@ class MCPServer:
         """
         access_token = get_access_token()
         if access_token is None:
-            raise Exception("No access token found for the current request")
+            raise MCPError(INVALID_REQUEST, "No access token found for the current request")
         return access_token.token
 
     def get_current_user_details(self) -> dict[str, Any]:
         """Return user details (subject and all claims) from the access token of the current request."""
         access_token = get_access_token()
         if access_token is None:
-            raise Exception("No access token found for the current request")
+            raise MCPError(INVALID_REQUEST, "No access token found for the current request")
 
         user_details = {}
         if access_token.subject is not None:
@@ -705,22 +705,19 @@ class MCPServer:
         filepath     = Path(filepathname).resolve()
         resources_dir = Path(self.trace_recorder.storage_dir).resolve()
         
-        if filepath.parent != resources_dir:
-            raise ValueError("resource not found")
-            
-        if str(filepath) not in set(self.trace_recorder.trace_files):
-            raise ValueError("resource not found")
+        if filepath.parent != resources_dir or str(filepath) not in set(self.trace_recorder.trace_files):
+            raise MCPError(INVALID_REQUEST, "Invalid resource")
 
         # the user must be allowed to see this execution, exactly as in `list_resources`
         allowed = self.trace_recorder.get_executions(policy=self.getToolExecutionAccess(), filter=filepath.name, output=Resource)
         if f"file://{filepath}" not in {str(resource.uri) for resource in allowed}:
-            raise ValueError("resource not found")
+            raise MCPError(INVALID_REQUEST, "Forbidden resource")
 
         try:
             with open(filepath, 'r') as f:
                 return [ReadResourceContents(content=f.read())]
         except FileNotFoundError:
-            raise ValueError("resource not found")
+            raise MCPError(INVALID_REQUEST, "Resource not found")
 
     def start(self):
 
