@@ -20,6 +20,7 @@ import logging
 from mcp_types import Tool, TextContent
 from mcp.server import MCPServer as SDK_MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.shared.exceptions import MCPError
 import json
 from decisioncenter_mcp_server.MCPServer   import MCPServer, parse_arguments, create_credentials, init, init_logging
 from decisioncenter_mcp_server.Credentials import Credentials
@@ -2181,7 +2182,7 @@ async def test_read_resource_non_admin_cannot_read_other_users_trace(tmp_path):
     server = _server_with_user_traces(tmp_path)
     other = next(f for f in server.trace_recorder.trace_files if f.endswith("-u2.json"))
     with patch.object(server, "getToolExecutionAccess", return_value=_non_admin_policy("u1")):
-        with pytest.raises(ValueError, match="resource not found"):
+        with pytest.raises(MCPError, match="Forbidden resource"):
             await server.read_resource(f"file://{other}")
 
 
