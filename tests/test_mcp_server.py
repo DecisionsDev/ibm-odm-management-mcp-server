@@ -1608,7 +1608,7 @@ def test_token_without_exp_is_revalidated_after_ttl():
     with patch("requests.post", side_effect=lambda **kw: _introspection_response(body)) as mock_post:
         first, _ = server.get_mcp_token("tok")
         assert first is not None
-        assert first.expires_at > 0
+        assert first.expires_at is None  # no exp: the SDK does not check expiry, the cache TTL bounds validity
 
         clock.advance(TOKEN_DEFAULT_TTL - 1)
         server.get_mcp_token("tok")
@@ -1618,6 +1618,72 @@ def test_token_without_exp_is_revalidated_after_ttl():
         mcp_token, _ = server.get_mcp_token("tok")
         assert mcp_token is not None
         assert mock_post.call_count == 2  # re-validated after the TTL
+
+
+def test_token_with_past_exp_is_not_cached():
+    """A token whose exp is already past is returned as is (the SDK rejects it) but never cached."""
+    import time
+
+    server = _make_server_with_userinfo(
+        userinfo_url=None, introspection_url="https://idp.example.com/oauth2/introspect")
+    clock = _FakeClock()
+    _use_fake_clock_caches(server, clock)
+
+    body = {"active": True, "sub": "u1", "scope": "openid", "exp": int(time.time()) - 60}
+    with patch("requests.post", side_effect=lambda **kw: _introspection_response(body)) as mock_post:
+        first, _ = server.get_mcp_token("tok")
+        assert first is not None
+        assert first.expires_at is not None
+        assert first.expires_at < int(time.time())  # the SDK bearer check rejects it
+
+        server.get_mcp_token("tok")
+        assert mock_post.call_count == 2  # not cached, validated again
+    assert "tok" not in server.token_cache
+
+
+def test_token_exp_beyond_max_ttl_is_revalidated_after_max_ttl():
+    """A token valid longer than TOKEN_MAX_TTL is cached for TOKEN_MAX_TTL only, to detect revocation."""
+    import time
+    from decisioncenter_mcp_server.MCPServer import TOKEN_MAX_TTL
+
+    server = _make_server_with_userinfo(
+        userinfo_url=None, introspection_url="https://idp.example.com/oauth2/introspect")
+    clock = _FakeClock()
+    _use_fake_clock_caches(server, clock)
+
+    body = {"active": True, "sub": "u1", "scope": "openid", "exp": int(time.time()) + 10 * TOKEN_MAX_TTL}
+    with patch("requests.post", side_effect=lambda **kw: _introspection_response(body)) as mock_post:
+        server.get_mcp_token("tok")
+        clock.advance(TOKEN_MAX_TTL - 1)
+        server.get_mcp_token("tok")
+        assert mock_post.call_count == 1  # still cached
+
+        clock.advance(2)
+        mcp_token, _ = server.get_mcp_token("tok")
+        assert mcp_token is not None
+        assert mock_post.call_count == 2  # re-validated after TOKEN_MAX_TTL
+
+
+def test_token_without_exp_ttl_is_capped_by_max_ttl():
+    """When TOKEN_DEFAULT_TTL exceeds TOKEN_MAX_TTL, a token without exp is still cached for TOKEN_MAX_TTL."""
+    from decisioncenter_mcp_server.MCPServer import TOKEN_MAX_TTL
+
+    server = _make_server_with_userinfo(
+        userinfo_url=None, introspection_url="https://idp.example.com/oauth2/introspect")
+    clock = _FakeClock()
+    _use_fake_clock_caches(server, clock)
+
+    body = {"active": True, "sub": "u1", "scope": "openid"}  # no exp
+    with patch("decisioncenter_mcp_server.MCPServer.TOKEN_DEFAULT_TTL", 2 * TOKEN_MAX_TTL), \
+         patch("requests.post", side_effect=lambda **kw: _introspection_response(body)) as mock_post:
+        server.get_mcp_token("tok")
+        clock.advance(TOKEN_MAX_TTL - 1)
+        server.get_mcp_token("tok")
+        assert mock_post.call_count == 1  # still cached
+
+        clock.advance(2)
+        server.get_mcp_token("tok")
+        assert mock_post.call_count == 2  # capped by TOKEN_MAX_TTL, not TOKEN_DEFAULT_TTL
 
 
 def test_kid_removed_from_jwks_is_rejected_after_ttl():

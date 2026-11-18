@@ -273,7 +273,7 @@ class MCPServer:
             token      = token,
             client_id  = payload.get("azp") or payload.get("client_id", self.credentials.client_id),
             scopes     = payload.get("scope", self.credentials.scope).split(),
-            expires_at = payload.get("exp", int(time.time()) + TOKEN_DEFAULT_TTL),
+            expires_at = payload.get("exp"),
             resource   = payload.get("aud"),
             subject    = payload.get("sub", "unknown"),
             claims     = claims,
@@ -313,7 +313,7 @@ class MCPServer:
                     token     = token,
                     client_id = response_body.get("client_id", self.credentials.client_id),
                     scopes    = response_body.get("scope", self.credentials.scope).split(),
-                    expires_at= response_body.get("exp", int(time.time()) + TOKEN_DEFAULT_TTL),
+                    expires_at= response_body.get("exp"),
                     resource  = response_body.get("aud"),  # Include resource in token
                     subject   = response_body.get("sub", "unknown"),
                     claims    = claims,
@@ -343,7 +343,7 @@ class MCPServer:
                     token     = token,
                     client_id = self.credentials.client_id,
                     scopes    = response_body.get("scope", self.credentials.scope).split(),
-                    expires_at= response_body.get("exp", int(time.time()) + TOKEN_DEFAULT_TTL),
+                    expires_at= response_body.get("exp"),
                     resource  = response_body.get("aud"),
                     subject   = response_body.get("sub", "unknown"),
                     claims    = claims,
@@ -351,7 +351,28 @@ class MCPServer:
 
     def get_mcp_token(self, token:str):
         def token_ttl(mcp_token:AccessToken|None) -> int:
-            return 0 if mcp_token is None or mcp_token.expires_at is None else max(0, mcp_token.expires_at - int(time.time()))
+            """
+            Defines how long the token is kept in cache and consequently when it will be validated again
+            """
+            if mcp_token is None or not mcp_token.expires_at:
+                # the expiry is missing. Use defaults
+                return min(TOKEN_DEFAULT_TTL, TOKEN_MAX_TTL)
+            validity = mcp_token.expires_at - int(time.time())
+            if validity < 0:
+                # the expiry time is past due so the SDK is going to reject the token. No need to keep the token in cache
+                return 0
+            else:
+                # cap the expiry to at most TOKEN_MAX_TTL seconds, enabling to check after that duration if the token has been revoked
+                return min(validity, TOKEN_MAX_TTL)
+
+        def token_expiration_msg(mcp_token:AccessToken|None) -> str:
+            if mcp_token is None:
+                return "mcp_token unexpectedly None"
+            if not mcp_token.expires_at:
+                return f"Token expiration unknown, defaults to {token_ttl(mcp_token)} seconds"
+            if mcp_token.expires_at < int(time.time()):
+                return "Token expired"
+            return f"Token expiring in {token_ttl(mcp_token)} seconds"
 
         if token is None:
             return None, None
@@ -383,8 +404,7 @@ class MCPServer:
                         break
 
         if mcp_token and self.logger.isEnabledFor(logging.DEBUG):
-            validity = token_ttl(mcp_token)
-            self.logger.debug("token %s", f"expiring in {validity} seconds" if validity > 0 else "expired")
+            self.logger.debug(token_expiration_msg(mcp_token))
 
         return mcp_token, credentials
 
@@ -1133,4 +1153,4 @@ class AccessTokenInfo():
     def __init__(self, mcp_token:AccessToken, credentials:Credentials, ttl):
         self.mcp_token = mcp_token
         self.credentials = credentials
-        self.ttl = min(ttl, TOKEN_MAX_TTL)
+        self.ttl = ttl
