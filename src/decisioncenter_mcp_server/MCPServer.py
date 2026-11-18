@@ -113,7 +113,12 @@ class MCPServer:
         "LOG_LEVEL": False, "TAGS": False, "TOOLS": False, "NO_TOOLS": False, "TOOL_PROFILE": False,
         "TRACE": False, "TRACES_DIR": False, "TRACES_MAXSIZE": False,
         "STARTUP_RETRIES_COUNT": False, "STARTUP_RETRIES_PERIOD": False, "RUNNING_IN_POD": False,
+        "JWKS_TTL": False, "TOKEN_DEFAULT_TTL": False, "TOKEN_MAX_TTL": False,
     }
+
+    JWKS_TTL:int          = int(os.getenv("JWKS_TTL",          3600))
+    TOKEN_DEFAULT_TTL:int = int(os.getenv("TOKEN_DEFAULT_TTL",  300))
+    TOKEN_MAX_TTL:int     = int(os.getenv("TOKEN_MAX_TTL",     3600))
 
     DEFAULT_JWT_ALGORITHMS = ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256"]
     DEFAULT_TOKEN_VALIDATION_ORDER = ["jwks", "introspect", "userinfo"]
@@ -149,7 +154,7 @@ class MCPServer:
         self.mcp_ext_url = mcp_ext_url
         self.jwks_url    = jwks_url
         self.jwt_algorithms = jwt_algorithms if jwt_algorithms else self.DEFAULT_JWT_ALGORITHMS
-        self._jwks_cache : TTLCache = TTLCache(maxsize=20, ttl=JWKS_TTL)  # key = kid, value = signing key
+        self._jwks_cache : TTLCache = TTLCache(maxsize=20, ttl=self.JWKS_TTL)  # key = kid, value = signing key
         self._token_validation_order = self._parse_token_validation_order()
         self._token_validation_map = {
             "jwks":       lambda: (self.jwks_url,           self.decode_token),
@@ -356,14 +361,14 @@ class MCPServer:
             """
             if mcp_token is None or not mcp_token.expires_at:
                 # the expiry is missing. Use defaults
-                return min(TOKEN_DEFAULT_TTL, TOKEN_MAX_TTL)
+                return min(self.TOKEN_DEFAULT_TTL, self.TOKEN_MAX_TTL)
             validity = mcp_token.expires_at - int(time.time())
             if validity < 0:
                 # the expiry time is past due so the SDK is going to reject the token. No need to keep the token in cache
                 return 0
             else:
                 # cap the expiry to at most TOKEN_MAX_TTL seconds, enabling to check after that duration if the token has been revoked
-                return min(validity, TOKEN_MAX_TTL)
+                return min(validity, self.TOKEN_MAX_TTL)
 
         def token_expiration_msg(mcp_token:AccessToken|None) -> str:
             if mcp_token is None:
@@ -1139,10 +1144,6 @@ class AccessTokenVerifier(TokenVerifier):
     async def verify_token(self, token: str) -> AccessToken | None:
         mcp_token, _ = self.mcpserver.get_mcp_token(token)
         return mcp_token
-
-JWKS_TTL:int          = int(os.getenv("JWKS_TTL",          3600))
-TOKEN_DEFAULT_TTL:int = int(os.getenv("TOKEN_DEFAULT_TTL",  300))
-TOKEN_MAX_TTL:int     = int(os.getenv("TOKEN_MAX_TTL",     3600))
 
 def token_ttu(_key, item, now):
     if isinstance(item, AccessTokenInfo):
