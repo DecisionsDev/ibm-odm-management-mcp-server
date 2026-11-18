@@ -1559,9 +1559,9 @@ class _FakeClock:
 def _use_fake_clock_caches(server, clock):
     """Rebuild the server caches so that their expiry is driven by *clock*."""
     from cachetools import TTLCache, TLRUCache
-    from decisioncenter_mcp_server.MCPServer import JWKS_TTL, token_ttu
+    from decisioncenter_mcp_server.MCPServer import token_ttu
     server.token_cache = TLRUCache(maxsize=512, ttu=token_ttu, timer=clock)
-    server._jwks_cache = TTLCache(maxsize=20, ttl=JWKS_TTL, timer=clock)
+    server._jwks_cache = TTLCache(maxsize=20, ttl=server.JWKS_TTL, timer=clock)
 
 
 def _introspection_response(body: dict) -> Mock:
@@ -1574,7 +1574,6 @@ def _introspection_response(body: dict) -> Mock:
 def test_token_becoming_inactive_after_ttl_is_rejected():
     """A cached token must be re-introspected after its TTL and rejected once active is false."""
     import time
-    from decisioncenter_mcp_server.MCPServer import TOKEN_MAX_TTL
 
     server = _make_server_with_userinfo(
         userinfo_url=None, introspection_url="https://idp.example.com/oauth2/introspect")
@@ -1588,7 +1587,7 @@ def test_token_becoming_inactive_after_ttl_is_rejected():
     with patch("requests.post", side_effect=[active, inactive]) as mock_post:
         mcp_token, _ = server.get_mcp_token("tok")
         assert mcp_token is not None
-        clock.advance(min(ttl, TOKEN_MAX_TTL) + 1)
+        clock.advance(min(ttl, server.TOKEN_MAX_TTL) + 1)
         mcp_token, _ = server.get_mcp_token("tok")
         assert mcp_token is None
 
@@ -1597,7 +1596,6 @@ def test_token_becoming_inactive_after_ttl_is_rejected():
 
 def test_token_without_exp_is_revalidated_after_ttl():
     """A token with no exp claim is cached for TOKEN_DEFAULT_TTL, then re-validated."""
-    from decisioncenter_mcp_server.MCPServer import TOKEN_DEFAULT_TTL
 
     server = _make_server_with_userinfo(
         userinfo_url=None, introspection_url="https://idp.example.com/oauth2/introspect")
@@ -1610,7 +1608,7 @@ def test_token_without_exp_is_revalidated_after_ttl():
         assert first is not None
         assert first.expires_at is None  # no exp: the SDK does not check expiry, the cache TTL bounds validity
 
-        clock.advance(TOKEN_DEFAULT_TTL - 1)
+        clock.advance(server.TOKEN_DEFAULT_TTL - 1)
         server.get_mcp_token("tok")
         assert mock_post.call_count == 1  # still cached
 
@@ -1644,17 +1642,18 @@ def test_token_with_past_exp_is_not_cached():
 def test_token_exp_beyond_max_ttl_is_revalidated_after_max_ttl():
     """A token valid longer than TOKEN_MAX_TTL is cached for TOKEN_MAX_TTL only, to detect revocation."""
     import time
-    from decisioncenter_mcp_server.MCPServer import TOKEN_MAX_TTL
 
     server = _make_server_with_userinfo(
         userinfo_url=None, introspection_url="https://idp.example.com/oauth2/introspect")
     clock = _FakeClock()
     _use_fake_clock_caches(server, clock)
 
-    body = {"active": True, "sub": "u1", "scope": "openid", "exp": int(time.time()) + 10 * TOKEN_MAX_TTL}
-    with patch("requests.post", side_effect=lambda **kw: _introspection_response(body)) as mock_post:
+    custom_max_ttl = 60
+    body = {"active": True, "sub": "u1", "scope": "openid", "exp": int(time.time()) + 10 * custom_max_ttl}
+    with patch.object(MCPServer, "TOKEN_MAX_TTL", custom_max_ttl), \
+         patch("requests.post", side_effect=lambda **kw: _introspection_response(body)) as mock_post:
         server.get_mcp_token("tok")
-        clock.advance(TOKEN_MAX_TTL - 1)
+        clock.advance(custom_max_ttl - 1)
         server.get_mcp_token("tok")
         assert mock_post.call_count == 1  # still cached
 
@@ -1666,7 +1665,6 @@ def test_token_exp_beyond_max_ttl_is_revalidated_after_max_ttl():
 
 def test_token_without_exp_ttl_is_capped_by_max_ttl():
     """When TOKEN_DEFAULT_TTL exceeds TOKEN_MAX_TTL, a token without exp is still cached for TOKEN_MAX_TTL."""
-    from decisioncenter_mcp_server.MCPServer import TOKEN_MAX_TTL
 
     server = _make_server_with_userinfo(
         userinfo_url=None, introspection_url="https://idp.example.com/oauth2/introspect")
@@ -1674,10 +1672,10 @@ def test_token_without_exp_ttl_is_capped_by_max_ttl():
     _use_fake_clock_caches(server, clock)
 
     body = {"active": True, "sub": "u1", "scope": "openid"}  # no exp
-    with patch("decisioncenter_mcp_server.MCPServer.TOKEN_DEFAULT_TTL", 2 * TOKEN_MAX_TTL), \
+    with patch.object(MCPServer, "TOKEN_DEFAULT_TTL", 2 * server.TOKEN_MAX_TTL), \
          patch("requests.post", side_effect=lambda **kw: _introspection_response(body)) as mock_post:
         server.get_mcp_token("tok")
-        clock.advance(TOKEN_MAX_TTL - 1)
+        clock.advance(server.TOKEN_MAX_TTL - 1)
         server.get_mcp_token("tok")
         assert mock_post.call_count == 1  # still cached
 
@@ -1690,31 +1688,31 @@ def test_kid_removed_from_jwks_is_rejected_after_ttl():
     """Once the JWKS cache entry expires, a kid no longer published by the IdP is rejected."""
     import time
     from jwt import PyJWK
-    from decisioncenter_mcp_server.MCPServer import JWKS_TTL
 
     private_key, public_key = _make_rsa_key_pair()
     kid = "key-1"
     token = _make_signed_jwt(private_key, {"sub": "u1", "scope": "openid", "exp": int(time.time()) + 3600}, kid=kid)
     signing_key = PyJWK.from_dict(_make_jwk_set(public_key, kid=kid)["keys"][0])
 
+    custom_jwks_ttl = 60
     server = _make_server_with_jwks("https://idp.example.com/jwks")
     clock = _FakeClock()
-    _use_fake_clock_caches(server, clock)
+    with patch.object(MCPServer, "JWKS_TTL", custom_jwks_ttl):
+        _use_fake_clock_caches(server, clock)
 
-    with patch("jwt.PyJWKClient.get_signing_key_from_jwt",
-               side_effect=[signing_key, Exception("Unable to find a signing key that matches")]) as mock_get_key:
-        assert server.decode_token(token) is not None   # key fetched and cached
-        clock.advance(JWKS_TTL + 1)                     # cached key expires
-        assert server.decode_token(token) is None       # IdP no longer publishes the kid
+        with patch("jwt.PyJWKClient.get_signing_key_from_jwt",
+                   side_effect=[signing_key, Exception("Unable to find a signing key that matches")]) as mock_get_key:
+            assert server.decode_token(token) is not None   # key fetched and cached
+            clock.advance(custom_jwks_ttl + 1)              # cached key expires
+            assert server.decode_token(token) is None       # IdP no longer publishes the kid
 
-    assert mock_get_key.call_count == 2
+        assert mock_get_key.call_count == 2
 
 
 def test_cache_avoids_idp_calls_within_ttl():
     """Within the TTL neither the introspection endpoint nor the JWKS endpoint is called again."""
     import time
     from jwt import PyJWK
-    from decisioncenter_mcp_server.MCPServer import JWKS_TTL
 
     # token cache: introspection
     server = _make_server_with_userinfo(
@@ -1740,7 +1738,7 @@ def test_cache_avoids_idp_calls_within_ttl():
     with patch("jwt.PyJWKClient.get_signing_key_from_jwt", return_value=signing_key) as mock_get_key:
         for _ in range(3):
             assert jwks_server.decode_token(token) is not None
-            jwks_clock.advance(JWKS_TTL // 10)
+            jwks_clock.advance(server.JWKS_TTL // 10)
     assert mock_get_key.call_count == 1
 
 
