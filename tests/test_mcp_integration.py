@@ -21,6 +21,7 @@ import pytest
 from mcp.client import Client
 from mcp.server import MCPServer as SDK_MCPServer
 from mcp.server.subscriptions import ResourcesListChanged
+from mcp.shared.exceptions import MCPError
 from mcp_types import Tool
 
 from decisioncenter_mcp_server.Credentials import Credentials
@@ -155,7 +156,7 @@ async def test_read_resource_rejects_unlisted_file(started_server, tmp_path):
     started_server.trace_recorder.storage_dir = str(tmp_path)
     started_server.trace_recorder.trace_files = [str(listed)]
 
-    with pytest.raises(ValueError, match="resource not found"):
+    with pytest.raises(MCPError, match="Invalid resource"):
         await started_server.read_resource(f"file://{unlisted}")
 
 
@@ -168,7 +169,7 @@ async def test_read_resource_rejects_file_outside_resources_directory(started_se
     started_server.trace_recorder.storage_dir = str(resources_dir)
     started_server.trace_recorder.trace_files = [str(outside)]
 
-    with pytest.raises(ValueError, match="resource not found"):
+    with pytest.raises(MCPError, match="Invalid resource"):
         await started_server.read_resource(f"file://{outside}")
 
 

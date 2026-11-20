@@ -17,7 +17,7 @@ from typing import Optional, Any, Literal
 import socket
 import inspect
 import contextvars
-from mcp_types import Tool, Resource, CallToolResult, TextContent
+from mcp_types import Tool, Resource, CallToolResult, TextContent, INVALID_REQUEST
 from mcp.server.mcpserver.context import Context
 from mcp.server.context import ServerRequestContext
 from mcp.server.mcpserver.exceptions import ToolError
@@ -28,13 +28,14 @@ from mcp.server.auth.settings import AuthSettings
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.routes import build_resource_metadata_url
 from mcp.server.auth.middleware.auth_context import get_access_token
+from mcp.shared.exceptions import MCPError
 import mcp.server.auth.middleware.bearer_auth as bearer_auth
 from starlette.authentication import AuthCredentials
 from starlette.requests import HTTPConnection, Request
 from starlette.responses import Response, JSONResponse
 import uvicorn
 from pydantic import AnyUrl
-from cachetools import LRUCache
+from cachetools import TTLCache, TLRUCache
 import logging
 import ssl
 import json
@@ -112,7 +113,12 @@ class MCPServer:
         "LOG_LEVEL": False, "TAGS": False, "TOOLS": False, "NO_TOOLS": False, "TOOL_PROFILE": False,
         "TRACE": False, "TRACES_DIR": False, "TRACES_MAXSIZE": False,
         "STARTUP_RETRIES_COUNT": False, "STARTUP_RETRIES_PERIOD": False, "RUNNING_IN_POD": False,
+        "JWKS_TTL": False, "TOKEN_DEFAULT_TTL": False, "TOKEN_MAX_TTL": False,
     }
+
+    JWKS_TTL:int          = int(os.getenv("JWKS_TTL",          3600))
+    TOKEN_DEFAULT_TTL:int = int(os.getenv("TOKEN_DEFAULT_TTL",  300))
+    TOKEN_MAX_TTL:int     = int(os.getenv("TOKEN_MAX_TTL",     3600))
 
     DEFAULT_JWT_ALGORITHMS = ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256"]
     DEFAULT_TOKEN_VALIDATION_ORDER = ["jwks", "introspect", "userinfo"]
@@ -148,7 +154,7 @@ class MCPServer:
         self.mcp_ext_url = mcp_ext_url
         self.jwks_url    = jwks_url
         self.jwt_algorithms = jwt_algorithms if jwt_algorithms else self.DEFAULT_JWT_ALGORITHMS
-        self._jwks_cache : LRUCache = LRUCache(maxsize=10)  # key = kid, value = signing key
+        self._jwks_cache : TTLCache = TTLCache(maxsize=20, ttl=self.JWKS_TTL)  # key = kid, value = signing key
         self._token_validation_order = self._parse_token_validation_order()
         self._token_validation_map = {
             "jwks":       lambda: (self.jwks_url,           self.decode_token),
@@ -161,8 +167,7 @@ class MCPServer:
         self.repository_res_monitor     : dict[str, DecisionCenterEndpoint] = {}
         self.repository_res_deployer    : dict[str, DecisionCenterEndpoint] = {}
 
-        self.user_credentials           : LRUCache = LRUCache(maxsize=512) # key = token, value: Credentials = user_credentials
-        self.mcp_tokens                 : LRUCache = LRUCache(maxsize=512) # key = token, value: AccessToken = mcp token
+        self.token_cache : TLRUCache = TLRUCache(maxsize=512, ttu=token_ttu) # key = token, value: AccessTokenInfo
 
         self.subscriptions: SubscriptionBus = subscriptions if subscriptions is not None else (subscription_bus if subscription_bus is not None else InMemorySubscriptionBus())
         self.subscription_bus: SubscriptionBus = self.subscriptions
@@ -263,7 +268,7 @@ class MCPServer:
             payload = jwt.decode(token, signing_key.key, algorithms=self.jwt_algorithms, options={"verify_aud": False})
 
         except Exception as e:
-            self.logger.error(f"Unable to decode the token: {e}")
+            self.logger.warning(f"Unable to decode the token: {e}")
             self.logger.debug(f"token: {token}, alg: {self.jwt_algorithms}")
             return None
 
@@ -273,7 +278,7 @@ class MCPServer:
             token      = token,
             client_id  = payload.get("azp") or payload.get("client_id", self.credentials.client_id),
             scopes     = payload.get("scope", self.credentials.scope).split(),
-            expires_at = payload.get("exp", 0),
+            expires_at = payload.get("exp"),
             resource   = payload.get("aud"),
             subject    = payload.get("sub", "unknown"),
             claims     = claims,
@@ -289,15 +294,16 @@ class MCPServer:
         auth = requests.auth.HTTPBasicAuth(self.credentials.client_id, self.credentials.client_secret) \
                if self.credentials.client_secret else None
 
-        if self.credentials.verify_ssl:
-            response = requests.post(url=self.introspection_url, data=request_body, auth=auth, verify=self.credentials.cacert)
-        else:
-            response = requests.post(url=self.introspection_url, data=request_body, auth=auth, verify=False)
-
         try:
+            if self.credentials.verify_ssl:
+                response = requests.post(url=self.introspection_url, data=request_body, auth=auth, verify=self.credentials.cacert)
+            else:
+                response = requests.post(url=self.introspection_url, data=request_body, auth=auth, verify=False)
+
             response.raise_for_status() # raise an HTTPError if the request failed
         except Exception as e:
-            self.logger.debug(f"Token introspection failed. {str(e)}")
+            self.logger.warning(f"Token introspection failed. {str(e)}")
+            self.logger.debug(f"token: {token}")
             return None
 
         response_body = response.json()
@@ -312,7 +318,7 @@ class MCPServer:
                     token     = token,
                     client_id = response_body.get("client_id", self.credentials.client_id),
                     scopes    = response_body.get("scope", self.credentials.scope).split(),
-                    expires_at= response_body.get("exp", 0),
+                    expires_at= response_body.get("exp"),
                     resource  = response_body.get("aud"),  # Include resource in token
                     subject   = response_body.get("sub", "unknown"),
                     claims    = claims,
@@ -322,15 +328,16 @@ class MCPServer:
         """Verify token by calling the userinfo endpoint (GET with Bearer token)."""
         headers = {"Authorization": f"Bearer {token}"}
 
-        if self.credentials.verify_ssl:
-            response = requests.get(url=self.userinfo_url, headers=headers, verify=self.credentials.cacert)
-        else:
-            response = requests.get(url=self.userinfo_url, headers=headers, verify=False)
-
         try:
+            if self.credentials.verify_ssl:
+                response = requests.get(url=self.userinfo_url, headers=headers, verify=self.credentials.cacert)
+            else:
+                response = requests.get(url=self.userinfo_url, headers=headers, verify=False)
+
             response.raise_for_status()
         except Exception as e:
-            self.logger.debug(f"Token userinfo validation failed. {str(e)}")
+            self.logger.warning(f"Token userinfo validation failed. {str(e)}")
+            self.logger.debug(f"token: {token}")
             return None
 
         response_body = response.json()
@@ -341,31 +348,70 @@ class MCPServer:
                     token     = token,
                     client_id = self.credentials.client_id,
                     scopes    = response_body.get("scope", self.credentials.scope).split(),
-                    expires_at= response_body.get("exp", int(time.time()) + 60),
+                    expires_at= response_body.get("exp"),
                     resource  = response_body.get("aud"),
                     subject   = response_body.get("sub", "unknown"),
                     claims    = claims,
                 )
 
     def get_mcp_token(self, token:str):
+        def token_ttl(mcp_token:AccessToken|None) -> int:
+            """
+            Defines how long the token is kept in cache and consequently when it will be validated again
+            """
+            if mcp_token is None or not mcp_token.expires_at:
+                # the expiry is missing. Use defaults
+                return min(self.TOKEN_DEFAULT_TTL, self.TOKEN_MAX_TTL)
+            validity = mcp_token.expires_at - int(time.time())
+            if validity < 0:
+                # the expiry time is past due so the SDK is going to reject the token. No need to keep the token in cache
+                return 0
+            else:
+                # cap the expiry to at most TOKEN_MAX_TTL seconds, enabling to check after that duration if the token has been revoked
+                return min(validity, self.TOKEN_MAX_TTL)
+
+        def token_expiration_msg(mcp_token:AccessToken|None) -> str:
+            if mcp_token is None:
+                return "mcp_token unexpectedly None"
+            if not mcp_token.expires_at:
+                return f"Token expiration unknown, defaults to {token_ttl(mcp_token)} seconds"
+            if mcp_token.expires_at < int(time.time()):
+                return "Token expired"
+            return f"Token expiring in {token_ttl(mcp_token)} seconds"
+
         if token is None:
-            return None
-        if token in self.mcp_tokens:
-            mcp_token : AccessToken | None = self.mcp_tokens.get(token)
+            return None, None
+        if token_info := self.token_cache.get(token):
+            mcp_token   : AccessToken | None = token_info.mcp_token
+            credentials : Credentials | None = token_info.credentials
         else:
             mcp_token = None
+            credentials = None
             for method in self._token_validation_order:
                 url, validate_fn = self._token_validation_map[method]()
                 if url:
                     if mcp_token := validate_fn(token):
-                        self.mcp_tokens[token] = mcp_token
+                        credentials = Credentials(
+                            odm_url=self.credentials.odm_url,
+                            odm_res_url=self.credentials.odm_res_url,
+                            token_url=self.credentials.token_url,
+                            scope=self.credentials.scope,
+                            client_id=self.credentials.client_id,
+                            mtls_cert_path=self.credentials.mtls_cert_path, mtls_key_path=self.credentials.mtls_key_path, mtls_key_password=self.credentials.mtls_key_password,
+                            ssl_cert_path=self.credentials.ssl_cert_path,
+                            verify_ssl=self.credentials.verify_ssl,
+                            verify_ssl_hostname=self.credentials.verify_ssl_hostname,
+                            token = token)
+                        self.token_cache[token] = AccessTokenInfo(
+                            mcp_token   = mcp_token,
+                            credentials = credentials,
+                            ttl         = token_ttl(mcp_token))
                         break
 
         if mcp_token and self.logger.isEnabledFor(logging.DEBUG):
-            validity = mcp_token.expires_at - int(time.time())
-            self.logger.debug("token %s", f"expiring in {validity} seconds" if validity > 0 else "expired")
+            self.logger.debug(token_expiration_msg(mcp_token))
 
-        return mcp_token
+        return mcp_token, credentials
 
     def token_overview(self, token):
         return token[:5] + '...' + token[-5:]
@@ -448,14 +494,14 @@ class MCPServer:
         """
         access_token = get_access_token()
         if access_token is None:
-            raise Exception("No access token found for the current request")
+            raise MCPError(INVALID_REQUEST, "No access token found for the current request")
         return access_token.token
 
     def get_current_user_details(self) -> dict[str, Any]:
         """Return user details (subject and all claims) from the access token of the current request."""
         access_token = get_access_token()
         if access_token is None:
-            raise Exception("No access token found for the current request")
+            raise MCPError(INVALID_REQUEST, "No access token found for the current request")
 
         user_details = {}
         if access_token.subject is not None:
@@ -466,37 +512,34 @@ class MCPServer:
 
     def get_user_credentials(self):
         token = self.get_current_token()
-
-        credentials = self.user_credentials.get(token)
+        _, credentials = self.get_mcp_token(token)
         if credentials is None:
-            credentials = Credentials(
-                                        odm_url=self.credentials.odm_url,
-                                        odm_res_url=self.credentials.odm_res_url,
-                                        token_url=self.credentials.token_url,
-                                        scope=self.credentials.scope,
-                                        client_id=self.credentials.client_id,
-                                        mtls_cert_path=self.credentials.mtls_cert_path, mtls_key_path=self.credentials.mtls_key_path, mtls_key_password=self.credentials.mtls_key_password,
-                                        ssl_cert_path=self.credentials.ssl_cert_path,
-                                        verify_ssl=self.credentials.verify_ssl,
-                                        verify_ssl_hostname=self.credentials.verify_ssl_hostname,
-                                        token = token,
-                                        )
-            self.user_credentials[token] = credentials
+            raise MCPError(INVALID_REQUEST, "Authentication required.")
 
+        if self.logger.isEnabledFor(logging.DEBUG):
+            self.logger.debug(f"Using user credentials. user token: '{self.token_overview(credentials.token)}'")
+        self.check_user_roles(credentials)
+        return credentials
+
+    def check_user_roles(self, credentials):
+        if None in (credentials.isDcAdmin,
+                    credentials.isResDeployer,
+                    credentials.isResMonitor):
             try:
                 with credentials.get_session() as session:
                     # check if the user credentials grant the rtsAdministrator/rtsInstaller role
                     credentials.isDcAdmin = self.manager.isDcAdmin(credentials.odm_url, session)
 
+                    if not credentials.isDcAdmin and os.getenv("CHECK_RTSUSER_ROLE", "False") == "True":
+                        # check if the user credentials grant the rtsUser role
+                        credentials.isDcUser = self.manager.isDcUser(credentials.odm_url, session)
+
                     # check if the user credentials grant the resMonitor and resDeployer roles
-                    self.manager.check_res_roles(credentials)
+                    self.manager.check_res_roles(credentials, session)
             except PermissionError:
                 pass
             finally:
                 credentials.cleanup()
-
-        self.logger.debug(f"Using user credentials. user token: '{self.token_overview(credentials.token)}'")
-        return credentials
 
     def use_user_credentials(self) -> bool:
         return (
@@ -557,7 +600,8 @@ class MCPServer:
 
         # select the list of tools based on the roles granted to the credentials used
         if   credentials.isDcAdmin:     dc_repository = self.repository_dc_admin
-        else:                           dc_repository = self.repository_dc
+        elif credentials.isDcUser:      dc_repository = self.repository_dc
+        else:                           dc_repository = {}
 
         if   credentials.isResDeployer: res_repository = self.repository_res_deployer
         elif credentials.isResMonitor:  res_repository = self.repository_res_monitor
@@ -686,22 +730,19 @@ class MCPServer:
         filepath     = Path(filepathname).resolve()
         resources_dir = Path(self.trace_recorder.storage_dir).resolve()
         
-        if filepath.parent != resources_dir:
-            raise ValueError("resource not found")
-            
-        if str(filepath) not in set(self.trace_recorder.trace_files):
-            raise ValueError("resource not found")
+        if filepath.parent != resources_dir or str(filepath) not in set(self.trace_recorder.trace_files):
+            raise MCPError(INVALID_REQUEST, "Invalid resource")
 
         # the user must be allowed to see this execution, exactly as in `list_resources`
         allowed = self.trace_recorder.get_executions(policy=self.getToolExecutionAccess(), filter=filepath.name, output=Resource)
         if f"file://{filepath}" not in {str(resource.uri) for resource in allowed}:
-            raise ValueError("resource not found")
+            raise MCPError(INVALID_REQUEST, "Forbidden resource")
 
         try:
             with open(filepath, 'r') as f:
                 return [ReadResourceContents(content=f.read())]
         except FileNotFoundError:
-            raise ValueError("resource not found")
+            raise MCPError(INVALID_REQUEST, "Resource not found")
 
     def start(self):
 
@@ -1101,4 +1142,16 @@ class AccessTokenVerifier(TokenVerifier):
         self.mcpserver = mcpserver
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        return self.mcpserver.get_mcp_token(token)
+        mcp_token, _ = self.mcpserver.get_mcp_token(token)
+        return mcp_token
+
+def token_ttu(_key, item, now):
+    if isinstance(item, AccessTokenInfo):
+        return now + item.ttl
+    return now
+
+class AccessTokenInfo():
+    def __init__(self, mcp_token:AccessToken, credentials:Credentials, ttl):
+        self.mcp_token = mcp_token
+        self.credentials = credentials
+        self.ttl = ttl

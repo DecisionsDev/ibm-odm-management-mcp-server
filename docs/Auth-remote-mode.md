@@ -26,6 +26,8 @@ https://github.com/user-attachments/assets/2a7dcf8b-bc40-4290-8361-718663afe523
 
 ### 2.1 MCP server configuration
 
+### 2.1.1 Dedicated parameters (mandatory)
+
 - The MCP server must be started with some additional mandatory parameters specific to this usage:
 
     | CLI Argument | Environment Variable | Description |
@@ -50,6 +52,8 @@ https://github.com/user-attachments/assets/2a7dcf8b-bc40-4290-8361-718663afe523
 > - The default order is: JWKS, introspection, userinfo
 > - The order can be redefined by setting the environment variable TOKEN_VALIDATION_ORDER, to "introspection, jwks" for instance if userinfo should not be used and introspection should be used in priority.
 
+### 2.1.2 Client ID and secret (mandatory)
+
 - The MCP server also needs the following parameters to validate the users tokens:
 
     | CLI Argument | Environment Variable | Description |
@@ -57,7 +61,9 @@ https://github.com/user-attachments/assets/2a7dcf8b-bc40-4290-8361-718663afe523
     | `--client-id`     | `CLIENT_ID`     | OpenID Connect client ID |
     | `--client-secret` | `CLIENT_SECRET` | OpenID Connect client Secret |
 
-- Last the MCP server can optionally be configured with credentials of its own:
+### 2.1.3 Credentials (optional)
+
+- The MCP server can optionally be configured with credentials of its own:
 
     - In which case the MCP server generates the list of all the tools during startup, which speeds up the connection of the AI assistant to the MCP server.
         - those credentials must grant at least the `resMonitor` role.
@@ -65,7 +71,7 @@ https://github.com/user-attachments/assets/2a7dcf8b-bc40-4290-8361-718663afe523
         - generates the list of Decision Center tools during startup (as not authentication is required).
         - generates the list of RES console tools when a user who has the `resMonitor` role connects (using the user's credentials).
 
-    You can either use:
+- You can either use:
     - the client credentials grant if it is available, in which case you must provide the following parameters as well:
 
         | CLI Argument | Environment Variable | Description |
@@ -82,9 +88,32 @@ https://github.com/user-attachments/assets/2a7dcf8b-bc40-4290-8361-718663afe523
         | `--username`      | `ODM_USERNAME`  | Username of a service account defined in the OpenId Connect Provider |
         | `--password`      | `ODM_PASSWORD`  | Password of a service account defined in the OpenId Connect Provider |
 
-- Example:
-    - with Keycloak as OpenID Connect Provider
-    - and using the client_credentials grant
+### 2.1.4 Cache tuning (optional)
+
+- To avoid validating the same token or downloading the same signing key on every request, the MCP server keeps them in memory for some time.
+    - Tokens remain in memory while they are valid (the expiration time of tokens is found in the `exp` claim), capped to `TOKEN_MAX_TTL` seconds). And when their validity in unknown the default duration is `TOKEN_DEFAULT_TTL`.
+    - JSON Web Keys remain in memory for `JWKS_TTL` seconds.
+
+- The parameters `TOKEN_MAX_TTL`, `TOKEN_DEFAULT_TTL` and `JWKS_TTL` have values which can be changed by defining environment variables with the same names, with a value expressed in seconds.
+
+    | Environment Variable | Description | Default |
+    |----------------------|-------------|---------|
+    | `JWKS_TTL`          | Time in seconds during which a signing key downloaded from the JWKS endpoint is kept in cache. Only used when `--jwks-url` is set (or `JWKS_URL` is defined). | `3600` |
+    | `TOKEN_DEFAULT_TTL` | Validity in seconds assumed for a token when the validation does not return an expiration time (no `exp` claim in the JWT or in the userinfo response). | `300` |
+    | `TOKEN_MAX_TTL`     | Maximum time in seconds during which a validated token is kept in cache. A token is cached until it expires, but never longer than this value. | `3600` |
+
+> [!NOTE]
+> - These variables are read when the MCP server starts: restart the MCP server after changing them.
+> - A lower `JWKS_TTL` makes the MCP server remove signing keys from the cache more frequently, 
+>    - enabling to remove an obsolete signing key sooner,
+>    - but at the cost of having to retrieve the same key from the JWKS endpoint again more frequently when it is still in use.
+> - Lower values for `TOKEN_DEFAULT_TTL` and `TOKEN_MAX_TTL` may enable to check if a token has been revoked at the OpenID Connect provider, at the cost of more calls to:
+>    - the IdP endpoints (introspection, userinfo, or JWKS endpoint) to validate the tokens,
+>    - the ODM endpoints to check the roles of the user.
+
+### 2.1.5 Example
+
+- Here is an example of configuration where the MCP server has credentials of its own, using the client_credentials grant:
 
     ```bash
     uv run ibm-odm-management-mcp-server \
